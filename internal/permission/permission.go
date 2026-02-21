@@ -63,6 +63,11 @@ func (c *Checker) SetMode(mode Mode) {
 	c.mode = mode
 }
 
+// SetAskFn sets or replaces the interactive ask function.
+func (c *Checker) SetAskFn(fn AskFunc) {
+	c.askFn = fn
+}
+
 // Mode returns the current permission mode.
 func (c *Checker) Mode() Mode {
 	return c.mode
