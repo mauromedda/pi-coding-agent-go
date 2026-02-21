@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 
@@ -93,6 +94,9 @@ func (p *Provider) processSSE(reader *sse.Reader, stream *ai.EventStream) error 
 	for {
 		event, err := reader.Next()
 		if err != nil {
+			if err != io.EOF {
+				stream.Send(ai.StreamEvent{Type: ai.EventError, Error: err})
+			}
 			stream.Finish(&result)
 			return nil
 		}

@@ -18,6 +18,8 @@ linters:
     - unparam
     - gofmt
     - goimports
+    - gosec
+    - bodyclose
 
 linters-settings:
   revive:

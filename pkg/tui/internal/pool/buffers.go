@@ -22,10 +22,16 @@ func GetBytesBuffer() *bytes.Buffer {
 	return buf
 }
 
+const maxPoolBufSize = 1024 * 1024 // 1MB: discard oversized buffers
+
 // PutBytesBuffer returns a bytes.Buffer to the pool.
+// Buffers exceeding 1MB are discarded to prevent pool bloat.
 func PutBytesBuffer(buf *bytes.Buffer) {
 	if buf == nil {
 		return
+	}
+	if buf.Cap() > maxPoolBufSize {
+		return // Let GC collect oversized buffers
 	}
 	buf.Reset()
 	bytesBufferPool.Put(buf)
@@ -45,9 +51,13 @@ func GetStringBuilder() *strings.Builder {
 }
 
 // PutStringBuilder returns a strings.Builder to the pool.
+// Builders exceeding 1MB are discarded to prevent pool bloat.
 func PutStringBuilder(sb *strings.Builder) {
 	if sb == nil {
 		return
+	}
+	if sb.Cap() > maxPoolBufSize {
+		return // Let GC collect oversized builders
 	}
 	sb.Reset()
 	stringBuilderPool.Put(sb)
