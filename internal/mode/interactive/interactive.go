@@ -17,6 +17,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/internal/statusline"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	tuipkg "github.com/mauromedda/pi-coding-agent-go/pkg/tui"
@@ -25,6 +26,8 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/terminal"
 )
+
+const compactionThresholdPct = 80
 
 // Mode represents the current editing mode.
 type Mode int
@@ -95,6 +98,7 @@ type App struct {
 	// Token stats + context info
 	totalInputTokens  atomic.Int64
 	totalOutputTokens atomic.Int64
+	lastContextTokens atomic.Int64 // input tokens from latest LLM call (context size)
 	lastResponseStart atomic.Int64 // UnixNano timestamp
 	lastOutputTokens  atomic.Int64 // output tokens for current response
 	tokPerSec         atomic.Int64 // tok/s × 10 (fixed-point)
@@ -343,10 +347,6 @@ func (a *App) submitPrompt(text string) {
 	// Add user message
 	container.Add(components.NewUserMessage(text))
 
-	// Add assistant message placeholder
-	a.current = components.NewAssistantMessage()
-	container.Add(a.current)
-
 	// Re-add separator+editor+footer at bottom
 	container.Add(a.editorSep)
 	container.Add(a.editor)
@@ -378,6 +378,18 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 		Messages: len(a.messages),
 		ClearHistory: func() {
 			a.messages = nil
+		},
+		CompactFn: func() string {
+			prev := len(a.messages)
+			compacted, summary, err := session.Compact(a.messages)
+			if err != nil {
+				return fmt.Sprintf("Error: %v", err)
+			}
+			if len(compacted) == prev {
+				return "Nothing to compact."
+			}
+			a.messages = compacted
+			return fmt.Sprintf("Compacted %d → %d messages.\n%s", prev, len(a.messages), summary)
 		},
 		ToggleMode: func() {
 			a.ToggleMode()
@@ -504,6 +516,23 @@ func (a *App) hideFileMentionSelector() {
 	container.Remove(a.fileMentionSelector)
 }
 
+// newAssistantSegment creates a new AssistantMessage and inserts it
+// into the container just before the editor/footer group.
+func (a *App) newAssistantSegment() *components.AssistantMessage {
+	msg := components.NewAssistantMessage()
+	container := a.tui.Container()
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
+	container.Add(msg)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
+	return msg
+}
+
 // runAgent executes the agent loop, streaming events to TUI components.
 func (a *App) runAgent() {
 	a.agentRunning.Store(true)
@@ -564,16 +593,19 @@ func (a *App) runAgent() {
 	for evt := range events {
 		switch evt.Type {
 		case agent.EventAssistantText:
-			if a.current != nil {
-				a.current.AppendText(evt.Text)
+			if a.current == nil {
+				a.current = a.newAssistantSegment()
 			}
+			a.current.AppendText(evt.Text)
 
 		case agent.EventAssistantThinking:
-			if a.current != nil {
-				a.current.SetThinking(evt.Text)
+			if a.current == nil {
+				a.current = a.newAssistantSegment()
 			}
+			a.current.SetThinking(evt.Text)
 
 		case agent.EventToolStart:
+			a.current = nil // close current text segment; next text creates a new one
 			argsStr := ""
 			if evt.ToolArgs != nil {
 				if data, err := json.Marshal(evt.ToolArgs); err == nil {
@@ -611,6 +643,7 @@ func (a *App) runAgent() {
 			if evt.Usage != nil {
 				a.totalInputTokens.Add(int64(evt.Usage.InputTokens))
 				a.totalOutputTokens.Add(int64(evt.Usage.OutputTokens))
+				a.lastContextTokens.Store(int64(evt.Usage.InputTokens))
 				a.lastOutputTokens.Add(int64(evt.Usage.OutputTokens))
 				startNano := a.lastResponseStart.Load()
 				if startNano > 0 {
@@ -624,7 +657,10 @@ func (a *App) runAgent() {
 			}
 
 		case agent.EventError:
-			if a.current != nil && evt.Error != nil {
+			if evt.Error != nil {
+				if a.current == nil {
+					a.current = a.newAssistantSegment()
+				}
 				a.current.AppendText(fmt.Sprintf("\n[error: %v]", evt.Error))
 			}
 		}
@@ -642,17 +678,28 @@ func (a *App) runAgent() {
 	_ = assistantContent // history is tracked via llmCtx
 	}
 
-	// Clean up completed tool components to prevent unbounded container growth.
-	// The user has already seen the streaming output; completed tools render as
-	// one-line status indicators, but accumulating hundreds still degrades render.
-	container = a.tui.Container()
-	for _, te := range toolExecs {
-		container.Remove(te)
-	}
-
 	a.activeAgent = nil
+	a.autoCompactIfNeeded()
 	a.updateFooter()
 	a.tui.RequestRender()
+}
+
+// autoCompactIfNeeded compacts messages if context occupation >= 80%.
+func (a *App) autoCompactIfNeeded() {
+	if a.model == nil || a.model.MaxTokens == 0 {
+		return
+	}
+	pct := int(a.lastContextTokens.Load()) * 100 / a.model.MaxTokens
+	if pct < compactionThresholdPct {
+		return
+	}
+	compacted, _, err := session.Compact(a.messages)
+	if err != nil {
+		return
+	}
+	if len(compacted) < len(a.messages) {
+		a.messages = compacted
+	}
 }
 
 // askPermission shows a permission dialog overlay and blocks until the user responds.
@@ -728,6 +775,15 @@ func (a *App) updateFooter() {
 	if a.model != nil {
 		modelName = a.model.Name
 	}
+	// Context occupation percentage
+	ctxTokens := int(a.lastContextTokens.Load())
+	if a.model != nil && a.model.MaxTokens > 0 && ctxTokens > 0 {
+		pct := ctxTokens * 100 / a.model.MaxTokens
+		a.footer.SetContextPct(pct)
+	} else {
+		a.footer.SetContextPct(0)
+	}
+
 	a.footer.SetLine2(stats, modelName)
 	a.footer.SetModeLabel(a.ModeLabel())
 }

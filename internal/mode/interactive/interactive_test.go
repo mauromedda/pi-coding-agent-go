@@ -4,6 +4,7 @@
 package interactive
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -393,6 +394,319 @@ func TestHandleFileMentionInput_Backspace_TrimsFilter(t *testing.T) {
 	got := app.fileMentionSelector.Filter()
 	if got != "ma" {
 		t.Errorf("expected filter 'ma' after backspace, got %q", got)
+	}
+}
+
+func TestNewAssistantSegment_InsertsBeforeEditor(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Set up container with editor/footer at the bottom
+	container := app.tui.Container()
+	container.Add(app.editorSep)
+	container.Add(app.editor)
+	container.Add(app.editorSepBot)
+	container.Add(app.footer)
+
+	// Create a lazy assistant segment
+	msg := app.newAssistantSegment()
+	if msg == nil {
+		t.Fatal("expected non-nil AssistantMessage")
+	}
+
+	// Verify ordering: msg should be before editorSep
+	children := container.Children()
+	if len(children) != 5 {
+		t.Fatalf("expected 5 children, got %d", len(children))
+	}
+	if children[0] != msg {
+		t.Error("expected AssistantMessage at index 0")
+	}
+	if children[1] != app.editorSep {
+		t.Error("expected editorSep at index 1")
+	}
+	if children[2] != app.editor {
+		t.Error("expected editor at index 2")
+	}
+	if children[3] != app.editorSepBot {
+		t.Error("expected editorSepBot at index 3")
+	}
+	if children[4] != app.footer {
+		t.Error("expected footer at index 4")
+	}
+}
+
+func TestNewAssistantSegment_InterleavesWithToolExecs(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	container := app.tui.Container()
+	container.Add(app.editorSep)
+	container.Add(app.editor)
+	container.Add(app.editorSepBot)
+	container.Add(app.footer)
+
+	// Simulate: text → tool → text interleaving
+	msg1 := app.newAssistantSegment()
+	msg1.AppendText("Let me check...")
+
+	// Simulate tool start: insert a ToolExec before editor
+	te := components.NewToolExec("read", `{"path":"foo.go"}`)
+	container.Remove(app.editorSep)
+	container.Remove(app.editor)
+	container.Remove(app.editorSepBot)
+	container.Remove(app.footer)
+	container.Add(te)
+	container.Add(app.editorSep)
+	container.Add(app.editor)
+	container.Add(app.editorSepBot)
+	container.Add(app.footer)
+
+	// Second text segment after tool
+	msg2 := app.newAssistantSegment()
+	msg2.AppendText("Found it.")
+
+	// Expected order: msg1, te, msg2, editorSep, editor, editorSepBot, footer
+	children := container.Children()
+	if len(children) != 7 {
+		t.Fatalf("expected 7 children, got %d", len(children))
+	}
+	if children[0] != msg1 {
+		t.Error("expected msg1 at index 0")
+	}
+	if children[1] != te {
+		t.Error("expected ToolExec at index 1")
+	}
+	if children[2] != msg2 {
+		t.Error("expected msg2 at index 2")
+	}
+	if children[3] != app.editorSep {
+		t.Error("expected editorSep at index 3")
+	}
+}
+
+func TestSubmitPrompt_DoesNotPreCreateAssistant(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	container := app.tui.Container()
+	container.Add(app.editorSep)
+	container.Add(app.editor)
+	container.Add(app.editorSepBot)
+	container.Add(app.footer)
+
+	app.submitPrompt("hello")
+
+	// Wait for the agent goroutine to finish (no provider → returns immediately)
+	for app.agentRunning.Load() {
+		// spin briefly
+	}
+
+	// a.current should be nil: no pre-created assistant message
+	if app.current != nil {
+		t.Error("expected a.current to be nil after submitPrompt (lazy creation)")
+	}
+
+	// Container should have: UserMessage, editorSep, editor, editorSepBot, footer
+	// (no AssistantMessage since provider is nil and lazy creation skips it)
+	children := container.Children()
+	foundAssistant := false
+	for _, c := range children {
+		if _, ok := c.(*components.AssistantMessage); ok {
+			foundAssistant = true
+		}
+	}
+	if foundAssistant {
+		t.Error("expected no AssistantMessage in container (lazy creation, no provider)")
+	}
+}
+
+func TestUpdateFooter_ShowsContextPct(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test-model", MaxTokens: 200000},
+		Checker:  checker,
+	})
+	app.footer = components.NewFooter()
+
+	// Simulate 100k input tokens out of 200k max = 50%
+	app.lastContextTokens.Store(100000)
+	app.updateFooter()
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	app.footer.Render(buf, 80)
+
+	if buf.Len() < 2 {
+		t.Fatalf("expected 2 footer lines, got %d", buf.Len())
+	}
+	line2 := buf.Lines[1]
+	if !strings.Contains(line2, "ctx 50%") {
+		t.Errorf("footer line2 should contain 'ctx 50%%', got %q", line2)
+	}
+}
+
+func TestUpdateFooter_ContextPctZeroWhenNoTokens(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test-model", MaxTokens: 200000},
+		Checker:  checker,
+	})
+	app.footer = components.NewFooter()
+
+	// No tokens stored (default 0)
+	app.updateFooter()
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	app.footer.Render(buf, 80)
+
+	if buf.Len() < 2 {
+		t.Fatalf("expected 2 footer lines, got %d", buf.Len())
+	}
+	line2 := buf.Lines[1]
+	if strings.Contains(line2, "ctx") {
+		t.Errorf("footer should not show context pct when no tokens, got %q", line2)
+	}
+}
+
+func TestAutoCompact_TriggersAt80Pct(t *testing.T) {
+	t.Parallel()
+
+	// Build 15 messages (more than keepRecentMessages=10 so Compact actually shrinks)
+	msgs := make([]ai.Message, 15)
+	for i := range msgs {
+		msgs[i] = ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i))
+	}
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test", MaxTokens: 200000},
+		Checker:  checker,
+	})
+	app.footer = components.NewFooter()
+	app.messages = msgs
+
+	// 160k out of 200k = 80% => should trigger compaction
+	app.lastContextTokens.Store(160000)
+
+	app.autoCompactIfNeeded()
+
+	if len(app.messages) >= 15 {
+		t.Errorf("expected messages to be compacted from 15, got %d", len(app.messages))
+	}
+}
+
+func TestAutoCompact_DoesNotTriggerBelow80Pct(t *testing.T) {
+	t.Parallel()
+
+	msgs := make([]ai.Message, 15)
+	for i := range msgs {
+		msgs[i] = ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i))
+	}
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test", MaxTokens: 200000},
+		Checker:  checker,
+	})
+	app.footer = components.NewFooter()
+	app.messages = msgs
+
+	// 100k out of 200k = 50% => should NOT trigger
+	app.lastContextTokens.Store(100000)
+
+	app.autoCompactIfNeeded()
+
+	if len(app.messages) != 15 {
+		t.Errorf("expected messages unchanged at 15, got %d", len(app.messages))
+	}
+}
+
+func TestHandleSlashCommand_WiresCompactFn(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test", MaxTokens: 200000},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	container := app.tui.Container()
+	container.Add(app.editorSep)
+	container.Add(app.editor)
+	container.Add(app.editorSepBot)
+	container.Add(app.footer)
+
+	// Add enough messages so Compact() actually shrinks
+	for i := 0; i < 15; i++ {
+		app.messages = append(app.messages, ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i)))
+	}
+
+	app.handleSlashCommand(container, "/compact")
+
+	// After /compact, messages should be compacted
+	if len(app.messages) >= 15 {
+		t.Errorf("expected messages compacted from 15, got %d", len(app.messages))
 	}
 }
 
