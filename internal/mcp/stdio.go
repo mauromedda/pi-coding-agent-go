@@ -31,8 +31,27 @@ type StdioTransport struct {
 	closeOnce sync.Once
 }
 
+// ApproveFunc validates whether spawning an MCP server command is allowed.
+// Return nil to approve; return an error to block.
+type ApproveFunc func(command string, args []string) error
+
 // NewStdioTransport creates a transport that spawns the given command.
 func NewStdioTransport(ctx context.Context, command string, args []string, env []string) (*StdioTransport, error) {
+	return NewStdioTransportWithApproval(ctx, command, args, env, nil)
+}
+
+// NewStdioTransportWithApproval creates a transport with an optional approval gate.
+// If approveFn is non-nil, it is called before the command is spawned.
+func NewStdioTransportWithApproval(ctx context.Context, command string, args []string, env []string, approveFn ApproveFunc) (*StdioTransport, error) {
+	if approveFn != nil {
+		if err := approveFn(command, args); err != nil {
+			return nil, fmt.Errorf("MCP server %q denied: %w", command, err)
+		}
+	}
+	return newStdioTransport(ctx, command, args, env)
+}
+
+func newStdioTransport(ctx context.Context, command string, args []string, env []string) (*StdioTransport, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	if len(env) > 0 {
 		cmd.Env = env

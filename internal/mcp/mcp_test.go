@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -496,6 +497,33 @@ func TestServer_UnknownMethod(t *testing.T) {
 	if resp.Error.Code != -32601 {
 		t.Errorf("expected code -32601, got %d", resp.Error.Code)
 	}
+}
+
+func TestStdioTransport_ApprovalDenied(t *testing.T) {
+	deny := func(_ string, _ []string) error {
+		return fmt.Errorf("user denied MCP server")
+	}
+
+	_, err := NewStdioTransportWithApproval(context.Background(), "echo", []string{"hello"}, nil, deny)
+	if err == nil {
+		t.Fatal("expected error when approval denied")
+	}
+	if !strings.Contains(err.Error(), "denied") {
+		t.Errorf("error should mention denial, got: %v", err)
+	}
+}
+
+func TestStdioTransport_ApprovalAllowed(t *testing.T) {
+	allow := func(_ string, _ []string) error {
+		return nil
+	}
+
+	// "true" command exits immediately, unblocking the test
+	transport, err := NewStdioTransportWithApproval(context.Background(), "true", nil, nil, allow)
+	if err != nil {
+		t.Fatalf("expected no error when approved, got: %v", err)
+	}
+	transport.Close()
 }
 
 func TestServerConfigEnv(t *testing.T) {
