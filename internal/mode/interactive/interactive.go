@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
@@ -45,6 +46,12 @@ func (m Mode) String() string {
 	}
 }
 
+// StatusLineEngine abstracts an external status line command executor.
+type StatusLineEngine interface {
+	HasCommand() bool
+	Execute(ctx context.Context, input any) (string, error)
+}
+
 // AppDeps bundles all dependencies for the interactive App.
 type AppDeps struct {
 	Terminal     terminal.Terminal
@@ -54,6 +61,7 @@ type AppDeps struct {
 	Checker      *permission.Checker
 	SystemPrompt string
 	Version      string
+	StatusEngine StatusLineEngine
 }
 
 // App is the main interactive application.
@@ -87,7 +95,13 @@ type App struct {
 	// Token stats + context info
 	totalInputTokens  atomic.Int64
 	totalOutputTokens atomic.Int64
+	lastResponseStart atomic.Int64 // UnixNano timestamp
+	lastOutputTokens  atomic.Int64 // output tokens for current response
+	tokPerSec         atomic.Int64 // tok/s × 10 (fixed-point)
 	gitBranch         string
+
+	// External status line engine (optional)
+	statusEngine StatusLineEngine
 }
 
 // NewFromDeps creates a fully-wired interactive app from dependencies.
@@ -106,6 +120,7 @@ func NewFromDeps(deps AppDeps) *App {
 		systemPrompt: deps.SystemPrompt,
 		version:      deps.Version,
 		cmdRegistry:  commands.NewRegistry(),
+		statusEngine: deps.StatusEngine,
 	}
 	return app
 }
@@ -397,6 +412,11 @@ func (a *App) runAgent() {
 	ag := agent.NewWithPermissions(a.provider, a.model, a.tools, permCheckFn)
 	a.activeAgent = ag
 
+	// Track response timing for tok/s calculation
+	a.lastResponseStart.Store(time.Now().UnixNano())
+	a.lastOutputTokens.Store(0)
+	a.tokPerSec.Store(0)
+
 	events := ag.Prompt(a.ctx, llmCtx, opts)
 
 	container := a.tui.Container()
@@ -448,6 +468,15 @@ func (a *App) runAgent() {
 			if evt.Usage != nil {
 				a.totalInputTokens.Add(int64(evt.Usage.InputTokens))
 				a.totalOutputTokens.Add(int64(evt.Usage.OutputTokens))
+				a.lastOutputTokens.Add(int64(evt.Usage.OutputTokens))
+				startNano := a.lastResponseStart.Load()
+				if startNano > 0 {
+					elapsed := time.Since(time.Unix(0, startNano)).Seconds()
+					if elapsed > 0 {
+						tps := float64(a.lastOutputTokens.Load()) / elapsed
+						a.tokPerSec.Store(int64(tps * 10))
+					}
+				}
 				a.updateFooter()
 			}
 
@@ -549,6 +578,13 @@ func (a *App) updateFooter() {
 		stats := fmt.Sprintf("\u2191%s \u2193%s",
 			formatTokenCount(inTok),
 			formatTokenCount(outTok))
+		tps := float64(a.tokPerSec.Load()) / 10.0
+		if tps > 0 {
+			stats = fmt.Sprintf("\u2191%s \u2193%s %.1f tok/s",
+				formatTokenCount(inTok),
+				formatTokenCount(outTok),
+				tps)
+		}
 		parts = append(parts, stats)
 	}
 
