@@ -33,6 +33,7 @@ func LoadAuth() (*AuthStore, error) {
 }
 
 // Save writes the auth store to disk with restricted permissions.
+// Uses atomic write (temp file + rename) to prevent partial writes on crash.
 func (a *AuthStore) Save() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -46,8 +47,14 @@ func (a *AuthStore) Save() error {
 		return fmt.Errorf("marshaling auth: %w", err)
 	}
 
-	if err := os.WriteFile(AuthFile(), data, 0o600); err != nil {
-		return fmt.Errorf("writing auth file: %w", err)
+	target := AuthFile()
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("writing temp auth file: %w", err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		os.Remove(tmp) // Best-effort cleanup
+		return fmt.Errorf("renaming auth file: %w", err)
 	}
 	return nil
 }

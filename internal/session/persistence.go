@@ -84,7 +84,7 @@ func NewWriter(sessionID string) (*Writer, error) {
 	}
 
 	path := filepath.Join(dir, sessionID+".jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening session file: %w", err)
 	}

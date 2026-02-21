@@ -109,6 +109,7 @@ func AgentsDir(projectRoot string) string {
 }
 
 // EnsureDir creates a directory and all parents if they don't exist.
+// Uses 0o700 for directories containing sensitive data (auth, sessions).
 func EnsureDir(path string) error {
-	return os.MkdirAll(path, 0o755)
+	return os.MkdirAll(path, 0o700)
 }

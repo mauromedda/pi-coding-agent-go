@@ -64,8 +64,8 @@ func (p *Provider) doStream(model *ai.Model, llmCtx *ai.Context, opts *ai.Stream
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse&key=%s",
-		p.baseURL, model.ID, p.apiKey)
+	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse",
+		p.baseURL, model.ID)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
 		url, bytes.NewReader(bodyBytes))
@@ -73,6 +73,7 @@ func (p *Provider) doStream(model *ai.Model, llmCtx *ai.Context, opts *ai.Stream
 		return fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Goog-Api-Key", p.apiKey)
 
 	resp, err := p.client.Do(req)
 	if err != nil {

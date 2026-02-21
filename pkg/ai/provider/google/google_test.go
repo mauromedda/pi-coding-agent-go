@@ -20,12 +20,48 @@ func TestProviderApi(t *testing.T) {
 	}
 }
 
+func TestProviderStreamAPIKeyInHeader(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// C4: API key must be in header, NOT in URL
+		if r.URL.Query().Get("key") != "" {
+			t.Errorf("API key should NOT be in URL query, got key=%q", r.URL.Query().Get("key"))
+		}
+		if got := r.Header.Get("X-Goog-Api-Key"); got != "secret-key" {
+			t.Errorf("got X-Goog-Api-Key %q, want %q", got, "secret-key")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp := geminiResponse{
+			Candidates: []geminiCandidate{{
+				Content:      geminiContent{Role: "model", Parts: []geminiPart{{Text: "ok"}}},
+				FinishReason: "STOP",
+			}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srv.Close)
+
+	provider := New("secret-key", srv.URL)
+	stream := provider.Stream(&ai.ModelGemini25Pro, &ai.Context{
+		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
+	}, nil)
+
+	for range stream.Events() {
+	}
+	if result := stream.Result(); result == nil {
+		t.Error("expected non-nil result")
+	}
+}
+
 func TestProviderStreamTextContent(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("key") != "test-key" {
-			t.Errorf("got key %q, want %q", r.URL.Query().Get("key"), "test-key")
+		// After fix: key is in header, not URL
+		if got := r.Header.Get("X-Goog-Api-Key"); got != "test-key" {
+			t.Errorf("got X-Goog-Api-Key %q, want %q", got, "test-key")
 		}
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("got Content-Type %q, want %q", r.Header.Get("Content-Type"), "application/json")
