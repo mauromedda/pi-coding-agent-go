@@ -11,6 +11,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	tui "github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/component"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/terminal"
 )
@@ -290,5 +291,104 @@ func TestUpdateFooter_WithTokenStats(t *testing.T) {
 	}
 	if !strings.Contains(line2, "\u21938k") {
 		t.Errorf("footer line2 should contain output tokens, got %q", line2)
+	}
+}
+
+func TestHandleFileMentionInput_Tab_AcceptsSelection(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Populate file mention selector with test items
+	app.fileMentionSelector.SetItems([]component.FileInfo{
+		{Path: "/tmp/main.go", RelPath: "main.go"},
+		{Path: "/tmp/util.go", RelPath: "util.go"},
+	})
+	app.fileMentionVisible = true
+
+	// Tab should accept the selected file
+	handled := app.handleFileMentionInput(key.Key{Type: key.KeyTab})
+	if !handled {
+		t.Fatal("expected Tab to be handled when file mention is visible")
+	}
+
+	// File mention should be hidden after Tab
+	if app.fileMentionVisible {
+		t.Error("expected fileMentionVisible to be false after Tab")
+	}
+
+	// Editor should contain the selected file path
+	text := app.editor.Text()
+	if !strings.Contains(text, "main.go") {
+		t.Errorf("expected editor to contain 'main.go', got %q", text)
+	}
+}
+
+func TestHandleFileMentionInput_Backspace_TrimsFilter(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	app.fileMentionSelector.SetItems([]component.FileInfo{
+		{Path: "/tmp/main.go", RelPath: "main.go"},
+	})
+	app.fileMentionVisible = true
+
+	// Set a filter
+	app.fileMentionSelector.SetFilter("mai")
+
+	// Backspace should trim the filter, not pass through to editor
+	handled := app.handleFileMentionInput(key.Key{Type: key.KeyBackspace})
+	if !handled {
+		t.Fatal("expected Backspace to be handled when file mention is visible")
+	}
+
+	got := app.fileMentionSelector.Filter()
+	if got != "ma" {
+		t.Errorf("expected filter 'ma' after backspace, got %q", got)
+	}
+}
+
+func TestHandleFileMentionInput_Backspace_EmptyFilter_Hides(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	app.fileMentionVisible = true
+
+	// Backspace on empty filter should hide the selector
+	handled := app.handleFileMentionInput(key.Key{Type: key.KeyBackspace})
+	if !handled {
+		t.Fatal("expected Backspace to be handled")
+	}
+
+	if app.fileMentionVisible {
+		t.Error("expected file mention to be hidden after backspace on empty filter")
 	}
 }

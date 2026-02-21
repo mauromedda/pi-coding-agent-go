@@ -122,6 +122,17 @@ func isBinaryExt(ext string) bool {
 	return binaryExts[ext]
 }
 
+// SetItems replaces the file list and refilters.
+func (fm *FileMentionSelector) SetItems(items []FileInfo) {
+	fm.mu.Lock()
+	fm.items = items
+	fm.selected = 0
+	fm.scrollOff = 0
+	fm.applyFilterLocked()
+	fm.dirty = true
+	fm.mu.Unlock()
+}
+
 // SetFilter sets the fuzzy filter string and refilters
 func (fm *FileMentionSelector) SetFilter(f string) {
 	fm.mu.Lock()

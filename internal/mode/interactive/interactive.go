@@ -75,9 +75,10 @@ type App struct {
 	version      string
 
 	// TUI components
-	editor    *component.Editor
-	editorSep *components.Separator // permanent separator above editor
-	footer    *components.Footer
+	editor       *component.Editor
+	editorSep    *components.Separator // permanent separator above editor
+	editorSepBot *components.Separator // permanent separator below editor
+	footer       *components.Footer
 	current   *components.AssistantMessage // current streaming response
 
 	// File mention selector (for @ file autocomplete)
@@ -175,8 +176,9 @@ func (a *App) Run() error {
 	// Detect git branch
 	a.gitBranch = detectGitBranch()
 
-	// Set up editor separator, editor, and footer
+	// Set up editor separators, editor, and footer
 	a.editorSep = components.NewSeparator()
+	a.editorSepBot = components.NewSeparator()
 	a.editor = component.NewEditor()
 	a.editor.SetFocused(true)
 	a.editor.SetPrompt("❯ ")
@@ -187,6 +189,7 @@ func (a *App) Run() error {
 	container := a.tui.Container()
 	container.Add(a.editorSep)
 	container.Add(a.editor)
+	container.Add(a.editorSepBot)
 	container.Add(a.footer)
 
 	// Start TUI render loop
@@ -225,15 +228,15 @@ func (a *App) printWelcome(container *tuipkg.Container) {
 	}
 
 	welcome := components.NewWelcomeMessage(ver, modelName, cwd, len(a.tools))
-	sep := components.NewSeparator()
 
 	container.Remove(a.editorSep)
 	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
 	container.Remove(a.footer)
 	container.Add(welcome)
-	container.Add(sep)
 	container.Add(a.editorSep)
 	container.Add(a.editor)
+	container.Add(a.editorSepBot)
 	container.Add(a.footer)
 }
 
@@ -334,6 +337,7 @@ func (a *App) submitPrompt(text string) {
 	// Remove editor+footer temporarily
 	container.Remove(a.editorSep)
 	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
 	container.Remove(a.footer)
 
 	// Add user message
@@ -346,6 +350,7 @@ func (a *App) submitPrompt(text string) {
 	// Re-add separator+editor+footer at bottom
 	container.Add(a.editorSep)
 	container.Add(a.editor)
+	container.Add(a.editorSepBot)
 	container.Add(a.footer)
 
 	// Append to conversation history
@@ -393,6 +398,7 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 	// Display result
 	container.Remove(a.editorSep)
 	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
 	container.Remove(a.footer)
 
 	container.Add(components.NewUserMessage(text))
@@ -407,6 +413,7 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 
 	container.Add(a.editorSep)
 	container.Add(a.editor)
+	container.Add(a.editorSepBot)
 	container.Add(a.footer)
 
 	a.updateFooter()
@@ -452,6 +459,29 @@ func (a *App) handleFileMentionInput(k key.Key) bool {
 	case key.KeyUp, key.KeyDown:
 		// Navigation handled by selector
 		a.fileMentionSelector.HandleInput(k.String())
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyTab:
+		// Accept selection (same as Enter)
+		filePath := a.fileMentionSelector.SelectionAccepted()
+		a.hideFileMentionSelector()
+		if filePath != "" {
+			currentText := a.editor.Text()
+			newText := currentText + "@" + filePath
+			a.editor.SetText(newText)
+		}
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyBackspace:
+		// Trim the filter; if already empty, close the selector
+		filter := a.fileMentionSelector.Filter()
+		if len(filter) > 0 {
+			a.fileMentionSelector.SetFilter(filter[:len(filter)-1])
+		} else {
+			a.hideFileMentionSelector()
+		}
 		a.tui.RequestRender()
 		return true
 
@@ -555,10 +585,12 @@ func (a *App) runAgent() {
 			// Insert before editor separator
 			container.Remove(a.editorSep)
 			container.Remove(a.editor)
+			container.Remove(a.editorSepBot)
 			container.Remove(a.footer)
 			container.Add(te)
 			container.Add(a.editorSep)
 			container.Add(a.editor)
+			container.Add(a.editorSepBot)
 			container.Add(a.footer)
 
 		case agent.EventToolUpdate:
