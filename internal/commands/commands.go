@@ -1,5 +1,5 @@
 // ABOUTME: Slash command registry and dispatch for interactive mode
-// ABOUTME: Provides 17 slash commands: clear, compact, config, context, cost, export, help, init, mcp, memory, model, plan, rename, resume, sandbox, status, vim
+// ABOUTME: Provides 18 slash commands: clear, compact, config, context, cost, exit, export, help, init, mcp, memory, model, plan, rename, resume, sandbox, status, vim
 
 package commands
 
@@ -28,6 +28,9 @@ type CommandContext struct {
 	SetModel     func(string)
 	ClearHistory func()
 	CompactFn    func() string
+
+	// Exit callback. Nilable; /exit returns "not available" when nil.
+	ExitFn func()
 
 	// Extended command callbacks. All nilable; commands return "not available" when nil.
 	MemoryEntries      []string
@@ -203,6 +206,17 @@ func (r *Registry) registerCoreCommands() {
 					"Session cost: $%.4f\nTotal tokens: %d",
 					ctx.TotalCost, ctx.TotalTokens,
 				), nil
+			},
+		},
+		{
+			Name:        "exit",
+			Description: "Exit the application",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ExitFn == nil {
+					return "Exit not available.", nil
+				}
+				ctx.ExitFn()
+				return "Goodbye.", nil
 			},
 		},
 		{

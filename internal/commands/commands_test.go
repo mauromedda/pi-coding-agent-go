@@ -62,6 +62,9 @@ func testContext() (*CommandContext, *testCallbacks) {
 			cb.exportArg = path
 			return nil
 		},
+		ExitFn: func() {
+			cb.exitCalled = true
+		},
 	}
 	return ctx, cb
 }
@@ -77,6 +80,7 @@ type testCallbacks struct {
 	toggleVimCalled    bool
 	mcpCalled          bool
 	exportArg          string
+	exitCalled         bool
 }
 
 func TestRegistry_AllCommandsRegistered(t *testing.T) {
@@ -86,7 +90,7 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 
 	expected := []string{
 		"clear", "compact", "config", "context", "cost",
-		"export", "help", "init", "mcp", "memory",
+		"exit", "export", "help", "init", "mcp", "memory",
 		"model", "plan", "rename", "resume", "sandbox",
 		"status", "vim",
 	}
@@ -185,7 +189,7 @@ func TestDispatch_Help(t *testing.T) {
 	// Help must list all commands.
 	for _, name := range []string{
 		"/clear", "/compact", "/config", "/context", "/cost",
-		"/export", "/help", "/init", "/mcp", "/memory",
+		"/exit", "/export", "/help", "/init", "/mcp", "/memory",
 		"/model", "/plan", "/rename", "/resume", "/sandbox",
 		"/status", "/vim",
 	} {
@@ -654,6 +658,40 @@ func TestDispatch_Export_NilCallback(t *testing.T) {
 	ctx.ExportConversation = nil
 
 	result, err := reg.Dispatch(ctx, "/export /tmp/chat.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil callback, got %q", result)
+	}
+}
+
+func TestDispatch_Exit(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+
+	result, err := reg.Dispatch(ctx, "/exit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.exitCalled {
+		t.Error("ExitFn was not called")
+	}
+	if !strings.Contains(strings.ToLower(result), "goodbye") {
+		t.Errorf("expected goodbye message, got %q", result)
+	}
+}
+
+func TestDispatch_Exit_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ExitFn = nil
+
+	result, err := reg.Dispatch(ctx, "/exit")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

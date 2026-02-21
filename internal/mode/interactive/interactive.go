@@ -318,6 +318,9 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 		GetMode: func() string {
 			return a.mode.String()
 		},
+		ExitFn: func() {
+			a.cancelFn()
+		},
 	}
 
 	result, err := a.cmdRegistry.Dispatch(cmdCtx, text)
