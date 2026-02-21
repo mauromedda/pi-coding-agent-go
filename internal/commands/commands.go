@@ -32,6 +32,9 @@ type CommandContext struct {
 	// Exit callback. Nilable; /exit returns "not available" when nil.
 	ExitFn func()
 
+	// ClearTUI clears the visual TUI (screen + components). Nilable.
+	ClearTUI func()
+
 	// Extended command callbacks. All nilable; commands return "not available" when nil.
 	MemoryEntries      []string
 	ToggleMode         func()
@@ -114,6 +117,9 @@ func (r *Registry) registerCoreCommands() {
 			Description: "Clear conversation history",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				ctx.ClearHistory()
+				if ctx.ClearTUI != nil {
+					ctx.ClearTUI()
+				}
 				return "Conversation cleared.", nil
 			},
 		},

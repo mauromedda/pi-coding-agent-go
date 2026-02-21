@@ -26,6 +26,9 @@ func testContext() (*CommandContext, *testCallbacks) {
 		ClearHistory: func() {
 			cb.clearCalled = true
 		},
+		ClearTUI: func() {
+			cb.clearTUICalled = true
+		},
 		CompactFn: func() string {
 			cb.compactCalled = true
 			return "Conversation compacted to 3 messages."
@@ -72,6 +75,7 @@ func testContext() (*CommandContext, *testCallbacks) {
 type testCallbacks struct {
 	modelSet           string
 	clearCalled        bool
+	clearTUICalled     bool
 	compactCalled      bool
 	toggleModeCalled   bool
 	renameArg          string
@@ -136,6 +140,29 @@ func TestDispatch_Clear(t *testing.T) {
 	if !cb.clearCalled {
 		t.Error("ClearHistory was not called")
 	}
+	if !cb.clearTUICalled {
+		t.Error("ClearTUI was not called")
+	}
+	if !strings.Contains(result, "cleared") {
+		t.Errorf("expected result to contain 'cleared', got %q", result)
+	}
+}
+
+func TestDispatch_Clear_NilClearTUI(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+	ctx.ClearTUI = nil
+
+	result, err := reg.Dispatch(ctx, "/clear")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.clearCalled {
+		t.Error("ClearHistory was not called")
+	}
+	// Should not panic even with nil ClearTUI
 	if !strings.Contains(result, "cleared") {
 		t.Errorf("expected result to contain 'cleared', got %q", result)
 	}

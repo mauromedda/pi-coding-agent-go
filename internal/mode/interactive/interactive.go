@@ -386,6 +386,22 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 		ClearHistory: func() {
 			a.messages = nil
 		},
+		ClearTUI: func() {
+			container.Clear()
+			// Re-add permanent components
+			container.Add(a.editorSep)
+			container.Add(a.editor)
+			container.Add(a.editorSepBot)
+			container.Add(a.footer)
+			a.current = nil
+			// Reset token stats
+			a.totalInputTokens.Store(0)
+			a.totalOutputTokens.Store(0)
+			a.lastContextTokens.Store(0)
+			a.tokPerSec.Store(0)
+			a.tui.FullClear()
+			a.updateFooter()
+		},
 		CompactFn: func() string {
 			prev := len(a.messages)
 			compacted, summary, err := session.Compact(a.messages)
@@ -413,6 +429,12 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 	}
 
 	result, err := a.cmdRegistry.Dispatch(cmdCtx, text)
+
+	// /clear already reset the TUI via ClearTUI callback; skip normal display
+	if strings.TrimSpace(text) == "/clear" {
+		a.tui.RequestRender()
+		return
+	}
 
 	// Display result
 	container.Remove(a.editorSep)
