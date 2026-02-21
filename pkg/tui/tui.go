@@ -363,6 +363,8 @@ func relativeRender(state *renderState, prev, curr []string, termWidth int) stri
 			moveCursor(&b, numBuf[:], state.cursorRow, len(curr)-1)
 			state.cursorRow = len(curr) - 1
 		}
+		// Reset so we don't re-clear on next frame
+		state.maxRendered = len(curr)
 	}
 
 	if len(curr) > state.maxRendered {

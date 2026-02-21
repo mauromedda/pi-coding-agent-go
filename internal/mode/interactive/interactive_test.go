@@ -191,8 +191,8 @@ func TestUpdateFooter_WithTokenStats(t *testing.T) {
 		Checker:  checker,
 	})
 	app.footer = components.NewFooter()
-	app.totalInputTokens = 12000
-	app.totalOutputTokens = 8000
+	app.totalInputTokens.Store(12000)
+	app.totalOutputTokens.Store(8000)
 	app.gitBranch = "main"
 
 	app.updateFooter()

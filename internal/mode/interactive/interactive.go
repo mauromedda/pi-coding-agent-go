@@ -85,8 +85,8 @@ type App struct {
 	cmdRegistry  *commands.Registry
 
 	// Token stats + context info
-	totalInputTokens  int
-	totalOutputTokens int
+	totalInputTokens  atomic.Int64
+	totalOutputTokens atomic.Int64
 	gitBranch         string
 }
 
@@ -439,8 +439,8 @@ func (a *App) runAgent() {
 
 		case agent.EventUsageUpdate:
 			if evt.Usage != nil {
-				a.totalInputTokens += evt.Usage.InputTokens
-				a.totalOutputTokens += evt.Usage.OutputTokens
+				a.totalInputTokens.Add(int64(evt.Usage.InputTokens))
+				a.totalOutputTokens.Add(int64(evt.Usage.OutputTokens))
 				a.updateFooter()
 			}
 
@@ -521,10 +521,12 @@ func (a *App) updateFooter() {
 	parts = append(parts, modelName)
 
 	// Token stats (only if we have any)
-	if a.totalInputTokens > 0 || a.totalOutputTokens > 0 {
+	inTok := int(a.totalInputTokens.Load())
+	outTok := int(a.totalOutputTokens.Load())
+	if inTok > 0 || outTok > 0 {
 		stats := fmt.Sprintf("\u2191%s \u2193%s",
-			formatTokenCount(a.totalInputTokens),
-			formatTokenCount(a.totalOutputTokens))
+			formatTokenCount(inTok),
+			formatTokenCount(outTok))
 		parts = append(parts, stats)
 	}
 

@@ -282,6 +282,39 @@ func TestTUI_UpdateMode(t *testing.T) {
 	}
 }
 
+func TestTUI_ShrinkMode(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+
+	comp := &mockComponent{lines: []string{"line1", "line2", "line3", "line4", "line5"}}
+	ui.Container().Add(comp)
+
+	// First render: 5 lines
+	ui.RenderOnce()
+	out.Reset()
+
+	// Shrink to 3 lines
+	comp.lines = []string{"line1", "line2", "line3"}
+	ui.RenderOnce()
+	firstShrink := out.String()
+
+	// Should contain erase sequences for the removed lines
+	if !strings.Contains(firstShrink, "\x1b[2K") {
+		t.Errorf("shrink should clear excess lines, got %q", firstShrink)
+	}
+
+	// Second render with same 3 lines: should NOT re-clear
+	out.Reset()
+	ui.RenderOnce()
+	secondRender := out.String()
+
+	if strings.Contains(secondRender, "\x1b[2K") {
+		t.Errorf("second render after shrink should not re-clear lines, got %q", secondRender)
+	}
+}
+
 func TestTUI_WidthChange(t *testing.T) {
 	t.Parallel()
 
