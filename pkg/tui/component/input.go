@@ -31,6 +31,11 @@ type Input struct {
 	scrollOff   int
 	ring        *killring.KillRing
 	undoStack   *undo.Stack[inputState]
+
+	// Vim mode fields
+	vimEnabled bool
+	vimMode    VimMode
+	pendingOp  rune // 0 = none, 'd' = delete, 'c' = change
 }
 
 // NewInput creates a new empty Input component.
@@ -86,6 +91,18 @@ func (inp *Input) Invalidate() {
 // HandleInput processes raw terminal input data.
 func (inp *Input) HandleInput(data string) {
 	k := key.ParseKey(data)
+
+	// Vim mode: in Normal or Visual mode, delegate to vim handler
+	if inp.vimEnabled && inp.vimMode != VimInsert {
+		inp.handleVimKey(k)
+		return
+	}
+
+	// Vim mode: in Insert mode, Esc returns to Normal
+	if inp.vimEnabled && k.Type == key.KeyEscape {
+		inp.vimMode = VimNormal
+		return
+	}
 
 	switch k.Type {
 	case key.KeyRune:
