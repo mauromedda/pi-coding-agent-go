@@ -104,6 +104,22 @@ func TestNoop_WrapCommand(t *testing.T) {
 	}
 }
 
+func TestNoop_WrapCommand_PerCallOpts(t *testing.T) {
+	workDir := t.TempDir()
+	n := &noopSandbox{opts: Opts{WorkDir: workDir}}
+	cmd := exec.CommandContext(context.Background(), "echo", "hello")
+
+	overrideDir := t.TempDir()
+	wrapped, err := n.WrapCommand(cmd, Opts{WorkDir: overrideDir})
+	if err != nil {
+		t.Fatalf("WrapCommand: %v", err)
+	}
+	// Per-call opts should set cmd.Dir to override workdir
+	if wrapped.Dir != overrideDir {
+		t.Errorf("expected Dir=%q from per-call opts, got %q", overrideDir, wrapped.Dir)
+	}
+}
+
 func TestOpts_Defaults(t *testing.T) {
 	opts := Opts{}
 	if opts.AllowNetwork {
