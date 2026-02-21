@@ -110,6 +110,15 @@ func (c *Checker) AddAllowRule(rule Rule) {
 	c.allowRules = append(c.allowRules, rule)
 }
 
+// AddGlobAllowRule adds a glob-based allow rule for a tool with specifier.
+func (c *Checker) AddGlobAllowRule(tool, specifier string) {
+	c.globRules = append(c.globRules, GlobRule{
+		Tool:      tool,
+		Specifier: specifier,
+		Action:    ActionAllow,
+	})
+}
+
 // AddDenyRule adds a rule that blocks a tool.
 func (c *Checker) AddDenyRule(rule Rule) {
 	rule.Allow = false

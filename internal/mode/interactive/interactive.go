@@ -197,13 +197,17 @@ func (a *App) printWelcome(container *tuipkg.Container) {
 
 // onKey handles a single key event from the StdinBuffer goroutine.
 func (a *App) onKey(k key.Key) {
-	// 1. Active overlay (permission dialog): route y/n/Esc
+	// 1. Active overlay (permission dialog): route y/a/n/Esc
 	if a.activeDialog != nil {
 		switch k.Type {
 		case key.KeyRune:
 			switch k.Rune {
 			case 'y', 'Y':
 				a.activeDialog.Allow()
+				a.tui.PopOverlay()
+				a.activeDialog = nil
+			case 'a', 'A':
+				a.activeDialog.AllowAlways()
 				a.tui.PopOverlay()
 				a.activeDialog = nil
 			case 'n', 'N':
@@ -489,9 +493,24 @@ func (a *App) askPermission(tool string, args map[string]any) (bool, error) {
 	})
 	a.tui.RequestRender()
 
-	// Blocks until user responds (y/n/Esc in onKey)
-	allowed := dialog.Wait()
-	return allowed, nil
+	// Blocks until user responds (y/a/n/Esc in onKey)
+	resp := dialog.Wait()
+
+	switch resp {
+	case components.PermAllowAlways:
+		// Persist an allow rule so future invocations of this tool are auto-allowed
+		specifier := permission.ExtractSpecifier(tool, args)
+		if specifier != "" {
+			a.checker.AddGlobAllowRule(tool, specifier)
+		} else {
+			a.checker.AddAllowRule(permission.Rule{Tool: tool})
+		}
+		return true, nil
+	case components.PermAllow:
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // updateFooter refreshes the footer content with cwd, git branch, mode, model, and token stats.
