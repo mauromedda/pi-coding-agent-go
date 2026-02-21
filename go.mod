@@ -6,6 +6,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.20
 	github.com/rivo/uniseg v0.4.7
 	github.com/sahilm/fuzzy v0.1.1
+	golang.org/x/sync v0.19.0
 	golang.org/x/term v0.40.0
 )
 

@@ -1,0 +1,107 @@
+// ABOUTME: Tests for config loading, merging, and auth storage
+// ABOUTME: Uses temp directories for isolated file-based tests
+
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestMerge(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{Model: "default-model", Temperature: 0.7}
+	project := &Settings{Model: "project-model"}
+
+	result := merge(global, project)
+
+	if result.Model != "project-model" {
+		t.Errorf("Model = %q, want %q", result.Model, "project-model")
+	}
+	if result.Temperature != 0.7 {
+		t.Errorf("Temperature = %f, want 0.7", result.Temperature)
+	}
+}
+
+func TestMerge_Nil(t *testing.T) {
+	t.Parallel()
+
+	result := merge(nil, nil)
+	if result == nil {
+		t.Fatal("merge(nil, nil) should return non-nil")
+	}
+}
+
+func TestMerge_EnvMerge(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{Env: map[string]string{"A": "1", "B": "2"}}
+	project := &Settings{Env: map[string]string{"B": "override", "C": "3"}}
+
+	result := merge(global, project)
+
+	if result.Env["A"] != "1" {
+		t.Error("expected A=1 from global")
+	}
+	if result.Env["B"] != "override" {
+		t.Error("expected B=override from project")
+	}
+	if result.Env["C"] != "3" {
+		t.Error("expected C=3 from project")
+	}
+}
+
+func TestLoadFile_NotExist(t *testing.T) {
+	t.Parallel()
+
+	s, err := loadFile("/nonexistent/path/config.json")
+	if !os.IsNotExist(err) {
+		t.Errorf("expected not exist error, got %v", err)
+	}
+	if s == nil {
+		t.Error("expected non-nil default settings")
+	}
+}
+
+func TestLoadFile_ValidJSON(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"model":"test"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Model != "test" {
+		t.Errorf("Model = %q, want %q", s.Model, "test")
+	}
+}
+
+func TestAuthStore_GetKey_EnvFallback(t *testing.T) {
+	store := &AuthStore{Keys: make(map[string]string)}
+
+	t.Setenv("PI_API_KEY_ANTHROPIC", "test-key-123")
+
+	got := store.GetKey("ANTHROPIC")
+	if got != "test-key-123" {
+		t.Errorf("GetKey(ANTHROPIC) = %q, want %q", got, "test-key-123")
+	}
+}
+
+func TestAuthStore_SetAndGet(t *testing.T) {
+	t.Parallel()
+
+	store := &AuthStore{Keys: make(map[string]string)}
+	store.SetKey("openai", "sk-test")
+
+	got := store.GetKey("openai")
+	if got != "sk-test" {
+		t.Errorf("GetKey = %q, want %q", got, "sk-test")
+	}
+}
