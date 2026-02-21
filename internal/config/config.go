@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // Settings holds the merged configuration.
@@ -18,6 +19,30 @@ type Settings struct {
 	Yolo        bool              `json:"yolo,omitempty"`
 	Thinking    bool              `json:"thinking,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
+
+	// Permission rules
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+	Ask   []string `json:"ask,omitempty"`
+
+	// Hooks: event name -> list of hook definitions
+	Hooks map[string][]HookDef `json:"hooks,omitempty"`
+
+	// Sandbox configuration
+	Sandbox SandboxSettings `json:"sandbox,omitempty"`
+}
+
+// HookDef describes a lifecycle hook.
+type HookDef struct {
+	Matcher string `json:"matcher,omitempty"` // Tool name pattern (regex)
+	Type    string `json:"type,omitempty"`    // "command"
+	Command string `json:"command,omitempty"` // Shell command to run
+}
+
+// SandboxSettings configures the OS sandbox.
+type SandboxSettings struct {
+	ExcludedCommands []string `json:"excludedCommands,omitempty"`
+	AllowedDomains   []string `json:"allowedDomains,omitempty"`
 }
 
 // Load reads and merges global and project-local settings.
@@ -49,6 +74,69 @@ func loadFile(path string) (*Settings, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return &s, nil
+}
+
+// SettingsLevel represents the precedence level of a settings source.
+type SettingsLevel int
+
+const (
+	LevelUser    SettingsLevel = iota // ~/.pi-go/settings.json
+	LevelProject                      // .pi-go/settings.json
+	LevelLocal                        // .pi-go/settings.local.json (gitignored)
+	LevelCLI                          // Command-line overrides
+	LevelManaged                      // /Library/Application Support/pi-go/ or /etc/pi-go/
+)
+
+// LoadAllWithHome reads settings from all five levels with an explicit home dir.
+func LoadAllWithHome(projectRoot, homeDir string, cliOverrides *Settings) (*Settings, error) {
+	result := &Settings{}
+
+	// Level 0: User settings (old config.json + new settings.json)
+	sources := []string{
+		filepath.Join(homeDir, ".pi-go", "config.json"),
+		filepath.Join(homeDir, ".pi-go", "settings.json"),
+	}
+	for _, path := range sources {
+		if s, err := loadFile(path); err == nil {
+			result = merge(result, s)
+		}
+	}
+
+	// Level 1: Project settings
+	projectSources := []string{
+		filepath.Join(projectRoot, ".pi-go", "config.json"),
+		filepath.Join(projectRoot, ".pi-go", "settings.json"),
+	}
+	for _, path := range projectSources {
+		if s, err := loadFile(path); err == nil {
+			result = merge(result, s)
+		}
+	}
+
+	// Level 2: Local settings (gitignored)
+	localPath := filepath.Join(projectRoot, ".pi-go", "settings.local.json")
+	if s, err := loadFile(localPath); err == nil {
+		result = merge(result, s)
+	}
+
+	// Level 3: CLI overrides
+	if cliOverrides != nil {
+		result = merge(result, cliOverrides)
+	}
+
+	// Level 4: Managed settings (enterprise/system)
+	managedPath := ManagedSettingsFile()
+	if s, err := loadFile(managedPath); err == nil {
+		result = merge(result, s)
+	}
+
+	return result, nil
+}
+
+// LoadAll reads settings from all five levels using the real home directory.
+func LoadAll(projectRoot string, cliOverrides *Settings) (*Settings, error) {
+	home, _ := os.UserHomeDir()
+	return LoadAllWithHome(projectRoot, home, cliOverrides)
 }
 
 // merge deep-merges project settings onto global settings.
@@ -90,6 +178,35 @@ func merge(global, project *Settings) *Settings {
 		for k, v := range project.Env {
 			result.Env[k] = v
 		}
+	}
+
+	// Permission rules: override entirely if present
+	if len(project.Allow) > 0 {
+		result.Allow = project.Allow
+	}
+	if len(project.Deny) > 0 {
+		result.Deny = project.Deny
+	}
+	if len(project.Ask) > 0 {
+		result.Ask = project.Ask
+	}
+
+	// Hooks: merge by event name
+	if len(project.Hooks) > 0 {
+		if result.Hooks == nil {
+			result.Hooks = make(map[string][]HookDef)
+		}
+		for event, hooks := range project.Hooks {
+			result.Hooks[event] = hooks
+		}
+	}
+
+	// Sandbox: override if present
+	if len(project.Sandbox.ExcludedCommands) > 0 {
+		result.Sandbox.ExcludedCommands = project.Sandbox.ExcludedCommands
+	}
+	if len(project.Sandbox.AllowedDomains) > 0 {
+		result.Sandbox.AllowedDomains = project.Sandbox.AllowedDomains
 	}
 
 	return &result

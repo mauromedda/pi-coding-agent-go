@@ -61,6 +61,53 @@ func SkillsDirs(projectRoot string) []string {
 	return dirs
 }
 
+// UserSettingsFile returns the path to the user settings file.
+func UserSettingsFile() string {
+	return filepath.Join(GlobalDir(), "settings.json")
+}
+
+// ProjectSettingsFile returns the path to the project settings file.
+func ProjectSettingsFile(projectRoot string) string {
+	return filepath.Join(ProjectDir(projectRoot), "settings.json")
+}
+
+// LocalSettingsFile returns the path to the local (gitignored) settings file.
+func LocalSettingsFile(projectRoot string) string {
+	return filepath.Join(ProjectDir(projectRoot), "settings.local.json")
+}
+
+// ManagedSettingsFile returns the platform-dependent managed settings path.
+func ManagedSettingsFile() string {
+	switch goos := os.Getenv("GOOS"); {
+	case goos == "linux":
+		return "/etc/pi-go/settings.json"
+	default:
+		// macOS / fallback
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			return filepath.Join(home, "Library", "Application Support", "pi-go", "settings.json")
+		}
+		return filepath.Join("/etc", "pi-go", "settings.json")
+	}
+}
+
+// RulesDirs returns the rules directories for a project.
+func RulesDirs(projectRoot string) []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(ProjectDir(projectRoot), "rules"),
+	}
+	if home != "" {
+		dirs = append(dirs, filepath.Join(home, ".claude", "rules"))
+	}
+	return dirs
+}
+
+// AgentsDir returns the agents directory for a project.
+func AgentsDir(projectRoot string) string {
+	return filepath.Join(ProjectDir(projectRoot), "agents")
+}
+
 // EnsureDir creates a directory and all parents if they don't exist.
 func EnsureDir(path string) error {
 	return os.MkdirAll(path, 0o755)
