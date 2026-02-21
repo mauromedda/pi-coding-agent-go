@@ -3,7 +3,10 @@
 
 package width
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestVisibleWidth(t *testing.T) {
 	t.Parallel()
@@ -61,6 +64,33 @@ func TestIsPlainASCII(t *testing.T) {
 	}
 }
 
+func TestCache_EvictionOrder(t *testing.T) {
+	t.Parallel()
+
+	c := newCache(3)
+	c.put("a", 1)
+	c.put("b", 2)
+	c.put("c", 3)
+
+	// Access "a" to promote it; "b" becomes LRU.
+	if v, ok := c.get("a"); !ok || v != 1 {
+		t.Fatalf("get(a) = %d, %v; want 1, true", v, ok)
+	}
+
+	// Add "d"; should evict "b" (LRU).
+	c.put("d", 4)
+
+	if _, ok := c.get("b"); ok {
+		t.Error("expected 'b' to be evicted")
+	}
+	if v, ok := c.get("a"); !ok || v != 1 {
+		t.Errorf("get(a) = %d, %v; want 1, true", v, ok)
+	}
+	if v, ok := c.get("d"); !ok || v != 4 {
+		t.Errorf("get(d) = %d, %v; want 4, true", v, ok)
+	}
+}
+
 func BenchmarkVisibleWidth_ASCII(b *testing.B) {
 	s := "This is a plain ASCII string for benchmarking"
 	for b.Loop() {
@@ -79,5 +109,21 @@ func BenchmarkVisibleWidth_Unicode(b *testing.B) {
 	s := "你好世界 Hello 🌍"
 	for b.Loop() {
 		VisibleWidth(s)
+	}
+}
+
+func BenchmarkCache_PutGet(b *testing.B) {
+	c := newCache(256)
+	keys := make([]string, 512)
+	for i := range keys {
+		keys[i] = strings.Repeat("x", i+1)
+	}
+	for b.Loop() {
+		for i, k := range keys {
+			c.put(k, i)
+		}
+		for _, k := range keys {
+			c.get(k)
+		}
 	}
 }

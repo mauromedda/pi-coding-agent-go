@@ -21,10 +21,14 @@ type Reader struct {
 	scanner *bufio.Scanner
 }
 
+const maxLineSize = 1024 * 1024 // 1MB max line size
+
 // NewReader creates a new SSE reader from the given io.Reader.
 func NewReader(r io.Reader) *Reader {
+	s := bufio.NewScanner(r)
+	s.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 	return &Reader{
-		scanner: bufio.NewScanner(r),
+		scanner: s,
 	}
 }
 
@@ -32,6 +36,7 @@ func NewReader(r io.Reader) *Reader {
 // Returns nil, io.EOF when the stream ends.
 func (r *Reader) Next() (*Event, error) {
 	var ev Event
+	var dataLines []string
 	var hasContent bool
 
 	for r.scanner.Scan() {
@@ -39,6 +44,9 @@ func (r *Reader) Next() (*Event, error) {
 
 		if line == "" {
 			if hasContent {
+				if len(dataLines) > 0 {
+					ev.Data = strings.Join(dataLines, "\n")
+				}
 				return &ev, nil
 			}
 			continue
@@ -49,7 +57,7 @@ func (r *Reader) Next() (*Event, error) {
 		}
 
 		field, value := parseLine(line)
-		hasContent = applyField(&ev, field, value, hasContent)
+		hasContent = applyField(&ev, &dataLines, field, value, hasContent)
 	}
 
 	if err := r.scanner.Err(); err != nil {
@@ -57,6 +65,9 @@ func (r *Reader) Next() (*Event, error) {
 	}
 
 	if hasContent {
+		if len(dataLines) > 0 {
+			ev.Data = strings.Join(dataLines, "\n")
+		}
 		return &ev, nil
 	}
 
@@ -82,16 +93,15 @@ func parseLine(line string) (string, string) {
 }
 
 // applyField applies a parsed field to the event and returns whether the event has content.
-func applyField(ev *Event, field, value string, hadContent bool) bool {
+// Data lines are accumulated in dataLines to avoid repeated string concatenation;
+// they are joined once when the event is complete.
+func applyField(ev *Event, dataLines *[]string, field, value string, hadContent bool) bool {
 	switch field {
 	case "event":
 		ev.Type = value
 		return true
 	case "data":
-		if ev.Data != "" {
-			ev.Data += "\n"
-		}
-		ev.Data += value
+		*dataLines = append(*dataLines, value)
 		return true
 	case "id":
 		ev.ID = value

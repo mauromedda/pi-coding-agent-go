@@ -46,7 +46,7 @@ func ExtractANSI(s string) []string {
 
 // containsESC is a fast check for the presence of ESC (0x1B).
 func containsESC(s string) bool {
-	return strings.ContainsRune(s, '\x1b')
+	return strings.IndexByte(s, 0x1b) >= 0
 }
 
 // skipANSISequence advances past an ANSI escape sequence starting at s[i].
@@ -131,7 +131,13 @@ func (a *ActiveSGR) String() string {
 	if len(a.codes) == 0 {
 		return ""
 	}
+	// Pre-grow builder to avoid repeated allocations.
+	n := 0
+	for _, c := range a.codes {
+		n += len(c)
+	}
 	var b strings.Builder
+	b.Grow(n)
 	for _, c := range a.codes {
 		b.WriteString(c)
 	}

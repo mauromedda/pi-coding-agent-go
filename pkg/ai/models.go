@@ -81,13 +81,18 @@ func BuiltinModels() []Model {
 	}
 }
 
-// FindModel looks up a model by ID from the built-in list.
-// Returns nil if not found.
-func FindModel(id string) *Model {
-	for _, m := range BuiltinModels() {
-		if m.ID == id {
-			return &m
-		}
+// modelIndex is a pre-built map for O(1) model lookups by ID.
+var modelIndex = func() map[string]*Model {
+	models := BuiltinModels()
+	idx := make(map[string]*Model, len(models))
+	for i := range models {
+		idx[models[i].ID] = &models[i]
 	}
-	return nil
+	return idx
+}()
+
+// FindModel looks up a model by ID from the built-in list.
+// Returns nil if not found. O(1) via pre-built index.
+func FindModel(id string) *Model {
+	return modelIndex[id]
 }

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -176,8 +177,13 @@ func (t *TUI) render() {
 		_, _ = t.writer.Write([]byte(syncOutput))
 	}
 
-	// Save current lines for next diff
-	saved := make([]string, len(lines))
+	// Save current lines for next diff, reusing the previous slice when possible.
+	saved := prevLines
+	if cap(saved) >= len(lines) {
+		saved = saved[:len(lines)]
+	} else {
+		saved = make([]string, len(lines))
+	}
 	copy(saved, lines)
 	t.mu.Lock()
 	t.previousLines = saved
@@ -248,6 +254,7 @@ func extractCursorPosition(lines []string) (row, col int) {
 // diffRender generates ANSI commands to update only changed lines.
 func diffRender(prev, curr []string, termWidth int) string {
 	var b strings.Builder
+	var numBuf [20]byte // scratch buffer for strconv.AppendInt
 
 	maxLines := len(curr)
 	if len(prev) > maxLines {
@@ -267,15 +274,19 @@ func diffRender(prev, curr []string, termWidth int) string {
 			continue
 		}
 
-		// Move to line, erase it, write new content
-		b.WriteString(fmt.Sprintf("\x1b[%d;1H", i+1)) // Move cursor
-		b.WriteString("\x1b[2K")                       // Erase line
+		// Move to line, erase it, write new content.
+		// Uses strconv.AppendInt to avoid fmt.Sprintf allocation.
+		b.WriteString("\x1b[")
+		b.Write(strconv.AppendInt(numBuf[:0], int64(i+1), 10))
+		b.WriteString(";1H\x1b[2K")
 		b.WriteString(currLine)
 	}
 
 	// Clear any remaining old lines
 	for i := len(curr); i < len(prev); i++ {
-		b.WriteString(fmt.Sprintf("\x1b[%d;1H\x1b[2K", i+1))
+		b.WriteString("\x1b[")
+		b.Write(strconv.AppendInt(numBuf[:0], int64(i+1), 10))
+		b.WriteString(";1H\x1b[2K")
 	}
 
 	return b.String()

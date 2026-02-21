@@ -4,7 +4,9 @@
 package width
 
 import (
+	"container/list"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/rivo/uniseg"
@@ -18,49 +20,53 @@ type lruEntry struct {
 	value int
 }
 
-// cache is a simple LRU cache for non-ASCII string widths.
+// cache is an O(1) LRU cache for non-ASCII string widths.
+// Uses container/list for O(1) eviction and sync.RWMutex for concurrent reads.
 type cache struct {
-	mu      sync.Mutex
-	entries []lruEntry
-	index   map[string]int
-	size    int
+	mu    sync.RWMutex
+	items map[string]*list.Element
+	order *list.List
+	size  int
 }
 
 func newCache(size int) *cache {
 	return &cache{
-		entries: make([]lruEntry, 0, size),
-		index:   make(map[string]int, size),
-		size:    size,
+		items: make(map[string]*list.Element, size),
+		order: list.New(),
+		size:  size,
 	}
 }
 
 func (c *cache) get(key string) (int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if idx, ok := c.index[key]; ok {
-		return c.entries[idx].value, true
+	c.mu.RLock()
+	elem, ok := c.items[key]
+	c.mu.RUnlock()
+	if !ok {
+		return 0, false
 	}
-	return 0, false
+	// Promote to front (requires write lock)
+	c.mu.Lock()
+	c.order.MoveToFront(elem)
+	c.mu.Unlock()
+	return elem.Value.(lruEntry).value, true
 }
 
 func (c *cache) put(key string, value int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.index[key]; ok {
+	if _, ok := c.items[key]; ok {
 		return
 	}
-	if len(c.entries) >= c.size {
-		// Evict oldest
-		old := c.entries[0]
-		delete(c.index, old.key)
-		c.entries = c.entries[1:]
-		// Re-index
-		for i, e := range c.entries {
-			c.index[e.key] = i
+	if c.order.Len() >= c.size {
+		// Evict least recently used (back of list)
+		back := c.order.Back()
+		if back != nil {
+			c.order.Remove(back)
+			delete(c.items, back.Value.(lruEntry).key)
 		}
 	}
-	c.index[key] = len(c.entries)
-	c.entries = append(c.entries, lruEntry{key: key, value: value})
+	elem := c.order.PushFront(lruEntry{key: key, value: value})
+	c.items[key] = elem
 }
 
 var widthCache = newCache(cacheSize)
@@ -117,7 +123,7 @@ func graphemeWidth(cluster string) int {
 	if len(cluster) == 0 {
 		return 0
 	}
-	// Use the first rune's width as baseline
-	r := []rune(cluster)
-	return runewidth.RuneWidth(r[0])
+	// Decode the first rune without allocating a []rune slice.
+	r, _ := utf8.DecodeRuneInString(cluster)
+	return runewidth.RuneWidth(r)
 }
