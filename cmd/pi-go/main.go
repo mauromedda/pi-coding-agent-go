@@ -15,6 +15,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/internal/prompt"
+	"github.com/mauromedda/pi-coding-agent-go/internal/statusline"
 	"github.com/mauromedda/pi-coding-agent-go/internal/tools"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/anthropic"
@@ -101,9 +102,30 @@ func run(args cliArgs) error {
 	// W1/W3: Registry with sandbox registers all builtins including web tools
 	toolRegistry := tools.NewRegistryWithSandbox(pathSandbox)
 
-	// W7: Create checker from settings with glob rules
+	// Apply --disallowedTools: remove tools before creating checker
+	if args.disallowedTools != "" {
+		for _, spec := range strings.Split(args.disallowedTools, ",") {
+			spec = strings.TrimSpace(spec)
+			if spec != "" {
+				toolRegistry.Remove(spec)
+			}
+		}
+	}
+
+	// W7: Create checker from settings with glob rules using effective permissions
 	permMode := resolvePermissionMode(args, cfg)
-	checker := permission.NewCheckerFromSettings(permMode, nil, cfg.Allow, cfg.Deny, cfg.Ask)
+	allow, deny, ask := cfg.EffectivePermissions()
+	checker := permission.NewCheckerFromSettings(permMode, nil, allow, deny, ask)
+
+	// Apply --allowedTools: add as glob allow rules
+	if args.allowedTools != "" {
+		for _, spec := range strings.Split(args.allowedTools, ",") {
+			spec = strings.TrimSpace(spec)
+			if spec != "" {
+				checker.AddAllowRule(permission.Rule{Tool: spec})
+			}
+		}
+	}
 
 	// W2: Load memory hierarchy and format for system prompt
 	memEntries, _ := memory.Load(cwd, home)
@@ -122,6 +144,22 @@ func run(args cliArgs) error {
 		ContextFiles:  prompt.LoadContextFiles(cwd),
 		Style:         args.style,
 	})
+
+	// -p "prompt" shorthand: non-interactive mode with inline prompt
+	if args.prompt != "" {
+		return print.RunWithConfig(context.Background(), print.Config{
+			OutputFormat: args.outputFormat,
+			MaxTurns:     args.maxTurns,
+			MaxBudgetUSD: args.maxBudget,
+			SystemPrompt: systemPrompt,
+			InputFormat:  args.inputFormat,
+			JSONSchema:   args.jsonSchema,
+		}, print.Deps{
+			Provider: provider,
+			Model:    model,
+			Tools:    toolRegistry.All(),
+		}, args.prompt)
+	}
 
 	// Print mode: non-interactive, streams to stdout
 	if args.print {
@@ -145,8 +183,14 @@ func run(args cliArgs) error {
 		}, promptText)
 	}
 
+	// Build optional status line engine from config
+	var statusEngine *statusline.Engine
+	if cfg.StatusLine != nil && cfg.StatusLine.Command != "" {
+		statusEngine = statusline.New(cfg.StatusLine.Command, cfg.StatusLine.Padding)
+	}
+
 	// Interactive mode (default)
-	return runInteractive(model, checker, provider, toolRegistry, systemPrompt)
+	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine)
 }
 
 // registerProviders registers all built-in AI provider factories with no auth.
@@ -230,23 +274,36 @@ func resolveBaseURL(args cliArgs, cfg *config.Settings) string {
 }
 
 // resolvePermissionMode maps CLI flags and config to a permission.Mode.
+// Priority: --dangerously-skip-permissions > --permission-mode > --yolo/--plan > config > normal.
 func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
+	if args.dangerouslySkip {
+		return permission.ModeYolo
+	}
+	if args.permissionMode != "" {
+		if mode, err := permission.ParseMode(args.permissionMode); err == nil {
+			return mode
+		}
+	}
 	switch {
 	case args.yolo || cfg.Yolo:
 		return permission.ModeYolo
 	case args.plan:
 		return permission.ModePlan
-	default:
-		return permission.ModeNormal
 	}
+	if cfgMode := cfg.EffectiveDefaultMode(); cfgMode != "" {
+		if mode, err := permission.ParseMode(cfgMode); err == nil {
+			return mode
+		}
+	}
+	return permission.ModeNormal
 }
 
 // runInteractive sets up the real terminal, defers crash recovery, and runs the TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string) error {
+func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine) error {
 	term := terminal.NewProcessTerminal()
 	defer terminal.RestoreOnPanic(term)
 
-	app := interactive.NewFromDeps(interactive.AppDeps{
+	deps := interactive.AppDeps{
 		Terminal:     term,
 		Provider:     provider,
 		Model:        model,
@@ -254,7 +311,11 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 		Checker:      checker,
 		SystemPrompt: systemPrompt,
 		Version:      version,
-	})
+	}
+	if statusEngine != nil {
+		deps.StatusEngine = statusEngine
+	}
+	app := interactive.NewFromDeps(deps)
 
 	if checker.Mode() == permission.ModeYolo {
 		app.SetYoloMode()

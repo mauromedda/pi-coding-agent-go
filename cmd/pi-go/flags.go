@@ -1,25 +1,30 @@
 // ABOUTME: CLI flag parsing using stdlib flag package
-// ABOUTME: Supports --yolo, --model, --plan, --print, --thinking, --version, --update, SDK flags
+// ABOUTME: Supports --yolo, --model, --plan, --print, -p, --permission-mode, --allowedTools, --disallowedTools, SDK flags
 
 package main
 
 import "flag"
 
 type cliArgs struct {
-	yolo         bool
-	model        string
-	plan         bool
-	print        bool
-	thinking     bool
-	version      bool
-	update       bool
-	baseURL      string
-	maxTurns     int
-	maxBudget    float64
-	outputFormat string
-	inputFormat  string
-	jsonSchema   string
-	style        string
+	yolo             bool
+	model            string
+	plan             bool
+	print            bool
+	prompt           string // -p "prompt" non-interactive mode
+	thinking         bool
+	version          bool
+	update           bool
+	baseURL          string
+	maxTurns         int
+	maxBudget        float64
+	outputFormat     string
+	inputFormat      string
+	jsonSchema       string
+	style            string
+	permissionMode   string // --permission-mode
+	allowedTools     string // --allowedTools (comma-separated)
+	disallowedTools  string // --disallowedTools (comma-separated)
+	dangerouslySkip  bool   // --dangerously-skip-permissions
 }
 
 func parseFlags() cliArgs {
@@ -39,6 +44,11 @@ func parseFlags() cliArgs {
 	flag.StringVar(&args.inputFormat, "input-format", "", "Input format: empty = plain text, stream-json = JSONL from stdin")
 	flag.StringVar(&args.jsonSchema, "json-schema", "", "Path to JSON schema file for output validation")
 	flag.StringVar(&args.style, "style", "", "Output style: concise, verbose, formal, casual")
+	flag.StringVar(&args.prompt, "p", "", "Non-interactive mode: run prompt and exit")
+	flag.StringVar(&args.permissionMode, "permission-mode", "", "Permission mode: default, acceptEdits, plan, dontAsk, bypassPermissions")
+	flag.StringVar(&args.allowedTools, "allowedTools", "", "Comma-separated list of allowed tools")
+	flag.StringVar(&args.disallowedTools, "disallowedTools", "", "Comma-separated list of disallowed tools")
+	flag.BoolVar(&args.dangerouslySkip, "dangerously-skip-permissions", false, "Skip all permission checks (alias for bypassPermissions)")
 
 	flag.Parse()
 	return args

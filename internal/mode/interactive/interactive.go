@@ -18,6 +18,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/statusline"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	tuipkg "github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/component"
@@ -46,12 +47,6 @@ func (m Mode) String() string {
 	}
 }
 
-// StatusLineEngine abstracts an external status line command executor.
-type StatusLineEngine interface {
-	HasCommand() bool
-	Execute(ctx context.Context, input any) (string, error)
-}
-
 // AppDeps bundles all dependencies for the interactive App.
 type AppDeps struct {
 	Terminal     terminal.Terminal
@@ -61,7 +56,7 @@ type AppDeps struct {
 	Checker      *permission.Checker
 	SystemPrompt string
 	Version      string
-	StatusEngine StatusLineEngine
+	StatusEngine *statusline.Engine
 }
 
 // App is the main interactive application.
@@ -101,7 +96,7 @@ type App struct {
 	gitBranch         string
 
 	// External status line engine (optional)
-	statusEngine StatusLineEngine
+	statusEngine *statusline.Engine
 }
 
 // NewFromDeps creates a fully-wired interactive app from dependencies.

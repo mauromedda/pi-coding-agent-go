@@ -5,6 +5,7 @@ package tools
 
 import (
 	"os/exec"
+	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
@@ -61,6 +62,16 @@ func (r *Registry) ReadOnly() []*agent.AgentTool {
 		}
 	}
 	return out
+}
+
+// Remove deletes a tool from the registry by name.
+// Supports "Tool(specifier)" format; the specifier is ignored for removal.
+func (r *Registry) Remove(spec string) {
+	name := spec
+	if idx := strings.Index(spec, "("); idx > 0 {
+		name = spec[:idx]
+	}
+	delete(r.tools, name)
 }
 
 // HasRipgrep reports whether ripgrep (rg) was found on PATH.
