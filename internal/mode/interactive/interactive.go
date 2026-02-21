@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -159,6 +158,8 @@ func (a *App) Run() error {
 	// Set up editor and footer
 	a.editor = component.NewEditor()
 	a.editor.SetFocused(true)
+	a.editor.SetPrompt("❯ ")
+	a.editor.SetPlaceholder("Try \"how does <filepath> work?\"")
 	a.footer = components.NewFooter()
 	a.updateFooter()
 
@@ -186,7 +187,7 @@ func (a *App) Run() error {
 	return nil
 }
 
-// printWelcome adds a welcome message to the container.
+// printWelcome adds the welcome banner and separator to the container.
 func (a *App) printWelcome(container *tuipkg.Container) {
 	ver := a.version
 	if ver == "" {
@@ -196,14 +197,18 @@ func (a *App) printWelcome(container *tuipkg.Container) {
 	if a.model != nil {
 		modelName = a.model.Name
 	}
-	welcome := components.NewAssistantMessage()
-	welcome.AppendText(fmt.Sprintf("pi-go %s | model: %s | mode: %s | tools: %d\nType your prompt and press Enter.\n",
-		ver, modelName, a.mode, len(a.tools)))
+	cwd, _ := os.Getwd()
+	if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(cwd, home) {
+		cwd = "~" + cwd[len(home):]
+	}
 
-	// Insert before editor (which is at index 0)
+	welcome := components.NewWelcomeMessage(ver, modelName, cwd, len(a.tools))
+	sep := components.NewSeparator()
+
 	container.Remove(a.editor)
 	container.Remove(a.footer)
 	container.Add(welcome)
+	container.Add(sep)
 	container.Add(a.editor)
 	container.Add(a.footer)
 }
@@ -548,53 +553,42 @@ func (a *App) askPermission(tool string, args map[string]any) (bool, error) {
 	}
 }
 
-// updateFooter refreshes the footer content with cwd, git branch, mode, model, and token stats.
+// updateFooter refreshes the two-line footer: line1=cwd+branch, line2=stats+model.
 func (a *App) updateFooter() {
 	if a.footer == nil {
 		return
 	}
 
-	var parts []string
-
-	// CWD (shortened to ~ if under HOME)
+	// Line 1: CWD (shortened to ~) + (branch)
 	cwd, _ := os.Getwd()
 	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(cwd, home) {
 		cwd = "~" + cwd[len(home):]
 	}
-	cwdPart := cwd
+	line1 := cwd
 	if a.gitBranch != "" {
-		cwdPart = fmt.Sprintf("%s (%s)", filepath.Base(cwd), a.gitBranch)
+		line1 = fmt.Sprintf("%s (%s)", cwd, a.gitBranch)
 	}
-	parts = append(parts, cwdPart)
+	a.footer.SetLine1(line1)
 
-	// Mode + hint
-	parts = append(parts, a.ModeLabel())
+	// Line 2: token stats (left) + model (right)
+	inTok := int(a.totalInputTokens.Load())
+	outTok := int(a.totalOutputTokens.Load())
+	stats := fmt.Sprintf("\u2191%s \u2193%s",
+		formatTokenCount(inTok),
+		formatTokenCount(outTok))
+	tps := float64(a.tokPerSec.Load()) / 10.0
+	if tps > 0 {
+		stats = fmt.Sprintf("\u2191%s \u2193%s %.1f tok/s",
+			formatTokenCount(inTok),
+			formatTokenCount(outTok),
+			tps)
+	}
 
-	// Model
 	modelName := "none"
 	if a.model != nil {
 		modelName = a.model.Name
 	}
-	parts = append(parts, modelName)
-
-	// Token stats (only if we have any)
-	inTok := int(a.totalInputTokens.Load())
-	outTok := int(a.totalOutputTokens.Load())
-	if inTok > 0 || outTok > 0 {
-		stats := fmt.Sprintf("\u2191%s \u2193%s",
-			formatTokenCount(inTok),
-			formatTokenCount(outTok))
-		tps := float64(a.tokPerSec.Load()) / 10.0
-		if tps > 0 {
-			stats = fmt.Sprintf("\u2191%s \u2193%s %.1f tok/s",
-				formatTokenCount(inTok),
-				formatTokenCount(outTok),
-				tps)
-		}
-		parts = append(parts, stats)
-	}
-
-	a.footer.SetContent(strings.Join(parts, " | "))
+	a.footer.SetLine2(stats, modelName)
 }
 
 // formatTokenCount formats a token count for compact display.

@@ -10,6 +10,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+	tui "github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/terminal"
 )
@@ -264,21 +265,30 @@ func TestUpdateFooter_WithTokenStats(t *testing.T) {
 
 	app.updateFooter()
 
-	// Render the footer to check content
-	content := app.footer.Content()
-	if !strings.Contains(content, "main") {
-		t.Errorf("footer should contain git branch, got %q", content)
+	// Render footer to buffer and check both lines
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	app.footer.Render(buf, 80)
+
+	if buf.Len() != 2 {
+		t.Fatalf("expected 2 footer lines, got %d", buf.Len())
 	}
-	if !strings.Contains(content, "PLAN") {
-		t.Errorf("footer should contain mode, got %q", content)
+
+	// Line 1: cwd + (branch)
+	line1 := buf.Lines[0]
+	if !strings.Contains(line1, "main") {
+		t.Errorf("footer line1 should contain git branch, got %q", line1)
 	}
-	if !strings.Contains(content, "gpt-4o") {
-		t.Errorf("footer should contain model, got %q", content)
+
+	// Line 2: token stats (left) + model (right)
+	line2 := buf.Lines[1]
+	if !strings.Contains(line2, "gpt-4o") {
+		t.Errorf("footer line2 should contain model, got %q", line2)
 	}
-	if !strings.Contains(content, "\u219112k") {
-		t.Errorf("footer should contain input tokens, got %q", content)
+	if !strings.Contains(line2, "\u219112k") {
+		t.Errorf("footer line2 should contain input tokens, got %q", line2)
 	}
-	if !strings.Contains(content, "\u21938k") {
-		t.Errorf("footer should contain output tokens, got %q", content)
+	if !strings.Contains(line2, "\u21938k") {
+		t.Errorf("footer line2 should contain output tokens, got %q", line2)
 	}
 }

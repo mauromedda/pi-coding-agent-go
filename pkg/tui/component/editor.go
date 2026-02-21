@@ -35,6 +35,12 @@ type Editor struct {
 	dirty     bool
 	ring      *killring.KillRing
 	undoStack *undo.Stack[editorState]
+
+	// Prompt prefix prepended to line 0 render (e.g. "❯ ")
+	prompt      string
+	promptWidth int
+	// Placeholder text shown dim when empty and focused
+	placeholder string
 }
 
 // NewEditor creates a new empty Editor component.
@@ -105,6 +111,32 @@ func (ed *Editor) Invalidate() {
 	defer ed.mu.Unlock()
 
 	ed.dirty = true
+}
+
+// SetPrompt sets a prefix string that is prepended to line 0 during render.
+// Subsequent lines are indented by the prompt's visible width.
+func (ed *Editor) SetPrompt(p string) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
+	ed.prompt = p
+	ed.promptWidth = width.VisibleWidth(p)
+	ed.dirty = true
+}
+
+// SetPlaceholder sets dim hint text shown when the editor is empty and focused.
+func (ed *Editor) SetPlaceholder(p string) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
+	ed.placeholder = p
+	ed.dirty = true
+}
+
+// isEmpty returns true if the editor contains no text.
+// Must be called with ed.mu held.
+func (ed *Editor) isEmpty() bool {
+	return len(ed.lines) == 1 && len(ed.lines[0]) == 0
 }
 
 // HandleInput processes raw terminal input data.
@@ -379,34 +411,73 @@ func (ed *Editor) Render(out *tui.RenderBuffer, w int) {
 	if w <= 0 {
 		return
 	}
+
+	// Effective width for text content (reduced by prompt prefix)
+	ew := w - ed.promptWidth
+	if ew < 1 {
+		ew = 1
+	}
+
+	// Placeholder: shown when empty, focused, and placeholder is set
+	if ed.focused && ed.isEmpty() && ed.placeholder != "" {
+		out.WriteLine(ed.prompt + tui.CursorMarker + "\x1b[2m" + ed.placeholder + "\x1b[0m")
+		return
+	}
+
+	indent := strings.Repeat(" ", ed.promptWidth)
+
 	for i, line := range ed.lines {
 		lineStr := string(line)
-		wrapped := width.WrapTextWithAnsi(lineStr, w)
+		wrapped := width.WrapTextWithAnsi(lineStr, ew)
+
+		// Prepend prompt (line 0) or indent (subsequent lines)
+		prefix := indent
+		if i == 0 {
+			prefix = ed.prompt
+		}
 
 		if !ed.focused {
-			out.WriteLines(wrapped)
+			for wi, wl := range wrapped {
+				if wi == 0 {
+					out.WriteLine(prefix + wl)
+				} else {
+					out.WriteLine(indent + wl)
+				}
+			}
 			continue
 		}
 
 		// If cursor is on this line, insert the cursor marker
 		if i == ed.row {
-			ed.renderLineWithCursor(out, wrapped, line, w)
+			ed.renderLineWithCursor(out, wrapped, line, ew, prefix, indent)
 		} else {
-			out.WriteLines(wrapped)
+			for wi, wl := range wrapped {
+				if wi == 0 {
+					out.WriteLine(prefix + wl)
+				} else {
+					out.WriteLine(indent + wl)
+				}
+			}
 		}
 	}
 }
 
-func (ed *Editor) renderLineWithCursor(out *tui.RenderBuffer, wrapped []string, line []rune, w int) {
+func (ed *Editor) renderLineWithCursor(out *tui.RenderBuffer, wrapped []string, line []rune, ew int, prefix, indent string) {
 	// Find which wrapped line the cursor falls on
 	cursorOffset := ed.col
 	wrapRow := 0
-	for wrapRow < len(wrapped)-1 && cursorOffset >= w {
-		cursorOffset -= w
+	for wrapRow < len(wrapped)-1 && cursorOffset >= ew {
+		cursorOffset -= ew
 		wrapRow++
 	}
 
 	for wi, wl := range wrapped {
+		// Determine line prefix
+		lp := indent
+		if wi == 0 {
+			lp = prefix
+		}
+
 		if wi == wrapRow {
 			// Insert cursor marker at the correct position within this wrapped line
 			runes := []rune(width.StripANSI(wl))
@@ -414,6 +485,7 @@ func (ed *Editor) renderLineWithCursor(out *tui.RenderBuffer, wrapped []string, 
 			if cursorOffset > len(runes) {
 				cursorOffset = len(runes)
 			}
+			b.WriteString(lp)
 			b.WriteString(string(runes[:cursorOffset]))
 			b.WriteString(tui.CursorMarker)
 			if cursorOffset < len(runes) {
@@ -421,7 +493,7 @@ func (ed *Editor) renderLineWithCursor(out *tui.RenderBuffer, wrapped []string, 
 			}
 			out.WriteLine(b.String())
 		} else {
-			out.WriteLine(wl)
+			out.WriteLine(lp + wl)
 		}
 	}
 }
