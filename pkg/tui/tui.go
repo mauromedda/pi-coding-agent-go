@@ -31,6 +31,9 @@ type TUI struct {
 	stopCh        chan struct{}
 	stopOnce      sync.Once
 	running       bool
+
+	// Relative rendering state
+	rstate renderState
 }
 
 // New creates a new TUI engine writing to w with the given dimensions.
@@ -42,6 +45,7 @@ func New(w Writer, termWidth, termHeight int) *TUI {
 		height:    termHeight,
 		renderCh:  make(chan struct{}, 1),
 		stopCh:    make(chan struct{}),
+		rstate:    renderState{firstRender: true},
 	}
 }
 
@@ -56,6 +60,7 @@ func (t *TUI) SetSize(w, h int) {
 	t.width = w
 	t.height = h
 	t.previousLines = nil // Force full redraw
+	// prevWidth mismatch will trigger full clear on next render
 	t.mu.Unlock()
 	t.container.Invalidate()
 	t.RequestRender()
@@ -136,6 +141,7 @@ func (t *TUI) render() {
 	w := t.width
 	h := t.height
 	prevLines := t.previousLines
+	rstate := t.rstate
 	overlays := make([]Overlay, len(t.overlays))
 	copy(overlays, t.overlays)
 	t.mu.Unlock()
@@ -162,13 +168,18 @@ func (t *TUI) render() {
 	// Find cursor position and strip marker
 	cursorRow, cursorCol := extractCursorPosition(lines)
 
-	// Differential update
-	output := diffRender(prevLines, lines, w)
+	// Relative differential update
+	output := relativeRender(&rstate, prevLines, lines, w)
 
-	// Position cursor if found
+	// Position cursor using relative movement
 	if cursorRow >= 0 && cursorCol >= 0 {
-		output += fmt.Sprintf("\x1b[%d;%dH", cursorRow+1, cursorCol+1)
-		output += "\x1b[?25h" // Show cursor
+		var curBuf strings.Builder
+		var numBuf [20]byte
+		moveCursor(&curBuf, numBuf[:], rstate.cursorRow, cursorRow)
+		rstate.cursorRow = cursorRow
+		curBuf.WriteString(fmt.Sprintf("\r\x1b[%dC", cursorCol))
+		curBuf.WriteString("\x1b[?25h") // Show cursor
+		output += curBuf.String()
 	} else {
 		output += "\x1b[?25l" // Hide cursor
 	}
@@ -190,6 +201,7 @@ func (t *TUI) render() {
 	copy(saved, lines)
 	t.mu.Lock()
 	t.previousLines = saved
+	t.rstate = rstate
 	t.mu.Unlock()
 }
 
@@ -254,43 +266,127 @@ func extractCursorPosition(lines []string) (row, col int) {
 	return -1, -1
 }
 
-// diffRender generates ANSI commands to update only changed lines.
-func diffRender(prev, curr []string, termWidth int) string {
-	var b strings.Builder
-	var numBuf [20]byte // scratch buffer for strconv.AppendInt
+// renderState tracks cursor position across renders for relative movement.
+type renderState struct {
+	maxRendered int  // max lines ever rendered
+	cursorRow   int  // cursor row (0-based, relative to our output region)
+	firstRender bool // true until first render completes
+	prevWidth   int  // detect width changes
+}
 
-	maxLines := len(curr)
-	if len(prev) > maxLines {
-		maxLines = len(prev)
+// relativeRender generates ANSI commands using relative cursor movement
+// instead of absolute positioning, so content scrolls like a chat.
+func relativeRender(state *renderState, prev, curr []string, termWidth int) string {
+	var b strings.Builder
+	var numBuf [20]byte
+
+	// Width change: full clear and re-render everything
+	if state.prevWidth != 0 && state.prevWidth != termWidth {
+		b.WriteString("\x1b[2J\x1b[H") // clear screen + home
+		for i, line := range curr {
+			if i > 0 {
+				b.WriteString("\r\n")
+			}
+			b.WriteString(line)
+		}
+		state.cursorRow = len(curr) - 1
+		if state.cursorRow < 0 {
+			state.cursorRow = 0
+		}
+		state.maxRendered = len(curr)
+		state.firstRender = false
+		state.prevWidth = termWidth
+		return b.String()
+	}
+	state.prevWidth = termWidth
+
+	// First render: just output lines with \r\n
+	if state.firstRender {
+		for i, line := range curr {
+			if i > 0 {
+				b.WriteString("\r\n")
+			}
+			b.WriteString(line)
+		}
+		state.cursorRow = len(curr) - 1
+		if state.cursorRow < 0 {
+			state.cursorRow = 0
+		}
+		state.maxRendered = len(curr)
+		state.firstRender = false
+		return b.String()
 	}
 
-	for i := 0; i < maxLines; i++ {
-		var prevLine, currLine string
-		if i < len(prev) {
-			prevLine = prev[i]
-		}
-		if i < len(curr) {
-			currLine = curr[i]
-		}
+	// Find which lines changed and which are new
+	commonLen := len(prev)
+	if len(curr) < commonLen {
+		commonLen = len(curr)
+	}
 
-		if prevLine == currLine {
+	// Update changed lines using relative movement
+	for i := 0; i < commonLen; i++ {
+		if prev[i] == curr[i] {
 			continue
 		}
-
-		// Move to line, erase it, write new content.
-		// Uses strconv.AppendInt to avoid fmt.Sprintf allocation.
-		b.WriteString("\x1b[")
-		b.Write(strconv.AppendInt(numBuf[:0], int64(i+1), 10))
-		b.WriteString(";1H\x1b[2K")
-		b.WriteString(currLine)
+		// Move cursor to row i
+		moveCursor(&b, numBuf[:], state.cursorRow, i)
+		state.cursorRow = i
+		b.WriteString("\r\x1b[2K") // carriage return + erase line
+		b.WriteString(curr[i])
 	}
 
-	// Clear any remaining old lines
-	for i := len(curr); i < len(prev); i++ {
-		b.WriteString("\x1b[")
-		b.Write(strconv.AppendInt(numBuf[:0], int64(i+1), 10))
-		b.WriteString(";1H\x1b[2K")
+	// Append new lines
+	if len(curr) > len(prev) {
+		// Move to the last rendered line
+		moveCursor(&b, numBuf[:], state.cursorRow, len(prev)-1)
+		state.cursorRow = len(prev) - 1
+		if state.cursorRow < 0 {
+			state.cursorRow = 0
+		}
+
+		for i := len(prev); i < len(curr); i++ {
+			b.WriteString("\r\n")
+			b.WriteString(curr[i])
+			state.cursorRow = i
+		}
+	}
+
+	// Clear excess lines if content shrank
+	if len(curr) < state.maxRendered {
+		for i := len(curr); i < state.maxRendered; i++ {
+			moveCursor(&b, numBuf[:], state.cursorRow, i)
+			state.cursorRow = i
+			b.WriteString("\r\x1b[2K")
+		}
+		// Move back to last content line
+		if len(curr) > 0 {
+			moveCursor(&b, numBuf[:], state.cursorRow, len(curr)-1)
+			state.cursorRow = len(curr) - 1
+		}
+	}
+
+	if len(curr) > state.maxRendered {
+		state.maxRendered = len(curr)
 	}
 
 	return b.String()
+}
+
+// moveCursor emits relative cursor movement sequences to move from fromRow to toRow.
+func moveCursor(b *strings.Builder, numBuf []byte, fromRow, toRow int) {
+	if fromRow == toRow {
+		return
+	}
+	delta := toRow - fromRow
+	if delta < 0 {
+		// Move up
+		b.WriteString("\x1b[")
+		b.Write(strconv.AppendInt(numBuf[:0], int64(-delta), 10))
+		b.WriteByte('A')
+	} else {
+		// Move down
+		b.WriteString("\x1b[")
+		b.Write(strconv.AppendInt(numBuf[:0], int64(delta), 10))
+		b.WriteByte('B')
+	}
 }

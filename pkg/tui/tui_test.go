@@ -136,10 +136,6 @@ func TestTUI_CursorPosition(t *testing.T) {
 	ui.RenderOnce()
 
 	result := out.String()
-	// Cursor should be positioned at column 4 (after "abc")
-	if !strings.Contains(result, "\x1b[1;4H") {
-		t.Errorf("expected cursor positioning at row 1, col 4; got %q", result)
-	}
 	// Cursor should be shown
 	if !strings.Contains(result, "\x1b[?25h") {
 		t.Error("expected cursor to be shown")
@@ -202,4 +198,107 @@ func TestTUI_DoubleStopNoPanic(t *testing.T) {
 	ui.Stop()
 	// Second stop: must not panic (double close).
 	ui.Stop()
+}
+
+func TestTUI_FirstRenderNoAbsolutePositioning(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+	ui.Container().Add(&mockComponent{lines: []string{"line1", "line2", "line3"}})
+
+	ui.RenderOnce()
+
+	result := out.String()
+	// First render must NOT use absolute positioning \x1b[N;1H
+	if strings.Contains(result, ";1H") {
+		t.Errorf("first render should not use absolute positioning, got %q", result)
+	}
+	// Must contain all lines
+	if !strings.Contains(result, "line1") || !strings.Contains(result, "line2") || !strings.Contains(result, "line3") {
+		t.Errorf("first render missing content, got %q", result)
+	}
+}
+
+func TestTUI_AppendMode(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+
+	comp := &mockComponent{lines: []string{"line1", "line2", "line3"}}
+	ui.Container().Add(comp)
+
+	// First render
+	ui.RenderOnce()
+	out.Reset()
+
+	// Append two lines (existing unchanged)
+	comp.lines = []string{"line1", "line2", "line3", "line4", "line5"}
+
+	ui.RenderOnce()
+
+	result := out.String()
+	// Should contain the new lines
+	if !strings.Contains(result, "line4") || !strings.Contains(result, "line5") {
+		t.Errorf("append mode should contain new lines, got %q", result)
+	}
+	// Should NOT re-emit unchanged lines
+	if strings.Contains(result, "line1") {
+		t.Errorf("append mode should not re-emit unchanged lines, got %q", result)
+	}
+}
+
+func TestTUI_UpdateMode(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+
+	comp := &mockComponent{lines: []string{"line1", "ORIGINAL", "line3"}}
+	ui.Container().Add(comp)
+
+	// First render
+	ui.RenderOnce()
+	out.Reset()
+
+	// Change only line 2
+	comp.lines = []string{"line1", "CHANGED", "line3"}
+
+	ui.RenderOnce()
+
+	result := out.String()
+	// Should contain the changed line
+	if !strings.Contains(result, "CHANGED") {
+		t.Errorf("update mode should contain changed line, got %q", result)
+	}
+	// Should NOT contain unchanged lines
+	if strings.Contains(result, "line1") || strings.Contains(result, "line3") {
+		t.Errorf("update mode should not re-emit unchanged lines, got %q", result)
+	}
+	// Should use relative cursor movement (CUU = \x1b[NA) not absolute positioning
+	if strings.Contains(result, ";1H") {
+		t.Errorf("update mode should use relative positioning, not absolute, got %q", result)
+	}
+}
+
+func TestTUI_WidthChange(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+	ui.Container().Add(&mockComponent{lines: []string{"hello"}})
+
+	ui.RenderOnce()
+	out.Reset()
+
+	// Change width
+	ui.SetSize(120, 24)
+	ui.RenderOnce()
+
+	result := out.String()
+	// Width change should trigger full clear (\x1b[2J)
+	if !strings.Contains(result, "\x1b[2J") {
+		t.Errorf("width change should trigger full clear, got %q", result)
+	}
 }
