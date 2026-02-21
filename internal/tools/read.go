@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 )
@@ -96,27 +97,16 @@ func splitLines(s string) []string {
 	if s == "" {
 		return nil
 	}
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i+1])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
+	return strings.SplitAfter(s, "\n")
 }
 
-// joinLines concatenates lines back into a single string.
+// joinLines concatenates lines back into a single string using strings.Builder.
 func joinLines(lines []string) string {
-	var out string
+	var b strings.Builder
 	for _, l := range lines {
-		out += l
+		b.WriteString(l)
 	}
-	return out
+	return b.String()
 }
 
 // truncateOutput limits output to maxBytes, appending a truncation notice.

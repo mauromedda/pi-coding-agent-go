@@ -4,6 +4,7 @@
 package httputil
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -170,6 +171,47 @@ func TestClientStreamSSE(t *testing.T) {
 	_, err = reader.Next()
 	if err != io.EOF {
 		t.Errorf("expected io.EOF, got %v", err)
+	}
+}
+
+func TestClientDoRetryWithBody(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	wantBody := `{"prompt":"hello"}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != wantBody {
+			t.Errorf("attempt %d: got body %q, want %q", n, string(body), wantBody)
+		}
+
+		if n <= 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewClient(srv.URL, nil)
+
+	// bytes.NewReader implements io.Seeker, enabling body rewind on retry.
+	resp, err := client.Do(context.Background(), http.MethodPost, "/retry-body", bytes.NewReader([]byte(wantBody)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("got %d attempts, want 2", got)
 	}
 }
 

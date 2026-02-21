@@ -42,10 +42,16 @@ func NewClient(baseURL string, headers map[string]string) *Client {
 
 // Do sends an HTTP request with retry on 429 and 5xx status codes.
 // It returns the response from the last attempt, even if retries were exhausted.
+// If body implements io.Seeker, it is rewound before each retry attempt.
 func (c *Client) Do(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	seeker, _ := body.(io.Seeker)
 	var lastResp *http.Response
 
 	for attempt := range maxRetries {
+		if err := rewindBody(seeker, attempt); err != nil {
+			return nil, fmt.Errorf("failed to rewind request body: %w", err)
+		}
+
 		req, err := c.buildRequest(ctx, method, path, body)
 		if err != nil {
 			return nil, err
@@ -72,6 +78,10 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader) (*
 	}
 
 	// Retries exhausted: make one final request to return a readable response.
+	if err := rewindBody(seeker, maxRetries); err != nil {
+		return lastResp, fmt.Errorf("failed to rewind request body: %w", err)
+	}
+
 	req, err := c.buildRequest(ctx, method, path, body)
 	if err != nil {
 		return lastResp, err
@@ -114,6 +124,16 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body io.
 	}
 
 	return req, nil
+}
+
+// rewindBody resets a seekable body to the beginning for retry attempts.
+// It is a no-op on the first attempt (attempt == 0) or if seeker is nil.
+func rewindBody(seeker io.Seeker, attempt int) error {
+	if seeker == nil || attempt == 0 {
+		return nil
+	}
+	_, err := seeker.Seek(0, io.SeekStart)
+	return err
 }
 
 // isRetryable returns true for status codes that warrant a retry.
