@@ -153,6 +153,9 @@ func (t *StdioTransport) Close() error {
 	t.closeOnce.Do(func() {
 		close(t.done)
 		t.stdin.Close()
+		// Close stdout to unblock scanner.Scan() in recvLoop,
+		// preventing a goroutine leak.
+		t.stdout.Close()
 		closeErr = t.cmd.Wait()
 	})
 	return closeErr
@@ -163,6 +166,11 @@ func (t *StdioTransport) recvLoop() {
 	defer close(t.incoming)
 
 	for t.scanner.Scan() {
+		select {
+		case <-t.done:
+			return
+		default:
+		}
 		line := t.scanner.Bytes()
 		if len(line) == 0 {
 			continue

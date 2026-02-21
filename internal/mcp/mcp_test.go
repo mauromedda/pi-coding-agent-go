@@ -513,6 +513,28 @@ func TestStdioTransport_ApprovalDenied(t *testing.T) {
 	}
 }
 
+func TestStdioTransport_RecvLoopExitsOnClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// "cat" blocks on stdin; closing stdout pipe should unblock the scanner
+	transport, err := NewStdioTransport(ctx, "cat", nil, nil)
+	if err != nil {
+		t.Fatalf("NewStdioTransport: %v", err)
+	}
+
+	// Close should unblock recvLoop by closing stdout
+	if err := transport.Close(); err != nil {
+		// cat exits with error when stdin is closed, that's expected
+		_ = err
+	}
+
+	// Drain incoming channel; it should close when recvLoop exits
+	for range transport.Receive() {
+	}
+	// If we reach here, recvLoop exited cleanly (no hang)
+}
+
 func TestStdioTransport_ApprovalAllowed(t *testing.T) {
 	allow := func(_ string, _ []string) error {
 		return nil
