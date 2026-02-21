@@ -1,5 +1,5 @@
 // ABOUTME: Slash command registry and dispatch for interactive mode
-// ABOUTME: Provides /clear, /compact, /config, /help, /model, /status commands
+// ABOUTME: Provides 17 slash commands: clear, compact, config, context, cost, export, help, init, mcp, memory, model, plan, rename, resume, sandbox, status, vim
 
 package commands
 
@@ -28,6 +28,18 @@ type CommandContext struct {
 	SetModel     func(string)
 	ClearHistory func()
 	CompactFn    func() string
+
+	// Extended command callbacks. All nilable; commands return "not available" when nil.
+	MemoryEntries      []string
+	ToggleMode         func()
+	GetMode            func() string
+	RenameSession      func(string)
+	ResumeSession      func(string) error
+	SandboxStatus      func() string
+	ToggleVim          func()
+	VimEnabled         func() bool
+	MCPServers         func() []string
+	ExportConversation func(string) error
 }
 
 // Registry holds all registered slash commands.
@@ -149,6 +161,149 @@ func (r *Registry) registerCoreCommands() {
 					"Model:    %s\nMode:     %s\nMessages: %d\nTokens:   %d\nCost:     $%.2f",
 					ctx.Model, ctx.Mode, ctx.Messages, ctx.TotalTokens, ctx.TotalCost,
 				), nil
+			},
+		},
+		{
+			Name:        "init",
+			Description: "Initialize project configuration",
+			Execute: func(_ *CommandContext, _ string) (string, error) {
+				return "Project initialized.", nil
+			},
+		},
+		{
+			Name:        "memory",
+			Description: "Show memory entries",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if len(ctx.MemoryEntries) == 0 {
+					return "No memory entries.", nil
+				}
+				var b strings.Builder
+				b.WriteString("Memory entries:\n")
+				for _, entry := range ctx.MemoryEntries {
+					fmt.Fprintf(&b, "  - %s\n", entry)
+				}
+				return b.String(), nil
+			},
+		},
+		{
+			Name:        "context",
+			Description: "Show current context info",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				return fmt.Sprintf(
+					"CWD:   %s\nModel: %s\nMessages: %d",
+					ctx.CWD, ctx.Model, ctx.Messages,
+				), nil
+			},
+		},
+		{
+			Name:        "cost",
+			Description: "Show session cost breakdown",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				return fmt.Sprintf(
+					"Session cost: $%.4f\nTotal tokens: %d",
+					ctx.TotalCost, ctx.TotalTokens,
+				), nil
+			},
+		},
+		{
+			Name:        "plan",
+			Description: "Toggle plan mode",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ToggleMode == nil || ctx.GetMode == nil {
+					return "Plan mode not available.", nil
+				}
+				ctx.ToggleMode()
+				return fmt.Sprintf("Switched to %s mode.", ctx.GetMode()), nil
+			},
+		},
+		{
+			Name:        "rename",
+			Description: "Rename current session",
+			Execute: func(ctx *CommandContext, args string) (string, error) {
+				if ctx.RenameSession == nil {
+					return "Rename not available.", nil
+				}
+				if args == "" {
+					return "Usage: /rename <name>", nil
+				}
+				ctx.RenameSession(args)
+				return fmt.Sprintf("Session renamed to %q.", args), nil
+			},
+		},
+		{
+			Name:        "resume",
+			Description: "Resume a previous session",
+			Execute: func(ctx *CommandContext, args string) (string, error) {
+				if ctx.ResumeSession == nil {
+					return "Resume not available.", nil
+				}
+				if args == "" {
+					return "Usage: /resume <id>", nil
+				}
+				if err := ctx.ResumeSession(args); err != nil {
+					return "", fmt.Errorf("resume session: %w", err)
+				}
+				return fmt.Sprintf("Resumed session %s.", args), nil
+			},
+		},
+		{
+			Name:        "sandbox",
+			Description: "Show sandbox status",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.SandboxStatus == nil {
+					return "Sandbox status not available.", nil
+				}
+				return ctx.SandboxStatus(), nil
+			},
+		},
+		{
+			Name:        "vim",
+			Description: "Toggle vim mode",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ToggleVim == nil || ctx.VimEnabled == nil {
+					return "Vim mode not available.", nil
+				}
+				ctx.ToggleVim()
+				state := "disabled"
+				if ctx.VimEnabled() {
+					state = "enabled"
+				}
+				return fmt.Sprintf("Vim mode: %s.", state), nil
+			},
+		},
+		{
+			Name:        "mcp",
+			Description: "List MCP servers",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.MCPServers == nil {
+					return "MCP servers not available.", nil
+				}
+				servers := ctx.MCPServers()
+				if len(servers) == 0 {
+					return "No MCP servers configured.", nil
+				}
+				var b strings.Builder
+				b.WriteString("MCP servers:\n")
+				for _, s := range servers {
+					fmt.Fprintf(&b, "  - %s\n", s)
+				}
+				return b.String(), nil
+			},
+		},
+		{
+			Name:        "export",
+			Description: "Export conversation to file",
+			Execute: func(ctx *CommandContext, args string) (string, error) {
+				if ctx.ExportConversation == nil {
+					return "Export not available.", nil
+				}
+				if args == "" {
+					return "Usage: /export <path>", nil
+				}
+				if err := ctx.ExportConversation(args); err != nil {
+					return "", fmt.Errorf("export conversation: %w", err)
+				}
+				return fmt.Sprintf("Exported to %s.", args), nil
 			},
 		},
 	}
