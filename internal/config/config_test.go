@@ -83,6 +83,72 @@ func TestLoadFile_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestMerge_DenyUnion(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Allow: []string{"read", "grep"},
+		Deny:  []string{"rm*"},
+		Ask:   []string{"bash"},
+	}
+	project := &Settings{
+		Allow: []string{"write"},
+		Deny:  []string{"eval"},
+		Ask:   []string{"exec"},
+	}
+
+	result := merge(global, project)
+
+	// Deny should be unioned: both "rm*" and "eval" present
+	if !containsAll(result.Deny, "rm*", "eval") {
+		t.Errorf("Deny = %v, want both rm* and eval", result.Deny)
+	}
+	// Allow should be unioned
+	if !containsAll(result.Allow, "read", "grep", "write") {
+		t.Errorf("Allow = %v, want read, grep, write", result.Allow)
+	}
+	// Ask should be unioned
+	if !containsAll(result.Ask, "bash", "exec") {
+		t.Errorf("Ask = %v, want bash and exec", result.Ask)
+	}
+}
+
+func TestMerge_DenyUnion_Dedup(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{Deny: []string{"rm*", "eval"}}
+	project := &Settings{Deny: []string{"eval", "curl"}}
+
+	result := merge(global, project)
+
+	// Should deduplicate: "eval" only once
+	count := 0
+	for _, d := range result.Deny {
+		if d == "eval" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("Deny has %d instances of 'eval', want 1: %v", count, result.Deny)
+	}
+	if len(result.Deny) != 3 {
+		t.Errorf("Deny length = %d, want 3 (rm*, eval, curl): %v", len(result.Deny), result.Deny)
+	}
+}
+
+func containsAll(slice []string, items ...string) bool {
+	set := make(map[string]bool, len(slice))
+	for _, s := range slice {
+		set[s] = true
+	}
+	for _, item := range items {
+		if !set[item] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestAuthStore_GetKey_EnvFallback(t *testing.T) {
 	store := &AuthStore{Keys: make(map[string]string)}
 

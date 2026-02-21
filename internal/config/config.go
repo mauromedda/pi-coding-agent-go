@@ -180,15 +180,15 @@ func merge(global, project *Settings) *Settings {
 		}
 	}
 
-	// Permission rules: override entirely if present
+	// Permission rules: union with dedup
 	if len(project.Allow) > 0 {
-		result.Allow = project.Allow
+		result.Allow = dedupStrings(result.Allow, project.Allow)
 	}
 	if len(project.Deny) > 0 {
-		result.Deny = project.Deny
+		result.Deny = dedupStrings(result.Deny, project.Deny)
 	}
 	if len(project.Ask) > 0 {
-		result.Ask = project.Ask
+		result.Ask = dedupStrings(result.Ask, project.Ask)
 	}
 
 	// Hooks: merge by event name
@@ -210,4 +210,24 @@ func merge(global, project *Settings) *Settings {
 	}
 
 	return &result
+}
+
+// dedupStrings returns the union of a and b with duplicates removed.
+// Order: a first, then new elements from b.
+func dedupStrings(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	result := make([]string, 0, len(a)+len(b))
+	for _, s := range a {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	for _, s := range b {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	return result
 }
