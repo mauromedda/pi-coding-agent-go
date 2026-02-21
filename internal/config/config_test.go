@@ -348,6 +348,70 @@ func TestLoadFile_WithNewFields(t *testing.T) {
 	}
 }
 
+func TestMerge_AutoCompactThreshold(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		global  *Settings
+		project *Settings
+		want    int
+	}{
+		{
+			"project overrides global",
+			&Settings{AutoCompactThreshold: 80},
+			&Settings{AutoCompactThreshold: 50},
+			50,
+		},
+		{
+			"global preserved when project is zero",
+			&Settings{AutoCompactThreshold: 70},
+			&Settings{},
+			70,
+		},
+		{
+			"both zero",
+			&Settings{},
+			&Settings{},
+			0,
+		},
+		{
+			"project sets when global is zero",
+			&Settings{},
+			&Settings{AutoCompactThreshold: 60},
+			60,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := merge(tt.global, tt.project)
+			if result.AutoCompactThreshold != tt.want {
+				t.Errorf("AutoCompactThreshold = %d, want %d", result.AutoCompactThreshold, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadFile_AutoCompactThreshold(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	data := `{"autoCompactThreshold": 60}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.AutoCompactThreshold != 60 {
+		t.Errorf("AutoCompactThreshold = %d, want 60", s.AutoCompactThreshold)
+	}
+}
+
 func TestAuthStore_GetKey_EnvFallback(t *testing.T) {
 	store := &AuthStore{Keys: make(map[string]string)}
 

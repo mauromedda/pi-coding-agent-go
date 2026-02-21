@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 )
@@ -36,7 +37,10 @@ type Settings struct {
 	Hooks map[string][]HookDef `json:"hooks,omitempty"`
 
 	// Sandbox configuration
-	Sandbox SandboxSettings `json:"sandbox,omitempty"`
+	Sandbox SandboxSettings `json:"sandbox"`
+
+	// Auto-compact threshold (percentage 1-100; 0 means use default 80%)
+	AutoCompactThreshold int `json:"autoCompactThreshold,omitempty"`
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -237,9 +241,7 @@ func merge(global, project *Settings) *Settings {
 		if result.Env == nil {
 			result.Env = make(map[string]string)
 		}
-		for k, v := range project.Env {
-			result.Env[k] = v
-		}
+		maps.Copy(result.Env, project.Env)
 	}
 
 	// Permission rules: union with dedup
@@ -282,9 +284,12 @@ func merge(global, project *Settings) *Settings {
 		if result.Hooks == nil {
 			result.Hooks = make(map[string][]HookDef)
 		}
-		for event, hooks := range project.Hooks {
-			result.Hooks[event] = hooks
-		}
+		maps.Copy(result.Hooks, project.Hooks)
+	}
+
+	// AutoCompactThreshold: override if non-zero
+	if project.AutoCompactThreshold != 0 {
+		result.AutoCompactThreshold = project.AutoCompactThreshold
 	}
 
 	// Sandbox: override if present
