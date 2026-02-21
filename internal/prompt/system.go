@@ -49,6 +49,11 @@ func BuildSystem(opts SystemOpts) string {
 		b.WriteString(fmt.Sprintf("# Context: %s\n%s\n\n", ctx.Name, ctx.Content))
 	}
 
+	// Output style instructions
+	if si := StyleInstructions(opts.Style); si != "" {
+		b.WriteString(si)
+	}
+
 	return b.String()
 }
 
@@ -60,6 +65,7 @@ type SystemOpts struct {
 	Skills        []SkillRef
 	ContextFiles  []ContextFile
 	MemorySection string
+	Style         string
 }
 
 // SkillRef is a reference to a loaded skill.
@@ -72,6 +78,23 @@ type SkillRef struct {
 type ContextFile struct {
 	Name    string
 	Content string
+}
+
+// StyleInstructions returns style-specific instructions to append to the system prompt.
+// Returns an empty string for unrecognised or empty style values.
+func StyleInstructions(style string) string {
+	switch style {
+	case "concise":
+		return "\n\nIMPORTANT: Be extremely concise. Use short sentences. Omit unnecessary words. Prefer bullet points over paragraphs."
+	case "verbose":
+		return "\n\nProvide detailed, thorough explanations. Include context, examples, and edge cases. Be comprehensive in your responses."
+	case "formal":
+		return "\n\nUse formal, professional language. Avoid contractions, slang, and casual expressions. Structure responses clearly with proper grammar."
+	case "casual":
+		return "\n\nBe casual and conversational. Use contractions, simple language, and a friendly tone. Feel free to use informal expressions."
+	default:
+		return ""
+	}
 }
 
 // LoadContextFiles reads context files from standard locations.

@@ -120,6 +120,7 @@ func run(args cliArgs) error {
 		ToolNames:     toolNames,
 		MemorySection: memSection,
 		ContextFiles:  prompt.LoadContextFiles(cwd),
+		Style:         args.style,
 	})
 
 	// Print mode: non-interactive, streams to stdout

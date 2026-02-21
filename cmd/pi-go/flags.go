@@ -19,6 +19,7 @@ type cliArgs struct {
 	outputFormat string
 	inputFormat  string
 	jsonSchema   string
+	style        string
 }
 
 func parseFlags() cliArgs {
@@ -37,6 +38,7 @@ func parseFlags() cliArgs {
 	flag.StringVar(&args.outputFormat, "output-format", "text", "Output format: text, json, stream-json")
 	flag.StringVar(&args.inputFormat, "input-format", "", "Input format: empty = plain text, stream-json = JSONL from stdin")
 	flag.StringVar(&args.jsonSchema, "json-schema", "", "Path to JSON schema file for output validation")
+	flag.StringVar(&args.style, "style", "", "Output style: concise, verbose, formal, casual")
 
 	flag.Parse()
 	return args
