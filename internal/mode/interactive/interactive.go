@@ -95,6 +95,9 @@ type App struct {
 	tokPerSec         atomic.Int64 // tok/s × 10 (fixed-point)
 	gitBranch         string
 
+	// Saved permission mode for Plan/Edit toggle
+	editPermMode permission.Mode
+
 	// External status line engine (optional)
 	statusEngine *statusline.Engine
 }
@@ -608,13 +611,16 @@ func detectGitBranch() string {
 }
 
 // ToggleMode switches between Plan and Edit modes.
+// Saves the current permission mode when entering Plan;
+// restores it when switching back to Edit.
 func (a *App) ToggleMode() {
 	switch a.mode {
 	case ModePlan:
 		a.mode = ModeEdit
-		a.checker.SetMode(permission.ModeNormal)
+		a.checker.SetMode(a.editPermMode)
 	case ModeEdit:
 		a.mode = ModePlan
+		a.editPermMode = a.checker.Mode()
 		a.checker.SetMode(permission.ModePlan)
 	}
 }
@@ -625,11 +631,16 @@ func (a *App) Mode() Mode {
 }
 
 // ModeLabel returns the display label for the footer.
+// Shows sub-mode for non-normal edit modes (e.g., "[EDIT:accept-edits]").
 func (a *App) ModeLabel() string {
 	switch a.mode {
 	case ModePlan:
 		return "[PLAN] Shift+Tab -> Edit"
 	case ModeEdit:
+		permMode := a.checker.Mode()
+		if permMode != permission.ModeNormal && permMode != permission.ModePlan {
+			return fmt.Sprintf("[EDIT:%s] Shift+Tab -> Plan", permMode)
+		}
 		return "[EDIT] Shift+Tab -> Plan"
 	default:
 		return ""
@@ -660,7 +671,15 @@ func (a *App) Context() context.Context {
 // SetYoloMode enables yolo mode (skip all permission prompts).
 func (a *App) SetYoloMode() {
 	a.mode = ModeEdit
+	a.editPermMode = permission.ModeYolo
 	a.checker.SetMode(permission.ModeYolo)
+}
+
+// SetAcceptEditsMode enables accept-edits mode (auto-allow edits, prompt for bash).
+func (a *App) SetAcceptEditsMode() {
+	a.mode = ModeEdit
+	a.editPermMode = permission.ModeAcceptEdits
+	a.checker.SetMode(permission.ModeAcceptEdits)
 }
 
 // StatusLine returns the status information for the footer.

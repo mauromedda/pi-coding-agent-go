@@ -317,8 +317,11 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 	}
 	app := interactive.NewFromDeps(deps)
 
-	if checker.Mode() == permission.ModeYolo {
+	switch checker.Mode() {
+	case permission.ModeYolo:
 		app.SetYoloMode()
+	case permission.ModeAcceptEdits:
+		app.SetAcceptEditsMode()
 	}
 
 	return app.Run()

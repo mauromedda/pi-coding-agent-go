@@ -81,6 +81,73 @@ func TestSetYoloMode(t *testing.T) {
 	}
 }
 
+func TestSetAcceptEditsMode(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := New(vt, 80, 24, checker)
+
+	app.SetAcceptEditsMode()
+
+	if app.Mode() != ModeEdit {
+		t.Errorf("expected ModeEdit, got %v", app.Mode())
+	}
+	if checker.Mode() != permission.ModeAcceptEdits {
+		t.Errorf("expected ModeAcceptEdits, got %v", checker.Mode())
+	}
+}
+
+func TestToggleMode_PreservesPermissionMode(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeAcceptEdits, nil)
+	app := New(vt, 80, 24, checker)
+
+	// Start in AcceptEdits mode via SetAcceptEditsMode
+	app.SetAcceptEditsMode()
+	if checker.Mode() != permission.ModeAcceptEdits {
+		t.Fatal("precondition: expected ModeAcceptEdits")
+	}
+
+	// Toggle to Plan
+	app.ToggleMode()
+	if app.Mode() != ModePlan {
+		t.Errorf("expected ModePlan, got %v", app.Mode())
+	}
+	if checker.Mode() != permission.ModePlan {
+		t.Errorf("expected permission ModePlan, got %v", checker.Mode())
+	}
+
+	// Toggle back to Edit: should restore ModeAcceptEdits
+	app.ToggleMode()
+	if app.Mode() != ModeEdit {
+		t.Errorf("expected ModeEdit, got %v", app.Mode())
+	}
+	if checker.Mode() != permission.ModeAcceptEdits {
+		t.Errorf("expected ModeAcceptEdits restored, got %v", checker.Mode())
+	}
+}
+
+func TestModeLabel_SubMode(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeAcceptEdits, nil)
+	app := New(vt, 80, 24, checker)
+
+	app.SetAcceptEditsMode()
+
+	label := app.ModeLabel()
+	if !strings.Contains(label, "EDIT") {
+		t.Errorf("expected label to contain EDIT, got %q", label)
+	}
+	if !strings.Contains(label, "accept-edits") {
+		t.Errorf("expected label to contain sub-mode, got %q", label)
+	}
+}
+
 func TestModeLabel(t *testing.T) {
 	t.Parallel()
 
