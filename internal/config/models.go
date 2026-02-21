@@ -41,8 +41,8 @@ func customModel(provider, modelID string) (*ai.Model, error) {
 		api = ai.ApiGoogle
 	case "vertex":
 		api = ai.ApiVertex
-	case "ollama":
-		api = ai.ApiOpenAI // Ollama uses OpenAI-compatible API
+	case "ollama", "vllm":
+		api = ai.ApiOpenAI // Ollama and vLLM use OpenAI-compatible API
 	default:
 		return nil, fmt.Errorf("unknown provider %q", provider)
 	}
