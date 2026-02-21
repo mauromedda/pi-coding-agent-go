@@ -1,0 +1,27 @@
+# ABOUTME: Release workflow triggered by version tags
+# ABOUTME: Uses goreleaser for cross-platform binary distribution
+
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
