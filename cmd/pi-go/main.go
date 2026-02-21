@@ -15,7 +15,6 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/internal/prompt"
-	"github.com/mauromedda/pi-coding-agent-go/internal/sandbox"
 	"github.com/mauromedda/pi-coding-agent-go/internal/tools"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/anthropic"
@@ -94,14 +93,6 @@ func run(args cliArgs) error {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
 	}
 
-	// W8: Create OS sandbox and pass to tool registry
-	sb := sandbox.New(sandbox.Opts{
-		WorkDir:        cwd,
-		AllowNetwork:   true,
-		AllowedDomains: cfg.Sandbox.AllowedDomains,
-		ExcludedCmds:   cfg.Sandbox.ExcludedCommands,
-	})
-
 	pathSandbox, err := permission.NewSandbox([]string{cwd})
 	if err != nil {
 		return fmt.Errorf("creating path sandbox: %w", err)
@@ -145,7 +136,7 @@ func run(args cliArgs) error {
 	}
 
 	// Interactive mode (default)
-	return runInteractive(model, checker, auth, toolRegistry, sb, systemPrompt)
+	return runInteractive(model, checker, provider, toolRegistry, systemPrompt)
 }
 
 // registerProviders registers all built-in AI provider factories with no auth.
@@ -240,28 +231,24 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 	}
 }
 
-// runInteractive sets up the terminal, defers crash recovery, and starts the TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, auth *config.AuthStore, toolReg *tools.Registry, sb sandbox.Sandbox, systemPrompt string) error {
-	vt := terminal.NewVirtualTerminal(120, 40)
-	defer terminal.RestoreOnPanic(vt)
+// runInteractive sets up the real terminal, defers crash recovery, and runs the TUI.
+func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string) error {
+	term := terminal.NewProcessTerminal()
+	defer terminal.RestoreOnPanic(term)
 
-	app := interactive.New(vt, 120, 40, checker)
+	app := interactive.NewFromDeps(interactive.AppDeps{
+		Terminal:     term,
+		Provider:     provider,
+		Model:        model,
+		Tools:        toolReg.All(),
+		Checker:      checker,
+		SystemPrompt: systemPrompt,
+		Version:      version,
+	})
 
 	if checker.Mode() == permission.ModeYolo {
 		app.SetYoloMode()
 	}
 
-	app.Start()
-	defer app.Stop()
-
-	// W3/W5: Wire all components into interactive mode
-	_ = auth        // Available for auth-required operations
-	_ = toolReg     // W3: Tool registry with all builtins + web tools
-	_ = sb          // W8: OS sandbox for bash tool wrapping
-	_ = systemPrompt // W2: System prompt with memory, tools, context
-
-	fmt.Printf("pi-go %s | model: %s | mode: %s | tools: %d\n",
-		version, model.Name, checker.Mode(), len(toolReg.All()))
-
-	return nil
+	return app.Run()
 }
