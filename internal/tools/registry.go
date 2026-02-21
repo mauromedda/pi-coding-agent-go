@@ -78,6 +78,8 @@ func (r *Registry) registerBuiltins() {
 		NewGrepTool(r.hasRg),
 		NewFindTool(r.hasRg),
 		NewLsTool(),
+		NewWebFetchTool(),
+		NewWebSearchTool(),
 	}
 	for _, t := range builtins {
 		r.Register(t)

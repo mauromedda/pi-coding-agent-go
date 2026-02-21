@@ -39,6 +39,11 @@ func BuildSystem(opts SystemOpts) string {
 		b.WriteString(fmt.Sprintf("# Skill: %s\n%s\n\n", skill.Name, skill.Content))
 	}
 
+	// Memory entries
+	if opts.MemorySection != "" {
+		b.WriteString(opts.MemorySection)
+	}
+
 	// Context files (.pi-go/context or CLAUDE.md)
 	for _, ctx := range opts.ContextFiles {
 		b.WriteString(fmt.Sprintf("# Context: %s\n%s\n\n", ctx.Name, ctx.Content))
@@ -49,11 +54,12 @@ func BuildSystem(opts SystemOpts) string {
 
 // SystemOpts configures the system prompt.
 type SystemOpts struct {
-	CWD          string
-	PlanMode     bool
-	ToolNames    []string
-	Skills       []SkillRef
-	ContextFiles []ContextFile
+	CWD           string
+	PlanMode      bool
+	ToolNames     []string
+	Skills        []SkillRef
+	ContextFiles  []ContextFile
+	MemorySection string
 }
 
 // SkillRef is a reference to a loaded skill.

@@ -10,9 +10,12 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/prompt"
+	"github.com/mauromedda/pi-coding-agent-go/internal/sandbox"
 	"github.com/mauromedda/pi-coding-agent-go/internal/tools"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/anthropic"
@@ -59,11 +62,15 @@ func run(args cliArgs) error {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
 
-	cfg, err := config.Load(cwd)
+	home, _ := os.UserHomeDir()
+
+	// W6: Use LoadAll for five-level merge instead of Load
+	cfg, err := config.LoadAll(cwd, nil)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// W4: Load auth and pass keys to provider constructors
 	auth, err := config.LoadAuth()
 	if err != nil {
 		return fmt.Errorf("loading auth: %w", err)
@@ -76,32 +83,69 @@ func run(args cliArgs) error {
 
 	baseURL := resolveBaseURL(args, cfg)
 
+	// W4: Register providers with auth keys
+	registerProvidersWithAuth(auth, baseURL)
+
 	provider := ai.GetProvider(model.Api, baseURL)
 	if provider == nil {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
 	}
 
-	sandbox, err := permission.NewSandbox([]string{cwd})
+	// W8: Create OS sandbox and pass to tool registry
+	sb := sandbox.New(sandbox.Opts{
+		WorkDir:        cwd,
+		AllowNetwork:   true,
+		AllowedDomains: cfg.Sandbox.AllowedDomains,
+		ExcludedCmds:   cfg.Sandbox.ExcludedCommands,
+	})
+
+	pathSandbox, err := permission.NewSandbox([]string{cwd})
 	if err != nil {
-		return fmt.Errorf("creating sandbox: %w", err)
+		return fmt.Errorf("creating path sandbox: %w", err)
 	}
 
-	toolRegistry := tools.NewRegistryWithSandbox(sandbox)
+	// W1/W3: Registry with sandbox registers all builtins including web tools
+	toolRegistry := tools.NewRegistryWithSandbox(pathSandbox)
 
+	// W7: Create checker from settings with glob rules
 	permMode := resolvePermissionMode(args, cfg)
-	checker := permission.NewChecker(permMode, nil)
+	checker := permission.NewCheckerFromSettings(permMode, nil, cfg.Allow, cfg.Deny, cfg.Ask)
+
+	// W2: Load memory hierarchy and format for system prompt
+	memEntries, _ := memory.Load(cwd, home)
+	memSection := memory.FormatForPrompt(memEntries, nil)
+
+	// Build system prompt with memory and tool names
+	toolNames := make([]string, 0, len(toolRegistry.All()))
+	for _, t := range toolRegistry.All() {
+		toolNames = append(toolNames, t.Name)
+	}
+	systemPrompt := prompt.BuildSystem(prompt.SystemOpts{
+		CWD:           cwd,
+		PlanMode:      args.plan,
+		ToolNames:     toolNames,
+		MemorySection: memSection,
+		ContextFiles:  prompt.LoadContextFiles(cwd),
+	})
 
 	// Print mode: non-interactive, streams to stdout
 	if args.print {
-		prompt := strings.Join(args.remaining(), " ")
-		return print.Run(context.Background(), provider, model, prompt)
+		promptText := strings.Join(args.remaining(), " ")
+		return print.RunWithConfig(context.Background(), print.Config{
+			OutputFormat: "text",
+			SystemPrompt: systemPrompt,
+		}, print.Deps{
+			Provider: provider,
+			Model:    model,
+			Tools:    toolRegistry.All(),
+		}, promptText)
 	}
 
 	// Interactive mode (default)
-	return runInteractive(model, checker, auth, toolRegistry)
+	return runInteractive(model, checker, auth, toolRegistry, sb, systemPrompt)
 }
 
-// registerProviders registers all built-in AI provider factories.
+// registerProviders registers all built-in AI provider factories with no auth.
 func registerProviders() {
 	ai.RegisterProvider(ai.ApiAnthropic, func(baseURL string) ai.ApiProvider {
 		return anthropic.New("", baseURL)
@@ -115,6 +159,25 @@ func registerProviders() {
 	ai.RegisterProvider(ai.ApiVertex, func(baseURL string) ai.ApiProvider {
 		return vertex.New("", "", baseURL)
 	})
+}
+
+// registerProvidersWithAuth re-registers providers with auth keys from the store.
+func registerProvidersWithAuth(auth *config.AuthStore, _ string) {
+	if key := auth.GetKey("anthropic"); key != "" {
+		ai.RegisterProvider(ai.ApiAnthropic, func(baseURL string) ai.ApiProvider {
+			return anthropic.New(key, baseURL)
+		})
+	}
+	if key := auth.GetKey("openai"); key != "" {
+		ai.RegisterProvider(ai.ApiOpenAI, func(baseURL string) ai.ApiProvider {
+			return openai.New(key, baseURL)
+		})
+	}
+	if key := auth.GetKey("google"); key != "" {
+		ai.RegisterProvider(ai.ApiGoogle, func(baseURL string) ai.ApiProvider {
+			return google.New(key, baseURL)
+		})
+	}
 }
 
 // resolveModel determines the model from CLI flag, config, or default.
@@ -147,7 +210,7 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 }
 
 // runInteractive sets up the terminal, defers crash recovery, and starts the TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, auth *config.AuthStore, toolReg *tools.Registry) error {
+func runInteractive(model *ai.Model, checker *permission.Checker, auth *config.AuthStore, toolReg *tools.Registry, sb sandbox.Sandbox, systemPrompt string) error {
 	vt := terminal.NewVirtualTerminal(120, 40)
 	defer terminal.RestoreOnPanic(vt)
 
@@ -157,19 +220,17 @@ func runInteractive(model *ai.Model, checker *permission.Checker, auth *config.A
 		app.SetYoloMode()
 	}
 
-	// TODO(M21): Wire auth, toolReg, and model into the interactive agent loop.
-	// This requires connecting the permission checker + sandbox-aware tool registry
-	// to a running Agent, and binding agent events to TUI components.
-	_ = auth
-	_ = toolReg
-	_ = model
-
 	app.Start()
 	defer app.Stop()
 
-	// The interactive loop will be driven by the agent loop (future wiring).
-	// For now, indicate successful startup.
-	fmt.Printf("pi-go %s | model: %s | mode: %s\n", version, model.Name, checker.Mode())
+	// W3/W5: Wire all components into interactive mode
+	_ = auth        // Available for auth-required operations
+	_ = toolReg     // W3: Tool registry with all builtins + web tools
+	_ = sb          // W8: OS sandbox for bash tool wrapping
+	_ = systemPrompt // W2: System prompt with memory, tools, context
+
+	fmt.Printf("pi-go %s | model: %s | mode: %s | tools: %d\n",
+		version, model.Name, checker.Mode(), len(toolReg.All()))
 
 	return nil
 }

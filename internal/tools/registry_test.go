@@ -15,7 +15,7 @@ func TestNewRegistry_RegistersAllBuiltins(t *testing.T) {
 	r := NewRegistry()
 	all := r.All()
 
-	expectedTools := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+	expectedTools := []string{"read", "write", "edit", "bash", "grep", "find", "ls", "webfetch", "websearch"}
 	if len(all) < len(expectedTools) {
 		t.Errorf("expected at least %d tools, got %d", len(expectedTools), len(all))
 	}
@@ -49,7 +49,7 @@ func TestRegistry_ReadOnly_FiltersCorrectly(t *testing.T) {
 	}
 
 	// read, grep, find, ls should be read-only
-	expectedReadOnly := map[string]bool{"read": true, "grep": true, "find": true, "ls": true}
+	expectedReadOnly := map[string]bool{"read": true, "grep": true, "find": true, "ls": true, "webfetch": true, "websearch": true}
 	for _, tool := range roTools {
 		if !expectedReadOnly[tool.Name] {
 			t.Errorf("unexpected read-only tool: %q", tool.Name)
