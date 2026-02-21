@@ -159,20 +159,13 @@ func (t *TUI) render() {
 	// Composite overlays on top
 	compositeOverlays(buf, overlays, w, h)
 
-	// Clamp to terminal height: keep bottom lines so editor+footer stay visible
+	// Clamp to terminal height: keep bottom lines so editor+footer stay visible.
+	// The differential renderer handles the content shift naturally: all lines
+	// appear changed and get re-rendered; no special transition logic needed.
 	lines := buf.Lines
-	clamped := len(lines) > h
-	if clamped {
+	if len(lines) > h {
 		lines = lines[len(lines)-h:]
 	}
-
-	// Detect clamp transition: force full redraw so diff engine stays consistent
-	if clamped != rstate.prevClamped {
-		prevLines = nil
-		rstate.firstRender = true
-		rstate.maxRendered = 0
-	}
-	rstate.prevClamped = clamped
 
 	// Find cursor position and strip marker
 	cursorRow, cursorCol := extractCursorPosition(lines)
@@ -281,7 +274,6 @@ type renderState struct {
 	cursorRow   int  // cursor row (0-based, relative to our output region)
 	firstRender bool // true until first render completes
 	prevWidth   int  // detect width changes
-	prevClamped bool // was previous frame clamped to terminal height?
 }
 
 // relativeRender generates ANSI commands using relative cursor movement
