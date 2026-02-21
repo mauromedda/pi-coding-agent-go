@@ -5,6 +5,7 @@ package components
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
@@ -12,6 +13,7 @@ import (
 
 // AssistantMessage renders an assistant's response.
 type AssistantMessage struct {
+	mu       sync.Mutex
 	buf      strings.Builder
 	thinking string
 	dirty    bool
@@ -28,18 +30,23 @@ func NewAssistantMessage() *AssistantMessage {
 
 // AppendText adds text to the message (for streaming).
 func (a *AssistantMessage) AppendText(text string) {
+	a.mu.Lock()
 	a.buf.WriteString(text)
 	a.dirty = true
+	a.mu.Unlock()
 }
 
 // SetThinking sets the thinking/reasoning text.
 func (a *AssistantMessage) SetThinking(text string) {
+	a.mu.Lock()
 	a.thinking = text
 	a.dirty = true
+	a.mu.Unlock()
 }
 
 // Render draws the assistant message with a blank spacer above.
 func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
+	a.mu.Lock()
 	out.WriteLine("")
 
 	if a.thinking != "" {
@@ -55,9 +62,12 @@ func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
 		}
 		out.WriteLines(a.cachedLines)
 	}
+	a.mu.Unlock()
 }
 
 // Invalidate marks for re-render.
 func (a *AssistantMessage) Invalidate() {
+	a.mu.Lock()
 	a.dirty = true
+	a.mu.Unlock()
 }

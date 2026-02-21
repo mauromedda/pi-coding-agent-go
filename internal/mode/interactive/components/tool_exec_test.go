@@ -11,6 +11,36 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
+func TestToolExec_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	te := NewToolExec("bash", `{"command":"ls"}`)
+	const iterations = 100
+	done := make(chan struct{})
+
+	// Writer goroutine: simulate agent streaming output
+	go func() {
+		defer close(done)
+		for i := 0; i < iterations; i++ {
+			te.AppendOutput("line\n")
+		}
+		te.SetDone("")
+	}()
+
+	// Reader goroutine (this one): simulate render loop
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			buf.Lines = buf.Lines[:0]
+			te.Render(buf, 80)
+		}
+	}
+}
+
 func TestToolExec(t *testing.T) {
 	t.Parallel()
 

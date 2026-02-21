@@ -11,6 +11,37 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
+func TestAssistantMessage_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	msg := NewAssistantMessage()
+	const iterations = 100
+	done := make(chan struct{})
+
+	// Writer goroutine: simulate agent streaming
+	go func() {
+		defer close(done)
+		for i := 0; i < iterations; i++ {
+			msg.AppendText("chunk ")
+			msg.SetThinking("step")
+			msg.Invalidate()
+		}
+	}()
+
+	// Reader goroutine (this one): simulate render loop
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			buf.Lines = buf.Lines[:0]
+			msg.Render(buf, 80)
+		}
+	}
+}
+
 func TestAssistantMessage(t *testing.T) {
 	t.Parallel()
 
