@@ -15,8 +15,9 @@ func NewUserMessage(text string) *UserMessage {
 	return &UserMessage{text: text}
 }
 
-// Render draws the user message with prompt prefix.
+// Render draws the user message with a blank spacer and bold prompt prefix.
 func (u *UserMessage) Render(out *tui.RenderBuffer, _ int) {
+	out.WriteLine("")
 	out.WriteLine("\x1b[1m> " + u.text + "\x1b[0m")
 }
 

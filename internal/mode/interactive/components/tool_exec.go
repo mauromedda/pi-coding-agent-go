@@ -37,8 +37,10 @@ func (t *ToolExec) SetDone(errMsg string) {
 	t.output.Reset()
 }
 
-// Render draws the tool execution status.
+// Render draws the tool execution status with a blank spacer above.
 func (t *ToolExec) Render(out *tui.RenderBuffer, _ int) {
+	out.WriteLine("")
+
 	// Tool name with status indicator
 	status := "\x1b[33m⟳\x1b[0m" // Yellow spinner
 	if t.done {

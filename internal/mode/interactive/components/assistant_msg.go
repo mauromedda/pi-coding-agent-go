@@ -38,8 +38,10 @@ func (a *AssistantMessage) SetThinking(text string) {
 	a.dirty = true
 }
 
-// Render draws the assistant message.
+// Render draws the assistant message with a blank spacer above.
 func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
+	out.WriteLine("")
+
 	if a.thinking != "" {
 		out.WriteLine("\x1b[2m" + "thinking..." + "\x1b[0m")
 	}
