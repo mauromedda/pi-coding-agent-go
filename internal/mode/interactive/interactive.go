@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -78,6 +79,7 @@ type App struct {
 	activeAgent  *agent.Agent
 	activeDialog *components.PermissionDialog
 	messages     []ai.Message // conversation history
+	cmdRegistry  *commands.Registry
 }
 
 // NewFromDeps creates a fully-wired interactive app from dependencies.
@@ -95,6 +97,7 @@ func NewFromDeps(deps AppDeps) *App {
 		tools:        deps.Tools,
 		systemPrompt: deps.SystemPrompt,
 		version:      deps.Version,
+		cmdRegistry:  commands.NewRegistry(),
 	}
 	return app
 }
@@ -244,12 +247,18 @@ func (a *App) onKey(k key.Key) {
 	a.tui.RequestRender()
 }
 
-// submitPrompt sends user input to the agent.
+// submitPrompt sends user input to the agent or dispatches a slash command.
 func (a *App) submitPrompt(text string) {
 	container := a.tui.Container()
 
 	// Clear editor
 	a.editor.SetText("")
+
+	// Check for slash commands before sending to agent
+	if commands.IsCommand(text) {
+		a.handleSlashCommand(container, text)
+		return
+	}
 
 	// Remove editor+footer temporarily
 	container.Remove(a.editor)
@@ -273,6 +282,54 @@ func (a *App) submitPrompt(text string) {
 
 	// Run agent in background
 	go a.runAgent()
+}
+
+// handleSlashCommand dispatches a slash command and displays the result.
+func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
+	cwd, _ := os.Getwd()
+	modelName := "none"
+	if a.model != nil {
+		modelName = a.model.Name
+	}
+
+	cmdCtx := &commands.CommandContext{
+		Model:    modelName,
+		Mode:     a.mode.String(),
+		Version:  a.version,
+		CWD:      cwd,
+		Messages: len(a.messages),
+		ClearHistory: func() {
+			a.messages = nil
+		},
+		ToggleMode: func() {
+			a.ToggleMode()
+		},
+		GetMode: func() string {
+			return a.mode.String()
+		},
+	}
+
+	result, err := a.cmdRegistry.Dispatch(cmdCtx, text)
+
+	// Display result
+	container.Remove(a.editor)
+	container.Remove(a.footer)
+
+	container.Add(components.NewUserMessage(text))
+
+	msg := components.NewAssistantMessage()
+	if err != nil {
+		msg.AppendText(fmt.Sprintf("Error: %v", err))
+	} else {
+		msg.AppendText(result)
+	}
+	container.Add(msg)
+
+	container.Add(a.editor)
+	container.Add(a.footer)
+
+	a.updateFooter()
+	a.tui.RequestRender()
 }
 
 // runAgent executes the agent loop, streaming events to TUI components.
