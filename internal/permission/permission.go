@@ -46,6 +46,7 @@ type Checker struct {
 	mode       Mode
 	allowRules []Rule
 	denyRules  []Rule
+	globRules  []GlobRule
 	askFn      AskFunc
 }
 
@@ -107,6 +108,28 @@ func (c *Checker) Check(tool string, args map[string]any) error {
 	for _, rule := range c.allowRules {
 		if matchTool(rule.Tool, tool) {
 			return nil
+		}
+	}
+
+	// Evaluate glob rules (deny -> ask -> allow)
+	if len(c.globRules) > 0 {
+		specifier := ExtractSpecifier(tool, args)
+		switch evaluateGlobRules(c.globRules, tool, specifier) {
+		case ActionDeny:
+			return fmt.Errorf("tool %q with specifier %q denied by glob rule", tool, specifier)
+		case ActionAllow:
+			return nil
+		case ActionAsk:
+			if c.askFn != nil {
+				allowed, err := c.askFn(tool, args)
+				if err != nil {
+					return fmt.Errorf("permission check failed: %w", err)
+				}
+				if !allowed {
+					return fmt.Errorf("tool %q denied by user", tool)
+				}
+				return nil
+			}
 		}
 	}
 
