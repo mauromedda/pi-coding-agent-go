@@ -27,8 +27,6 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/terminal"
 )
 
-const compactionThresholdPct = 80
-
 // Mode represents the current editing mode.
 type Mode int
 
@@ -51,14 +49,15 @@ func (m Mode) String() string {
 
 // AppDeps bundles all dependencies for the interactive App.
 type AppDeps struct {
-	Terminal     terminal.Terminal
-	Provider     ai.ApiProvider
-	Model        *ai.Model
-	Tools        []*agent.AgentTool
-	Checker      *permission.Checker
-	SystemPrompt string
-	Version      string
-	StatusEngine *statusline.Engine
+	Terminal             terminal.Terminal
+	Provider             ai.ApiProvider
+	Model                *ai.Model
+	Tools                []*agent.AgentTool
+	Checker              *permission.Checker
+	SystemPrompt         string
+	Version              string
+	StatusEngine         *statusline.Engine
+	AutoCompactThreshold int
 }
 
 // App is the main interactive application.
@@ -109,6 +108,9 @@ type App struct {
 
 	// External status line engine (optional)
 	statusEngine *statusline.Engine
+
+	// Configurable auto-compact threshold (percentage 1-100; 0 = default 80%)
+	autoCompactThreshold int
 }
 
 // NewFromDeps creates a fully-wired interactive app from dependencies.
@@ -126,8 +128,9 @@ func NewFromDeps(deps AppDeps) *App {
 		tools:        deps.Tools,
 		systemPrompt: deps.SystemPrompt,
 		version:      deps.Version,
-		cmdRegistry:  commands.NewRegistry(),
-		statusEngine: deps.StatusEngine,
+		cmdRegistry:          commands.NewRegistry(),
+		statusEngine:         deps.StatusEngine,
+		autoCompactThreshold: deps.AutoCompactThreshold,
 	}
 	// Initialize file mention selector
 	app.initFileMentionSelector()
@@ -155,6 +158,7 @@ func (a *App) initFileMentionSelector() {
 	a.fileMentionSelector = component.NewFileMentionSelector(cwd, cwd)
 	// Scan project files in background
 	go func() {
+		defer func() { recover() }() //nolint:errcheck // non-critical goroutine
 		_ = a.fileMentionSelector.ScanProject()
 	}()
 }
@@ -209,7 +213,10 @@ func (a *App) Run() error {
 
 	// Start reading stdin keys
 	stdinBuf := input.NewStdinBuffer(os.Stdin, a.onKey)
-	go stdinBuf.Start(a.ctx)
+	go func() {
+		defer terminal.RecoverGoroutine(a.term)
+		stdinBuf.Start(a.ctx)
+	}()
 
 	// Block until context done
 	<-a.ctx.Done()
@@ -535,6 +542,7 @@ func (a *App) newAssistantSegment() *components.AssistantMessage {
 
 // runAgent executes the agent loop, streaming events to TUI components.
 func (a *App) runAgent() {
+	defer terminal.RecoverGoroutine(a.term)
 	a.agentRunning.Store(true)
 	defer a.agentRunning.Store(false)
 
@@ -684,13 +692,22 @@ func (a *App) runAgent() {
 	a.tui.RequestRender()
 }
 
-// autoCompactIfNeeded compacts messages if context occupation >= 80%.
+// compactionThreshold returns the effective auto-compact threshold percentage.
+// Falls back to 80% if the configured value is out of range.
+func (a *App) compactionThreshold() int {
+	if a.autoCompactThreshold > 0 && a.autoCompactThreshold <= 100 {
+		return a.autoCompactThreshold
+	}
+	return 80
+}
+
+// autoCompactIfNeeded compacts messages if context occupation >= threshold.
 func (a *App) autoCompactIfNeeded() {
 	if a.model == nil || a.model.MaxTokens == 0 {
 		return
 	}
 	pct := int(a.lastContextTokens.Load()) * 100 / a.model.MaxTokens
-	if pct < compactionThresholdPct {
+	if pct < a.compactionThreshold() {
 		return
 	}
 	compacted, _, err := session.Compact(a.messages)

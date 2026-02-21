@@ -710,6 +710,127 @@ func TestHandleSlashCommand_WiresCompactFn(t *testing.T) {
 	}
 }
 
+func TestAutoCompact_CustomThreshold(t *testing.T) {
+	t.Parallel()
+
+	msgs := make([]ai.Message, 15)
+	for i := range msgs {
+		msgs[i] = ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i))
+	}
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal:             vt,
+		Model:                &ai.Model{Name: "test", MaxTokens: 200000},
+		Checker:              checker,
+		AutoCompactThreshold: 50,
+	})
+	app.footer = components.NewFooter()
+	app.messages = msgs
+
+	// 100k out of 200k = 50% => should trigger at custom threshold 50
+	app.lastContextTokens.Store(100000)
+
+	app.autoCompactIfNeeded()
+
+	if len(app.messages) >= 15 {
+		t.Errorf("expected messages to be compacted from 15 at 50%% threshold, got %d", len(app.messages))
+	}
+}
+
+func TestAutoCompact_CustomThreshold_DoesNotTriggerBelow(t *testing.T) {
+	t.Parallel()
+
+	msgs := make([]ai.Message, 15)
+	for i := range msgs {
+		msgs[i] = ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i))
+	}
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal:             vt,
+		Model:                &ai.Model{Name: "test", MaxTokens: 200000},
+		Checker:              checker,
+		AutoCompactThreshold: 50,
+	})
+	app.footer = components.NewFooter()
+	app.messages = msgs
+
+	// 80k out of 200k = 40% => should NOT trigger at 50% threshold
+	app.lastContextTokens.Store(80000)
+
+	app.autoCompactIfNeeded()
+
+	if len(app.messages) != 15 {
+		t.Errorf("expected messages unchanged at 15 (below 50%% threshold), got %d", len(app.messages))
+	}
+}
+
+func TestCompactionThreshold_Default(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+
+	if got := app.compactionThreshold(); got != 80 {
+		t.Errorf("compactionThreshold() = %d, want 80 (default)", got)
+	}
+}
+
+func TestCompactionThreshold_Custom(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal:             vt,
+		Model:                &ai.Model{Name: "test"},
+		Checker:              checker,
+		AutoCompactThreshold: 60,
+	})
+
+	if got := app.compactionThreshold(); got != 60 {
+		t.Errorf("compactionThreshold() = %d, want 60", got)
+	}
+}
+
+func TestCompactionThreshold_OutOfRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		threshold int
+		want      int
+	}{
+		{"zero falls back to default", 0, 80},
+		{"negative falls back to default", -5, 80},
+		{"over 100 falls back to default", 150, 80},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			vt := terminal.NewVirtualTerminal(80, 24)
+			checker := permission.NewChecker(permission.ModeNormal, nil)
+			app := NewFromDeps(AppDeps{
+				Terminal:             vt,
+				Model:                &ai.Model{Name: "test"},
+				Checker:              checker,
+				AutoCompactThreshold: tt.threshold,
+			})
+			if got := app.compactionThreshold(); got != tt.want {
+				t.Errorf("compactionThreshold() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleFileMentionInput_Backspace_EmptyFilter_Hides(t *testing.T) {
 	t.Parallel()
 
