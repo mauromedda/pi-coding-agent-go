@@ -1,5 +1,5 @@
 // ABOUTME: Read-file tool: returns file contents with optional offset/limit
-// ABOUTME: Detects binary files and truncates large outputs (>100KB)
+// ABOUTME: Detects binary files, truncates large outputs, validates paths via sandbox
 
 package tools
 
@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 const (
@@ -20,6 +21,15 @@ const (
 
 // NewReadTool creates a read-only tool that returns file contents.
 func NewReadTool() *agent.AgentTool {
+	return newReadTool(nil)
+}
+
+// NewReadToolWithSandbox creates a read tool that validates paths against the sandbox.
+func NewReadToolWithSandbox(sb *permission.Sandbox) *agent.AgentTool {
+	return newReadTool(sb)
+}
+
+func newReadTool(sb *permission.Sandbox) *agent.AgentTool {
 	return &agent.AgentTool{
 		Name:        "read",
 		Label:       "Read File",
@@ -34,14 +44,22 @@ func NewReadTool() *agent.AgentTool {
 			}
 		}`),
 		ReadOnly: true,
-		Execute:  executeRead,
+		Execute: func(ctx context.Context, id string, params map[string]any, onUpdate func(agent.ToolUpdate)) (agent.ToolResult, error) {
+			return executeRead(sb, ctx, id, params, onUpdate)
+		},
 	}
 }
 
-func executeRead(_ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
+func executeRead(sb *permission.Sandbox, _ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
 	path, err := requireStringParam(params, "path")
 	if err != nil {
 		return errResult(err), nil
+	}
+
+	if sb != nil {
+		if err := sb.ValidatePath(path); err != nil {
+			return errResult(err), nil
+		}
 	}
 
 	data, err := os.ReadFile(path)

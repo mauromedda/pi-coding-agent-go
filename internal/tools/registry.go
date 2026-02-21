@@ -1,5 +1,5 @@
 // ABOUTME: Tool registry: creates, stores, and queries agent tools
-// ABOUTME: Auto-detects ripgrep availability and registers all built-in tools
+// ABOUTME: Auto-detects ripgrep; injects sandbox into file tools for path validation
 
 package tools
 
@@ -7,19 +7,27 @@ import (
 	"os/exec"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 // Registry manages the collection of available agent tools.
 type Registry struct {
-	tools map[string]*agent.AgentTool
-	hasRg bool
+	tools   map[string]*agent.AgentTool
+	hasRg   bool
+	sandbox *permission.Sandbox
 }
 
 // NewRegistry creates a Registry, auto-detects ripgrep, and registers built-in tools.
 func NewRegistry() *Registry {
+	return NewRegistryWithSandbox(nil)
+}
+
+// NewRegistryWithSandbox creates a Registry with sandbox path validation for file tools.
+func NewRegistryWithSandbox(sb *permission.Sandbox) *Registry {
 	r := &Registry{
-		tools: make(map[string]*agent.AgentTool),
-		hasRg: detectRipgrep(),
+		tools:   make(map[string]*agent.AgentTool),
+		hasRg:   detectRipgrep(),
+		sandbox: sb,
 	}
 	r.registerBuiltins()
 	return r
@@ -63,9 +71,9 @@ func (r *Registry) HasRipgrep() bool {
 // registerBuiltins adds all built-in tools to the registry.
 func (r *Registry) registerBuiltins() {
 	builtins := []*agent.AgentTool{
-		NewReadTool(),
-		NewWriteTool(),
-		NewEditTool(),
+		newReadTool(r.sandbox),
+		newWriteTool(r.sandbox),
+		newEditTool(r.sandbox),
 		NewBashTool(),
 		NewGrepTool(r.hasRg),
 		NewFindTool(r.hasRg),

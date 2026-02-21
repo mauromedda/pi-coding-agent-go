@@ -1,9 +1,13 @@
 // ABOUTME: Tests for permission checker and sandbox path validation
-// ABOUTME: Covers all modes: normal, yolo, plan; and rule matching
+// ABOUTME: Covers all modes: normal, yolo, plan; rule matching; sandbox prefix/symlink
 
 package permission
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestChecker_PlanMode(t *testing.T) {
 	t.Parallel()
@@ -123,5 +127,67 @@ func TestSandbox_Traversal(t *testing.T) {
 
 	if err := sb.ValidatePath("/tmp/../etc/passwd"); err == nil {
 		t.Error("expected traversal to be rejected")
+	}
+}
+
+func TestSandbox_PrefixBypass(t *testing.T) {
+	t.Parallel()
+
+	sb, err := NewSandbox([]string{"/tmp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// "/tmpevil" shares the prefix "/tmp" but is NOT inside "/tmp/"
+	if err := sb.ValidatePath("/tmpevil/secret.txt"); err == nil {
+		t.Error("expected /tmpevil to be rejected: prefix bypass without separator boundary")
+	}
+}
+
+func TestSandbox_SymlinkResolution(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed")
+	secret := filepath.Join(dir, "secret")
+	link := filepath.Join(allowed, "escape")
+
+	if err := os.MkdirAll(allowed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(secret, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a symlink inside allowed that points outside
+	if err := os.Symlink(secret, link); err != nil {
+		t.Fatal(err)
+	}
+
+	sb, err := NewSandbox([]string{allowed})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The symlink resolves to "secret", which is outside "allowed"
+	if err := sb.ValidatePath(filepath.Join(link, "data.txt")); err == nil {
+		t.Error("expected symlink escape to be rejected")
+	}
+}
+
+func TestChecker_NilAskFn_DeniesWriteInNormalMode(t *testing.T) {
+	t.Parallel()
+
+	// M6: When askFn is nil in ModeNormal, write tools should be denied, not silently allowed
+	c := NewChecker(ModeNormal, nil)
+
+	if err := c.Check("write", nil); err == nil {
+		t.Error("write should be denied when askFn is nil in normal mode")
+	}
+	if err := c.Check("bash", nil); err == nil {
+		t.Error("bash should be denied when askFn is nil in normal mode")
+	}
+	// Read-only tools should still be allowed
+	if err := c.Check("read", nil); err != nil {
+		t.Errorf("read should be allowed: %v", err)
 	}
 }

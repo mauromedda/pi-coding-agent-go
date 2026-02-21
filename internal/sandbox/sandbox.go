@@ -64,6 +64,7 @@ func isExcludedCmd(command string, excluded []string) bool {
 }
 
 // validateWritePath checks if a write path is within allowed dirs.
+// Uses separator boundary to prevent prefix bypass (e.g. /tmp vs /tmpevil).
 func validateWritePath(path string, opts Opts) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -75,7 +76,12 @@ func validateWritePath(path string, opts Opts) error {
 
 	for _, dir := range allowed {
 		dirAbs, _ := filepath.Abs(dir)
-		if dirAbs != "" && strings.HasPrefix(abs, dirAbs) {
+		if dirAbs == "" {
+			continue
+		}
+		// Add separator boundary to prevent /tmpevil matching /tmp
+		dirWithSep := dirAbs + string(filepath.Separator)
+		if strings.HasPrefix(abs+string(filepath.Separator), dirWithSep) || abs == dirAbs {
 			return nil
 		}
 	}

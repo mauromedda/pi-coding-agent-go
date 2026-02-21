@@ -81,7 +81,12 @@ func run(args cliArgs) error {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
 	}
 
-	toolRegistry := tools.NewRegistry()
+	sandbox, err := permission.NewSandbox([]string{cwd})
+	if err != nil {
+		return fmt.Errorf("creating sandbox: %w", err)
+	}
+
+	toolRegistry := tools.NewRegistryWithSandbox(sandbox)
 
 	permMode := resolvePermissionMode(args, cfg)
 	checker := permission.NewChecker(permMode, nil)

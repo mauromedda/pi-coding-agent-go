@@ -269,6 +269,54 @@ func TestAgent_ReadOnlyToolsRunInParallel(t *testing.T) {
 	}
 }
 
+func TestAgent_ToolBlockedByPermission(t *testing.T) {
+	t.Parallel()
+
+	toolInput := json.RawMessage(`{"path":"/tmp/test.txt","content":"x"}`)
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content: []ai.Content{
+					{Type: ai.ContentToolUse, ID: "tool_1", Name: "write", Input: toolInput},
+				},
+				StopReason: ai.StopToolUse,
+			},
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "Permission denied"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	writeTool := &AgentTool{
+		Name:     "write",
+		ReadOnly: false,
+		Execute: func(_ context.Context, _ string, _ map[string]any, _ func(ToolUpdate)) (ToolResult, error) {
+			return ToolResult{Content: "written"}, nil
+		},
+	}
+
+	// permCheck always denies
+	permCheck := func(tool string, args map[string]any) error {
+		return fmt.Errorf("tool %q denied by permission checker", tool)
+	}
+
+	ag := NewWithPermissions(provider, newTestModel(), []*AgentTool{writeTool}, permCheck)
+	events := collectEvents(ag.Prompt(context.Background(), newTestContext(), &ai.StreamOptions{}))
+
+	var toolEndWithError bool
+	for _, evt := range events {
+		if evt.Type == EventToolEnd && evt.ToolResult != nil && evt.ToolResult.IsError {
+			toolEndWithError = true
+			break
+		}
+	}
+	if !toolEndWithError {
+		t.Error("expected tool to be blocked by permission checker with IsError result")
+	}
+}
+
 func TestAgent_AbortCancelsExecution(t *testing.T) {
 	t.Parallel()
 

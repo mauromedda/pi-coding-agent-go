@@ -60,13 +60,17 @@ func executeBash(ctx context.Context, _ string, params map[string]any, onUpdate 
 
 // runBashCommand executes a command string and returns combined stdout+stderr.
 func runBashCommand(ctx context.Context, command string) (string, error) {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", command)
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		return "", fmt.Errorf("bash not found on PATH: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, bashPath, "-c", command)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	output := buf.String()
 	if err != nil {

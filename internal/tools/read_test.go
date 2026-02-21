@@ -1,4 +1,4 @@
-// ABOUTME: Tests for the read tool: normal reads, offset/limit, and binary detection
+// ABOUTME: Tests for the read tool: normal reads, offset/limit, binary detection, and sandbox
 // ABOUTME: Uses t.TempDir for isolated filesystem operations
 
 package tools
@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 func TestReadTool_NormalFile(t *testing.T) {
@@ -137,5 +138,29 @@ func TestReadTool_LargeFileTruncation(t *testing.T) {
 	}
 	if !strings.Contains(result.Content, "truncated") {
 		t.Error("expected truncation notice in output")
+	}
+}
+
+func TestReadTool_OutOfSandboxRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sb, err := permission.NewSandbox([]string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewReadToolWithSandbox(sb)
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{
+		"path": "/etc/passwd",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for out-of-sandbox path")
+	}
+	if !strings.Contains(result.Content, "outside allowed") {
+		t.Errorf("expected sandbox rejection message, got %q", result.Content)
 	}
 }

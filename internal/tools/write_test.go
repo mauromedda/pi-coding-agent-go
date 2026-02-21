@@ -1,4 +1,4 @@
-// ABOUTME: Tests for the write tool: file creation, overwrite, and directory creation
+// ABOUTME: Tests for the write tool: file creation, overwrite, directory creation, and sandbox
 // ABOUTME: Uses t.TempDir for isolated filesystem operations
 
 package tools
@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 func TestWriteTool_CreateNewFile(t *testing.T) {
@@ -139,5 +141,30 @@ func TestWriteTool_ResultContainsByteCount(t *testing.T) {
 	}
 	if !strings.Contains(result.Content, "5 bytes") {
 		t.Errorf("expected byte count in result, got %q", result.Content)
+	}
+}
+
+func TestWriteTool_OutOfSandboxRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sb, err := permission.NewSandbox([]string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewWriteToolWithSandbox(sb)
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{
+		"path":    "/etc/shadow",
+		"content": "pwned",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for out-of-sandbox path")
+	}
+	if !strings.Contains(result.Content, "outside allowed") {
+		t.Errorf("expected sandbox rejection message, got %q", result.Content)
 	}
 }

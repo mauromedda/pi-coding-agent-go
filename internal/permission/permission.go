@@ -138,8 +138,11 @@ func (c *Checker) Check(tool string, args map[string]any) error {
 		return nil
 	}
 
-	// Normal mode for write tools: ask user
-	if c.mode == ModeNormal && !readOnlyTools[tool] && c.askFn != nil {
+	// Normal mode for write tools: ask user or deny if no askFn
+	if c.mode == ModeNormal && !readOnlyTools[tool] {
+		if c.askFn == nil {
+			return fmt.Errorf("tool %q denied: no interactive approval available", tool)
+		}
 		allowed, err := c.askFn(tool, args)
 		if err != nil {
 			return fmt.Errorf("permission check failed: %w", err)

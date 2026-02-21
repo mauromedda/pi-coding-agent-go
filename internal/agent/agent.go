@@ -14,29 +14,40 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// PermCheckFunc validates whether a tool is allowed to execute.
+// Returns nil if allowed, error with reason if blocked.
+type PermCheckFunc func(tool string, args map[string]any) error
+
 // Agent orchestrates the prompt-stream-tool loop against an LLM provider.
 type Agent struct {
-	provider ai.ApiProvider
-	model    *ai.Model
-	tools    map[string]*AgentTool
-	state    atomic.Int32 // stores AgentState
-	events   chan AgentEvent
-	steerCh  chan ai.Message
-	cancelFn context.CancelFunc
+	provider  ai.ApiProvider
+	model     *ai.Model
+	tools     map[string]*AgentTool
+	permCheck PermCheckFunc
+	state     atomic.Int32 // stores AgentState
+	events    chan AgentEvent
+	steerCh   chan ai.Message
+	cancelFn  context.CancelFunc
 }
 
 // New creates an Agent wired to the given provider, model, and tool set.
 func New(provider ai.ApiProvider, model *ai.Model, tools []*AgentTool) *Agent {
+	return NewWithPermissions(provider, model, tools, nil)
+}
+
+// NewWithPermissions creates an Agent with an optional permission checker.
+func NewWithPermissions(provider ai.ApiProvider, model *ai.Model, tools []*AgentTool, permCheck PermCheckFunc) *Agent {
 	tm := make(map[string]*AgentTool, len(tools))
 	for _, t := range tools {
 		tm[t.Name] = t
 	}
 
 	return &Agent{
-		provider: provider,
-		model:    model,
-		tools:    tm,
-		steerCh:  make(chan ai.Message, 8),
+		provider:  provider,
+		model:     model,
+		tools:     tm,
+		permCheck: permCheck,
+		steerCh:   make(chan ai.Message, 8),
 	}
 }
 
@@ -262,6 +273,7 @@ func (a *Agent) executeWriteTools(ctx context.Context, calls []toolCall) ([]tool
 }
 
 // executeSingleTool runs one tool call, emitting start/update/end events.
+// Checks permissions before execution if a permission checker is configured.
 func (a *Agent) executeSingleTool(ctx context.Context, tc toolCall) (toolExecResult, error) {
 	tool, ok := a.tools[tc.Name]
 	if !ok {
@@ -269,6 +281,17 @@ func (a *Agent) executeSingleTool(ctx context.Context, tc toolCall) (toolExecRes
 			ID:     tc.ID,
 			Result: ToolResult{Content: fmt.Sprintf("unknown tool: %s", tc.Name), IsError: true},
 		}, nil
+	}
+
+	// Permission check before execution
+	if a.permCheck != nil {
+		if err := a.permCheck(tc.Name, tc.Args); err != nil {
+			result := ToolResult{Content: err.Error(), IsError: true}
+			a.emit(AgentEvent{
+				Type: EventToolEnd, ToolID: tc.ID, ToolName: tc.Name, ToolResult: &result,
+			})
+			return toolExecResult{ID: tc.ID, Result: result}, nil
+		}
 	}
 
 	a.emit(AgentEvent{

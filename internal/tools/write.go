@@ -1,5 +1,5 @@
 // ABOUTME: Write-file tool: creates or overwrites files with given content
-// ABOUTME: Automatically creates parent directories via os.MkdirAll
+// ABOUTME: Validates paths via sandbox; automatically creates parent directories
 
 package tools
 
@@ -11,10 +11,20 @@ import (
 	"path/filepath"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 // NewWriteTool creates a tool that writes content to a file.
 func NewWriteTool() *agent.AgentTool {
+	return newWriteTool(nil)
+}
+
+// NewWriteToolWithSandbox creates a write tool that validates paths against the sandbox.
+func NewWriteToolWithSandbox(sb *permission.Sandbox) *agent.AgentTool {
+	return newWriteTool(sb)
+}
+
+func newWriteTool(sb *permission.Sandbox) *agent.AgentTool {
 	return &agent.AgentTool{
 		Name:        "write",
 		Label:       "Write File",
@@ -28,14 +38,22 @@ func NewWriteTool() *agent.AgentTool {
 			}
 		}`),
 		ReadOnly: false,
-		Execute:  executeWrite,
+		Execute: func(ctx context.Context, id string, params map[string]any, onUpdate func(agent.ToolUpdate)) (agent.ToolResult, error) {
+			return executeWrite(sb, ctx, id, params, onUpdate)
+		},
 	}
 }
 
-func executeWrite(_ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
+func executeWrite(sb *permission.Sandbox, _ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
 	path, err := requireStringParam(params, "path")
 	if err != nil {
 		return errResult(err), nil
+	}
+
+	if sb != nil {
+		if err := sb.ValidatePath(path); err != nil {
+			return errResult(err), nil
+		}
 	}
 
 	content, err := requireStringParam(params, "content")

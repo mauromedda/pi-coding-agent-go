@@ -1,5 +1,5 @@
 // ABOUTME: Edit tool: surgical text replacement within existing files
-// ABOUTME: Supports single and replace-all modes; generates unified diff output
+// ABOUTME: Validates paths via sandbox; supports single and replace-all modes
 
 package tools
 
@@ -11,10 +11,20 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 // NewEditTool creates a tool that performs text replacement in files.
 func NewEditTool() *agent.AgentTool {
+	return newEditTool(nil)
+}
+
+// NewEditToolWithSandbox creates an edit tool that validates paths against the sandbox.
+func NewEditToolWithSandbox(sb *permission.Sandbox) *agent.AgentTool {
+	return newEditTool(sb)
+}
+
+func newEditTool(sb *permission.Sandbox) *agent.AgentTool {
 	return &agent.AgentTool{
 		Name:        "edit",
 		Label:       "Edit File",
@@ -30,14 +40,22 @@ func NewEditTool() *agent.AgentTool {
 			}
 		}`),
 		ReadOnly: false,
-		Execute:  executeEdit,
+		Execute: func(ctx context.Context, id string, params map[string]any, onUpdate func(agent.ToolUpdate)) (agent.ToolResult, error) {
+			return executeEdit(sb, ctx, id, params, onUpdate)
+		},
 	}
 }
 
-func executeEdit(_ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
+func executeEdit(sb *permission.Sandbox, _ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
 	path, err := requireStringParam(params, "path")
 	if err != nil {
 		return errResult(err), nil
+	}
+
+	if sb != nil {
+		if err := sb.ValidatePath(path); err != nil {
+			return errResult(err), nil
+		}
 	}
 
 	oldStr, err := requireStringParam(params, "old_string")
