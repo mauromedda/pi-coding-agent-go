@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -191,16 +192,17 @@ func TestLocalSettingsFile(t *testing.T) {
 func TestManagedSettingsFile(t *testing.T) {
 	path := ManagedSettingsFile()
 	if path == "" {
-		t.Error("ManagedSettingsFile returned empty")
+		t.Fatal("ManagedSettingsFile returned empty")
 	}
+
 	switch runtime.GOOS {
 	case "darwin":
-		if path == "" {
-			t.Error("expected non-empty on darwin")
+		if !strings.Contains(path, "Library/Application Support") {
+			t.Errorf("on darwin expected Library/Application Support in path, got %q", path)
 		}
 	case "linux":
-		if path == "" {
-			t.Error("expected non-empty on linux")
+		if path != "/etc/pi-go/settings.json" {
+			t.Errorf("on linux expected /etc/pi-go/settings.json, got %q", path)
 		}
 	}
 }

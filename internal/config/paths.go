@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 const (
@@ -78,8 +79,8 @@ func LocalSettingsFile(projectRoot string) string {
 
 // ManagedSettingsFile returns the platform-dependent managed settings path.
 func ManagedSettingsFile() string {
-	switch goos := os.Getenv("GOOS"); {
-	case goos == "linux":
+	switch runtime.GOOS {
+	case "linux":
 		return "/etc/pi-go/settings.json"
 	default:
 		// macOS / fallback
