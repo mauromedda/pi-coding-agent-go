@@ -9,25 +9,25 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/types"
 )
 
 const maxBridgeTextBytes = 1 << 20 // 1MB cap on MCP tool text output
 
 // BridgeTool converts an MCPTool from a named server into an AgentTool.
-func BridgeTool(serverName string, tool MCPTool, client *Client) *agent.AgentTool {
+func BridgeTool(serverName string, tool MCPTool, client *Client) *types.AgentTool {
 	name := fmt.Sprintf("mcp__%s__%s", sanitizeName(serverName), sanitizeName(tool.Name))
 
-	return &agent.AgentTool{
+	return &types.AgentTool{
 		Name:        name,
 		Label:       tool.Name,
 		Description: tool.Description,
 		Parameters:  tool.InputSchema,
 		ReadOnly:    false,
-		Execute: func(ctx context.Context, id string, params map[string]any, onUpdate func(agent.ToolUpdate)) (agent.ToolResult, error) {
+		Execute: func(ctx context.Context, id string, params map[string]any, onUpdate func(types.ToolUpdate)) (types.ToolResult, error) {
 			result, err := client.CallTool(ctx, tool.Name, params)
 			if err != nil {
-				return agent.ToolResult{Content: err.Error(), IsError: true}, nil
+				return types.ToolResult{Content: err.Error(), IsError: true}, nil
 			}
 
 			var text strings.Builder
@@ -37,7 +37,7 @@ func BridgeTool(serverName string, tool MCPTool, client *Client) *agent.AgentToo
 						text.WriteString("\n")
 					}
 					if text.Len()+len(item.Text) > maxBridgeTextBytes {
-						return agent.ToolResult{
+						return types.ToolResult{
 							Content: fmt.Sprintf("MCP tool %q output exceeded %d bytes limit", tool.Name, maxBridgeTextBytes),
 							IsError: true,
 						}, nil
@@ -46,7 +46,7 @@ func BridgeTool(serverName string, tool MCPTool, client *Client) *agent.AgentToo
 				}
 			}
 
-			return agent.ToolResult{
+			return types.ToolResult{
 				Content: text.String(),
 				IsError: result.IsError,
 			}, nil
@@ -55,9 +55,9 @@ func BridgeTool(serverName string, tool MCPTool, client *Client) *agent.AgentToo
 }
 
 // BridgeAllTools converts all tools from a client into AgentTools.
-func BridgeAllTools(serverName string, client *Client) []*agent.AgentTool {
+func BridgeAllTools(serverName string, client *Client) []*types.AgentTool {
 	tools := client.Tools()
-	result := make([]*agent.AgentTool, len(tools))
+	result := make([]*types.AgentTool, len(tools))
 	for i, tool := range tools {
 		result[i] = BridgeTool(serverName, tool, client)
 	}

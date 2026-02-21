@@ -11,18 +11,18 @@ import (
 	"io"
 	"os"
 
-	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/types"
 )
 
 // Server exposes pi-go tools as an MCP server.
 type Server struct {
-	tools  map[string]*agent.AgentTool
+	tools  map[string]*types.AgentTool
 	reader *bufio.Scanner
 	writer io.Writer
 }
 
 // NewServer creates an MCP server backed by the given tools.
-func NewServer(tools map[string]*agent.AgentTool) *Server {
+func NewServer(tools map[string]*types.AgentTool) *Server {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, maxScannerBuffer), maxScannerBuffer)
 
