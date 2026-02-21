@@ -114,6 +114,29 @@ func TestOpts_Defaults(t *testing.T) {
 	}
 }
 
+func TestNoop_ValidatePath_PathTraversal(t *testing.T) {
+	// Regression: /foo/bar-evil must NOT match workdir /foo/bar
+	workDir := t.TempDir() // e.g. /tmp/TestXYZ123
+	n := &noopSandbox{opts: Opts{WorkDir: workDir}}
+
+	// Sibling path that shares the same prefix but is NOT a subdirectory
+	siblingPath := workDir + "-evil/file.txt"
+	if err := n.ValidatePath(siblingPath, true); err == nil {
+		t.Errorf("write to %q should be denied (workdir = %q): prefix bypass", siblingPath, workDir)
+	}
+
+	// AdditionalDirs also vulnerable
+	extraDir := t.TempDir()
+	n2 := &noopSandbox{opts: Opts{
+		WorkDir:        workDir,
+		AdditionalDirs: []string{extraDir},
+	}}
+	extraSibling := extraDir + "-evil/file.txt"
+	if err := n2.ValidatePath(extraSibling, true); err == nil {
+		t.Errorf("write to %q should be denied (additionalDir = %q): prefix bypass", extraSibling, extraDir)
+	}
+}
+
 func TestIsExcludedCmd(t *testing.T) {
 	tests := []struct {
 		name     string

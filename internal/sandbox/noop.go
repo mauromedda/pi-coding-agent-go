@@ -4,10 +4,7 @@
 package sandbox
 
 import (
-	"fmt"
 	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 // noopSandbox does path validation only; no OS-level isolation.
@@ -23,29 +20,7 @@ func (n *noopSandbox) ValidatePath(path string, write bool) error {
 	if !write {
 		return nil // Reads are unrestricted
 	}
-
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("resolving path %q: %w", path, err)
-	}
-
-	// Check work dir
-	if n.opts.WorkDir != "" {
-		workAbs, _ := filepath.Abs(n.opts.WorkDir)
-		if strings.HasPrefix(abs, workAbs) {
-			return nil
-		}
-	}
-
-	// Check additional dirs
-	for _, dir := range n.opts.AdditionalDirs {
-		dirAbs, _ := filepath.Abs(dir)
-		if strings.HasPrefix(abs, dirAbs) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("write to %q denied: outside allowed directories", path)
+	return validateWritePath(path, n.opts)
 }
 
 func (n *noopSandbox) Available() bool { return true }
