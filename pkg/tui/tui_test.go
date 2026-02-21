@@ -392,6 +392,41 @@ func TestTUI_ClampTransition(t *testing.T) {
 	}
 }
 
+func TestTUI_FullClear(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+	ui.Container().Add(&mockComponent{lines: []string{"line1", "line2"}})
+
+	// First render populates previousLines and rstate
+	ui.RenderOnce()
+	out.Reset()
+
+	// FullClear should reset state and emit clear screen sequence
+	ui.FullClear()
+
+	result := out.String()
+	// Must emit clear screen (\x1b[2J) + cursor home (\x1b[H)
+	if !strings.Contains(result, "\x1b[2J\x1b[H") {
+		t.Errorf("FullClear should emit clear screen + cursor home, got %q", result)
+	}
+
+	// Next render should behave like first render (no diff against previous)
+	out.Reset()
+	ui.RenderOnce()
+
+	result = out.String()
+	// Must contain the content (first-render path writes all lines)
+	if !strings.Contains(result, "line1") || !strings.Contains(result, "line2") {
+		t.Errorf("render after FullClear should output all content, got %q", result)
+	}
+	// Must NOT use absolute positioning (first-render uses \r\n only)
+	if strings.Contains(result, ";1H") {
+		t.Error("render after FullClear should not use absolute positioning")
+	}
+}
+
 func TestTUI_WidthChange(t *testing.T) {
 	t.Parallel()
 

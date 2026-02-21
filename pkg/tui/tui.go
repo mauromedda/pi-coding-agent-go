@@ -54,6 +54,18 @@ func (t *TUI) Container() *Container {
 	return t.container
 }
 
+// FullClear resets all render state and clears the terminal screen.
+// Use after /clear to ensure a fresh visual state.
+func (t *TUI) FullClear() {
+	t.mu.Lock()
+	t.previousLines = nil
+	t.rstate = renderState{firstRender: true, prevWidth: t.width}
+	w := t.writer
+	t.mu.Unlock()
+
+	_, _ = w.Write([]byte("\x1b[2J\x1b[H"))
+}
+
 // SetSize updates the terminal dimensions and triggers a re-render.
 func (t *TUI) SetSize(w, h int) {
 	t.mu.Lock()
@@ -257,10 +269,10 @@ func compositeOverlays(buf *RenderBuffer, overlays []Overlay, w, h int) {
 // and returns (row, col). Returns (-1, -1) if not found.
 func extractCursorPosition(lines []string) (row, col int) {
 	for i, line := range lines {
-		idx := strings.Index(line, CursorMarker)
-		if idx >= 0 {
-			before := line[:idx]
-			after := line[idx+len(CursorMarker):]
+		before, after, ok := strings.Cut(line, CursorMarker)
+		if ok {
+			before := before
+			after := after
 			lines[i] = before + after
 			return i, width.VisibleWidth(before)
 		}
@@ -291,10 +303,7 @@ func relativeRender(state *renderState, prev, curr []string, termWidth int) stri
 			}
 			b.WriteString(line)
 		}
-		state.cursorRow = len(curr) - 1
-		if state.cursorRow < 0 {
-			state.cursorRow = 0
-		}
+		state.cursorRow = max(len(curr)-1, 0)
 		state.maxRendered = len(curr)
 		state.firstRender = false
 		state.prevWidth = termWidth
@@ -310,23 +319,17 @@ func relativeRender(state *renderState, prev, curr []string, termWidth int) stri
 			}
 			b.WriteString(line)
 		}
-		state.cursorRow = len(curr) - 1
-		if state.cursorRow < 0 {
-			state.cursorRow = 0
-		}
+		state.cursorRow = max(len(curr)-1, 0)
 		state.maxRendered = len(curr)
 		state.firstRender = false
 		return b.String()
 	}
 
 	// Find which lines changed and which are new
-	commonLen := len(prev)
-	if len(curr) < commonLen {
-		commonLen = len(curr)
-	}
+	commonLen := min(len(curr), len(prev))
 
 	// Update changed lines using relative movement
-	for i := 0; i < commonLen; i++ {
+	for i := range commonLen {
 		if prev[i] == curr[i] {
 			continue
 		}
@@ -341,10 +344,7 @@ func relativeRender(state *renderState, prev, curr []string, termWidth int) stri
 	if len(curr) > len(prev) {
 		// Move to the last rendered line
 		moveCursor(&b, numBuf[:], state.cursorRow, len(prev)-1)
-		state.cursorRow = len(prev) - 1
-		if state.cursorRow < 0 {
-			state.cursorRow = 0
-		}
+		state.cursorRow = max(len(prev)-1, 0)
 
 		for i := len(prev); i < len(curr); i++ {
 			b.WriteString("\r\n")
