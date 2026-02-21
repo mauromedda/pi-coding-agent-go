@@ -34,6 +34,10 @@ type githubAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
+// TODO(security): add GPG signature verification for release assets.
+// The checksum alone proves integrity but not authenticity; verifying a
+// detached GPG signature (signed by a known release key) would close that gap.
+
 // runSelfUpdate checks for a newer version and replaces the current binary.
 func runSelfUpdate(currentVersion string) error {
 	fmt.Println("checking for updates...")
@@ -105,7 +109,7 @@ func fetchLatestRelease() (*githubRelease, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, body)
 	}
 

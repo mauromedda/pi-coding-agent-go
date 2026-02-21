@@ -215,6 +215,34 @@ func TestClientDoRetryWithBody(t *testing.T) {
 	}
 }
 
+func TestNewClientHasTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("http://example.com", nil)
+
+	if client.httpClient.Timeout == 0 {
+		t.Error("httpClient.Timeout is zero; want a non-zero timeout")
+	}
+}
+
+func TestNewClientHasTransportTimeouts(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("http://example.com", nil)
+
+	transport, ok := client.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("httpClient.Transport is not *http.Transport")
+	}
+
+	if transport.TLSHandshakeTimeout == 0 {
+		t.Error("TLSHandshakeTimeout is zero; want a non-zero timeout")
+	}
+	if transport.ResponseHeaderTimeout == 0 {
+		t.Error("ResponseHeaderTimeout is zero; want a non-zero timeout")
+	}
+}
+
 func TestClientDoRespectsContext(t *testing.T) {
 	t.Parallel()
 

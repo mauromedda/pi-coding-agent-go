@@ -5,9 +5,11 @@ package httputil
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"time"
 
@@ -34,9 +36,23 @@ func NewClient(baseURL string, headers map[string]string) *Client {
 		headers = make(map[string]string)
 	}
 	return &Client{
-		httpClient: &http.Client{},
-		baseURL:    baseURL,
-		headers:    headers,
+		httpClient: &http.Client{
+			Timeout: 5 * time.Minute,
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+			},
+		},
+		baseURL: baseURL,
+		headers: headers,
 	}
 }
 
