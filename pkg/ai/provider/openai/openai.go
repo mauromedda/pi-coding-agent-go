@@ -83,7 +83,8 @@ func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Con
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API error: status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, body)
 	}
 
 	return p.processSSE(sse.NewReader(resp.Body), stream)

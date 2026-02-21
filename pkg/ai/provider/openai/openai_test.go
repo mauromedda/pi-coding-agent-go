@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -173,7 +174,9 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid api key","type":"invalid_request_error"}}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -183,9 +186,13 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	}, nil)
 
 	var gotError bool
+	var errorMsg string
 	for ev := range stream.Events() {
 		if ev.Type == ai.EventError {
 			gotError = true
+			if ev.Error != nil {
+				errorMsg = ev.Error.Error()
+			}
 		}
 	}
 	if !gotError {
@@ -193,6 +200,13 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	}
 	if result := stream.Result(); result != nil {
 		t.Errorf("expected nil result on error, got %v", result)
+	}
+	// Error message must include the response body for debugging
+	if !strings.Contains(errorMsg, "invalid api key") {
+		t.Errorf("error message should contain response body, got %q", errorMsg)
+	}
+	if !strings.Contains(errorMsg, "401") {
+		t.Errorf("error message should contain status code, got %q", errorMsg)
 	}
 }
 
