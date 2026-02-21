@@ -41,8 +41,10 @@ func NewStdinBuffer(r io.Reader, onKey func(key.Key)) *StdinBuffer {
 // It blocks until completion; call it in a goroutine if non-blocking behavior is needed.
 func (b *StdinBuffer) Start(ctx context.Context) {
 	readCh := make(chan readResult)
+	done := make(chan struct{})
 
-	go b.readLoop(readCh)
+	go b.readLoop(readCh, done)
+	defer close(done)
 
 	for {
 		select {
@@ -69,7 +71,8 @@ type readResult struct {
 }
 
 // readLoop continuously reads from the reader and sends data on ch.
-func (b *StdinBuffer) readLoop(ch chan<- readResult) {
+// It stops when done is closed, preventing goroutine leaks on context cancellation.
+func (b *StdinBuffer) readLoop(ch chan<- readResult, done <-chan struct{}) {
 	defer close(ch)
 	tmp := make([]byte, readBufSize)
 	for {
@@ -77,11 +80,18 @@ func (b *StdinBuffer) readLoop(ch chan<- readResult) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, tmp[:n])
-			ch <- readResult{data: data}
+			select {
+			case ch <- readResult{data: data}:
+			case <-done:
+				return
+			}
 		}
 		if err != nil {
 			if n == 0 {
-				ch <- readResult{err: err}
+				select {
+				case ch <- readResult{err: err}:
+				case <-done:
+				}
 			}
 			return
 		}
@@ -157,9 +167,18 @@ func (b *StdinBuffer) tryParse() (int, key.Key, bool) {
 		return b.parseEscapeFromBuf()
 	}
 
-	// Multi-byte UTF-8 rune
+	// Check for incomplete UTF-8 rune; wait for more bytes if the buffer
+	// is shorter than the maximum rune length.
+	if !utf8.FullRune(b.buf) {
+		if len(b.buf) < utf8.UTFMax {
+			return 0, key.Key{}, true
+		}
+		// Buffer is long enough but still invalid; consume one byte.
+		return 1, key.Key{Type: key.KeyUnknown}, false
+	}
+
 	r, size := utf8.DecodeRune(b.buf)
-	if r == utf8.RuneError && size <= 1 {
+	if r == utf8.RuneError {
 		return 1, key.Key{Type: key.KeyUnknown}, false
 	}
 

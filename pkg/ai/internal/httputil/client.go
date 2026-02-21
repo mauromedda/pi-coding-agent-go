@@ -1,0 +1,144 @@
+// ABOUTME: Shared HTTP client with retry logic and SSE streaming support
+// ABOUTME: Provides exponential backoff on 429/5xx; respects HTTP_PROXY/HTTPS_PROXY
+
+package httputil
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"time"
+
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/sse"
+)
+
+const (
+	maxRetries     = 3
+	baseBackoffMs  = 500
+	maxBackoffMs   = 10000
+)
+
+// Client wraps an http.Client with retry logic and default headers.
+type Client struct {
+	httpClient *http.Client
+	baseURL    string
+	headers    map[string]string
+}
+
+// NewClient creates a new HTTP client with the given base URL and default headers.
+// Proxy support comes from the stdlib's default transport (HTTP_PROXY, HTTPS_PROXY).
+func NewClient(baseURL string, headers map[string]string) *Client {
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	return &Client{
+		httpClient: &http.Client{},
+		baseURL:    baseURL,
+		headers:    headers,
+	}
+}
+
+// Do sends an HTTP request with retry on 429 and 5xx status codes.
+// It returns the response from the last attempt, even if retries were exhausted.
+func (c *Client) Do(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	var lastResp *http.Response
+
+	for attempt := range maxRetries {
+		req, err := c.buildRequest(ctx, method, path, body)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("http request failed: %w", err)
+		}
+
+		if !isRetryable(resp.StatusCode) {
+			return resp, nil
+		}
+
+		// Close the body of the retryable response before retrying.
+		resp.Body.Close()
+		lastResp = resp
+
+		if attempt < maxRetries-1 {
+			if err := sleepWithContext(ctx, backoff(attempt)); err != nil {
+				return nil, fmt.Errorf("context cancelled during retry backoff: %w", err)
+			}
+		}
+	}
+
+	// Retries exhausted: make one final request to return a readable response.
+	req, err := c.buildRequest(ctx, method, path, body)
+	if err != nil {
+		return lastResp, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http request failed after retries: %w", err)
+	}
+
+	return resp, nil
+}
+
+// StreamSSE sends an HTTP request and returns an SSE reader for the response body.
+// The caller must close the returned *http.Response when done.
+func (c *Client) StreamSSE(
+	ctx context.Context,
+	method, path string,
+	body io.Reader,
+) (*sse.Reader, *http.Response, error) {
+	resp, err := c.Do(ctx, method, path, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("SSE stream request failed: %w", err)
+	}
+
+	return sse.NewReader(resp.Body), resp, nil
+}
+
+// buildRequest creates an http.Request with default headers applied.
+func (c *Client) buildRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	url := c.baseURL + path
+
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for %s %s: %w", method, path, err)
+	}
+
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	return req, nil
+}
+
+// isRetryable returns true for status codes that warrant a retry.
+func isRetryable(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests || statusCode >= 500
+}
+
+// backoff returns the backoff duration for the given attempt using exponential backoff.
+func backoff(attempt int) time.Duration {
+	ms := float64(baseBackoffMs) * math.Pow(2, float64(attempt))
+	if ms > maxBackoffMs {
+		ms = maxBackoffMs
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+// sleepWithContext waits for the given duration or until the context is cancelled.
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
