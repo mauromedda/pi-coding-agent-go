@@ -51,6 +51,20 @@ func TestSeatbelt_ProfileNetwork(t *testing.T) {
 	}
 }
 
+func TestSeatbelt_ProfileCached(t *testing.T) {
+	s := &seatbeltSandbox{opts: Opts{WorkDir: "/tmp/test-project"}}
+
+	p1 := s.getProfile()
+	p2 := s.getProfile()
+
+	if p1 != p2 {
+		t.Error("cached profile should return identical string")
+	}
+	if p1 == "" {
+		t.Error("profile should not be empty")
+	}
+}
+
 func TestSeatbelt_Available(t *testing.T) {
 	s := &seatbeltSandbox{}
 	// On macOS, sandbox-exec should be available

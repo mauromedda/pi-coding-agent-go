@@ -9,15 +9,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // seatbeltSandbox uses macOS sandbox-exec with a custom profile.
 type seatbeltSandbox struct {
-	opts Opts
+	opts          Opts
+	profileOnce   sync.Once
+	cachedProfile string
+}
+
+// getProfile returns the cached SBPL profile, generating it on first call.
+func (s *seatbeltSandbox) getProfile() string {
+	s.profileOnce.Do(func() {
+		s.cachedProfile = s.generateProfile()
+	})
+	return s.cachedProfile
 }
 
 func (s *seatbeltSandbox) WrapCommand(cmd *exec.Cmd, _ Opts) (*exec.Cmd, error) {
-	profile := s.generateProfile()
+	profile := s.getProfile()
 
 	args := []string{"-p", profile, cmd.Path}
 	args = append(args, cmd.Args[1:]...)
