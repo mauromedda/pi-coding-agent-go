@@ -1,5 +1,5 @@
-// ABOUTME: Tests for MCP client, config loading, bridge, and server
-// ABOUTME: Uses mock transport for client tests and temp dirs for config tests
+// ABOUTME: Tests for MCP client, config loading, bridge, server, and HTTP transport
+// ABOUTME: Uses mock transport for client tests, httptest servers for HTTP transport tests
 
 package mcp
 
@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 )
@@ -563,6 +566,376 @@ func TestRPCError_Error(t *testing.T) {
 	err := &RPCError{Code: -32600, Message: "invalid request"}
 	if err.Error() != "invalid request" {
 		t.Errorf("expected 'invalid request', got %q", err.Error())
+	}
+}
+
+// --- HTTP Transport tests ---
+
+func TestHTTPTransport_SendReceive(t *testing.T) {
+	var mu sync.Mutex
+	var postReceived bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// SSE listener probe; return empty SSE stream.
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		mu.Lock()
+		postReceived = true
+		mu.Unlock()
+
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected application/json Content-Type, got %q", ct)
+		}
+
+		var req Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decoding request body: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		resp := Response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  json.RawMessage(`{"protocolVersion":"2024-11-05"}`),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	transport := NewHTTPTransport(srv.URL, "")
+	defer transport.Close()
+
+	resp, err := transport.Send(context.Background(), &Request{
+		Method: "initialize",
+		ID:     1,
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if resp.ID != 1 {
+		t.Errorf("expected response ID 1, got %d", resp.ID)
+	}
+	if resp.Error != nil {
+		t.Errorf("unexpected error: %s", resp.Error.Message)
+	}
+
+	var result struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+	if result.ProtocolVersion != "2024-11-05" {
+		t.Errorf("expected protocolVersion 2024-11-05, got %q", result.ProtocolVersion)
+	}
+	mu.Lock()
+	gotPost := postReceived
+	mu.Unlock()
+	if !gotPost {
+		t.Error("expected server to receive a POST request")
+	}
+}
+
+func TestHTTPTransport_SessionID(t *testing.T) {
+	const testSessionID = "test-session-abc123"
+	var mu sync.Mutex
+	var postCount int
+	var capturedSessionHeader string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// SSE listener probe; return empty stream.
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		mu.Lock()
+		postCount++
+		count := postCount
+		mu.Unlock()
+
+		// On second POST, capture the session ID header sent by client.
+		if count > 1 {
+			mu.Lock()
+			capturedSessionHeader = r.Header.Get("Mcp-Session-Id")
+			mu.Unlock()
+		}
+
+		// Always return session ID in response.
+		w.Header().Set("Mcp-Session-Id", testSessionID)
+		w.Header().Set("Content-Type", "application/json")
+
+		var req Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		resp := Response{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{}`)}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	transport := NewHTTPTransport(srv.URL, "")
+	defer transport.Close()
+
+	// First request: should capture session ID from response
+	_, err := transport.Send(context.Background(), &Request{Method: "initialize", ID: 1})
+	if err != nil {
+		t.Fatalf("first Send: %v", err)
+	}
+
+	// Second request: should send captured session ID
+	_, err = transport.Send(context.Background(), &Request{Method: "tools/list", ID: 2})
+	if err != nil {
+		t.Fatalf("second Send: %v", err)
+	}
+
+	mu.Lock()
+	captured := capturedSessionHeader
+	mu.Unlock()
+	if captured != testSessionID {
+		t.Errorf("expected session ID %q in second request header, got %q",
+			testSessionID, captured)
+	}
+}
+
+func TestHTTPTransport_SSEStream(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			// Return a JSON-RPC response via SSE stream
+			var req Request
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+
+			resp := Response{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result:  json.RawMessage(`{"tools":[]}`),
+			}
+			respBytes, _ := json.Marshal(resp)
+
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "streaming not supported", http.StatusInternalServerError)
+				return
+			}
+
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", respBytes)
+			flusher.Flush()
+
+		case http.MethodGet:
+			// SSE endpoint for server-initiated notifications
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "streaming not supported", http.StatusInternalServerError)
+				return
+			}
+
+			notif := Notification{
+				JSONRPC: "2.0",
+				Method:  "notifications/tools/list_changed",
+			}
+			notifBytes, _ := json.Marshal(notif)
+
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", notifBytes)
+			flusher.Flush()
+
+			// Keep connection open briefly so the client can read
+			time.Sleep(50 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	transport := NewHTTPTransport(srv.URL, "")
+	defer transport.Close()
+
+	// Test POST with SSE response
+	resp, err := transport.Send(context.Background(), &Request{Method: "tools/list", ID: 1})
+	if err != nil {
+		t.Fatalf("Send with SSE response: %v", err)
+	}
+	if resp.ID != 1 {
+		t.Errorf("expected response ID 1, got %d", resp.ID)
+	}
+
+	// Test GET SSE stream for notifications
+	ch := transport.Receive()
+
+	// Read one notification within a timeout
+	select {
+	case msg := <-ch:
+		var notif Notification
+		if err := json.Unmarshal(msg, &notif); err != nil {
+			t.Fatalf("parsing notification: %v", err)
+		}
+		if notif.Method != "notifications/tools/list_changed" {
+			t.Errorf("expected notifications/tools/list_changed, got %q", notif.Method)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SSE notification")
+	}
+}
+
+func TestHTTPTransport_Notify(t *testing.T) {
+	var mu sync.Mutex
+	var receivedMethod string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		var notif Notification
+		if err := json.NewDecoder(r.Body).Decode(&notif); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		receivedMethod = notif.Method
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	transport := NewHTTPTransport(srv.URL, "")
+	defer transport.Close()
+
+	err := transport.Notify(context.Background(), &Notification{
+		Method: "notifications/initialized",
+	})
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+
+	mu.Lock()
+	method := receivedMethod
+	mu.Unlock()
+	if method != "notifications/initialized" {
+		t.Errorf("server received method %q, want notifications/initialized", method)
+	}
+}
+
+func TestHTTPTransport_AuthToken(t *testing.T) {
+	var mu sync.Mutex
+	var capturedAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		mu.Lock()
+		capturedAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+
+		var req Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		resp := Response{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{}`)}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	transport := NewHTTPTransport(srv.URL, "my-secret-token")
+	defer transport.Close()
+
+	_, err := transport.Send(context.Background(), &Request{Method: "initialize", ID: 1})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	mu.Lock()
+	auth := capturedAuth
+	mu.Unlock()
+	if auth != "Bearer my-secret-token" {
+		t.Errorf("expected Authorization 'Bearer my-secret-token', got %q", auth)
+	}
+}
+
+func TestHTTPTransport_Close(t *testing.T) {
+	var mu sync.Mutex
+	var deleteReceived bool
+	var deleteSessionID string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			w.Header().Set("Mcp-Session-Id", "session-to-close")
+			w.Header().Set("Content-Type", "application/json")
+			var req Request
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			resp := Response{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{}`)}
+			json.NewEncoder(w).Encode(resp)
+		case http.MethodDelete:
+			mu.Lock()
+			deleteReceived = true
+			deleteSessionID = r.Header.Get("Mcp-Session-Id")
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		case http.MethodGet:
+			// SSE endpoint: keep alive briefly.
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if ok {
+				flusher.Flush()
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	transport := NewHTTPTransport(srv.URL, "")
+
+	// Establish session.
+	_, err := transport.Send(context.Background(), &Request{Method: "initialize", ID: 1})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Close should send DELETE with session ID.
+	if err := transport.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	mu.Lock()
+	gotDelete := deleteReceived
+	gotSID := deleteSessionID
+	mu.Unlock()
+
+	if !gotDelete {
+		t.Error("expected DELETE request on Close")
+	}
+	if gotSID != "session-to-close" {
+		t.Errorf("expected session ID 'session-to-close' in DELETE, got %q", gotSID)
 	}
 }
 
