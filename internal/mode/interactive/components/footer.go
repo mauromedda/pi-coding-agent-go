@@ -20,6 +20,7 @@ type Footer struct {
 	line2Left  string
 	line2Right string
 	modeLabel  string
+	contextPct int
 	thinking   config.ThinkingLevel
 	model      string
 	mu         sync.Mutex
@@ -78,6 +79,13 @@ func (f *Footer) SetModel(name string) {
 	f.mu.Unlock()
 }
 
+// SetContextPct sets the context window occupation percentage for display.
+func (f *Footer) SetContextPct(pct int) {
+	f.mu.Lock()
+	f.contextPct = pct
+	f.mu.Unlock()
+}
+
 // SetModeLabel sets the Plan/Edit mode indicator for display.
 func (f *Footer) SetModeLabel(label string) {
 	f.mu.Lock()
@@ -92,6 +100,7 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	line2Left := f.line2Left
 	line2Right := f.line2Right
 	modeLabel := f.modeLabel
+	contextPct := f.contextPct
 	thinking := f.thinking
 	model := f.model
 	f.mu.Unlock()
@@ -103,6 +112,15 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	line2 := line2Left
 	if modeLabel != "" {
 		line2 += fmt.Sprintf(" \x1b[33m%s\x1b[0m", modeLabel) // yellow for mode
+	}
+	if contextPct > 0 {
+		ctxColor := "\x1b[90m" // dim for < 60%
+		if contextPct >= 80 {
+			ctxColor = "\x1b[31m" // red
+		} else if contextPct >= 60 {
+			ctxColor = "\x1b[33m" // yellow
+		}
+		line2 += fmt.Sprintf(" %sctx %d%%\x1b[0m", ctxColor, contextPct)
 	}
 	if thinking != config.ThinkingOff {
 		thinkingColor := "\x1b[36m" // cyan for thinking levels

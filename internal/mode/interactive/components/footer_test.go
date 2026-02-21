@@ -219,6 +219,105 @@ func TestFooter(t *testing.T) {
 		}
 	})
 
+	t.Run("context_pct_displayed_in_line2", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetContextPct(42)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		stripped := width.StripANSI(buf.Lines[1])
+		if !strings.Contains(stripped, "ctx 42%") {
+			t.Errorf("line2 should contain 'ctx 42%%', got %q", stripped)
+		}
+	})
+
+	t.Run("context_pct_zero_not_shown", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetContextPct(0)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		stripped := width.StripANSI(buf.Lines[1])
+		if strings.Contains(stripped, "ctx") {
+			t.Errorf("line2 should not contain 'ctx' when pct is 0, got %q", stripped)
+		}
+	})
+
+	t.Run("context_pct_color_dim_below_60", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetContextPct(30)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		line2 := buf.Lines[1]
+		// Should contain dim ANSI for ctx (no yellow or red)
+		if strings.Contains(line2, "\x1b[33mctx") {
+			t.Error("ctx below 60% should NOT use yellow")
+		}
+		if strings.Contains(line2, "\x1b[31mctx") {
+			t.Error("ctx below 60% should NOT use red")
+		}
+	})
+
+	t.Run("context_pct_color_yellow_60_to_79", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetContextPct(65)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		line2 := buf.Lines[1]
+		if !strings.Contains(line2, "\x1b[33mctx 65%") {
+			t.Errorf("ctx 60-79%% should use yellow (\\x1b[33m), got %q", line2)
+		}
+	})
+
+	t.Run("context_pct_color_red_80_plus", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetContextPct(85)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		line2 := buf.Lines[1]
+		if !strings.Contains(line2, "\x1b[31mctx 85%") {
+			t.Errorf("ctx >= 80%% should use red (\\x1b[31m), got %q", line2)
+		}
+	})
+
 	t.Run("mode_label_empty_no_extra_space", func(t *testing.T) {
 		t.Parallel()
 		f := NewFooter()
