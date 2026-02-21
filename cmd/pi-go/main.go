@@ -104,7 +104,7 @@ func run(args cliArgs) error {
 
 	// Apply --disallowedTools: remove tools before creating checker
 	if args.disallowedTools != "" {
-		for _, spec := range strings.Split(args.disallowedTools, ",") {
+		for spec := range strings.SplitSeq(args.disallowedTools, ",") {
 			spec = strings.TrimSpace(spec)
 			if spec != "" {
 				toolRegistry.Remove(spec)
@@ -119,7 +119,7 @@ func run(args cliArgs) error {
 
 	// Apply --allowedTools: add as glob allow rules
 	if args.allowedTools != "" {
-		for _, spec := range strings.Split(args.allowedTools, ",") {
+		for spec := range strings.SplitSeq(args.allowedTools, ",") {
 			spec = strings.TrimSpace(spec)
 			if spec != "" {
 				checker.AddAllowRule(permission.Rule{Tool: spec})
@@ -190,7 +190,7 @@ func run(args cliArgs) error {
 	}
 
 	// Interactive mode (default)
-	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine)
+	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold)
 }
 
 // registerProviders registers all built-in AI provider factories with no auth.
@@ -299,18 +299,19 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 }
 
 // runInteractive sets up the real terminal, defers crash recovery, and runs the TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine) error {
+func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int) error {
 	term := terminal.NewProcessTerminal()
 	defer terminal.RestoreOnPanic(term)
 
 	deps := interactive.AppDeps{
-		Terminal:     term,
-		Provider:     provider,
-		Model:        model,
-		Tools:        toolReg.All(),
-		Checker:      checker,
-		SystemPrompt: systemPrompt,
-		Version:      version,
+		Terminal:             term,
+		Provider:             provider,
+		Model:                model,
+		Tools:                toolReg.All(),
+		Checker:              checker,
+		SystemPrompt:         systemPrompt,
+		Version:              version,
+		AutoCompactThreshold: autoCompactThreshold,
 	}
 	if statusEngine != nil {
 		deps.StatusEngine = statusEngine
