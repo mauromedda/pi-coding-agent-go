@@ -87,9 +87,22 @@ const (
 	LevelManaged                      // /Library/Application Support/pi-go/ or /etc/pi-go/
 )
 
-// LoadAllWithHome reads settings from all five levels with an explicit home dir.
+// LoadAllWithHome reads settings from all levels with an explicit home dir.
+// Level -1 (lowest priority): ~/.pi/agent/ compat layer
+// Level  0: ~/.pi-go/ user settings
+// Level  1: .pi-go/ project settings
+// Level  2: .pi-go/settings.local.json (gitignored)
+// Level  3: CLI overrides
+// Level  4: Managed settings (/etc/pi-go/ or ~/Library/Application Support/)
 func LoadAllWithHome(projectRoot, homeDir string, cliOverrides *Settings) (*Settings, error) {
 	result := &Settings{}
+
+	// Level -1: ~/.pi/agent/ compat (lowest priority, base layer)
+	if piDir := PiAgentDirFrom(homeDir); piDir != "" {
+		if piSettings, _, err := LoadPiCompat(piDir); err == nil {
+			result = merge(result, piSettings)
+		}
+	}
 
 	// Level 0: User settings (old config.json + new settings.json)
 	sources := []string{

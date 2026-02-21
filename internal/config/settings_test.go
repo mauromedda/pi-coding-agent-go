@@ -233,6 +233,71 @@ func TestHookDef(t *testing.T) {
 	}
 }
 
+func TestLoadAll_PiCompatAsBaseLayer(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	home := t.TempDir()
+
+	// Set up ~/.pi/agent/ with vllm config
+	piDir := filepath.Join(home, ".pi", "agent")
+	mkDir(t, piDir)
+	writeJSON(t, filepath.Join(piDir, "settings.json"), `{
+		"defaultProvider": "vllm",
+		"defaultModel": "Qwen/Qwen3-Coder-Next-FP8",
+		"defaultThinkingLevel": "off"
+	}`)
+	writeJSON(t, filepath.Join(piDir, "models.json"), `{
+		"providers": {
+			"vllm": {
+				"baseUrl": "http://localhost:8000/v1",
+				"api": "openai-completions",
+				"apiKey": "vllm-key",
+				"models": []
+			}
+		}
+	}`)
+
+	s, err := LoadAllWithHome(project, home, nil)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if s.Model != "vllm:Qwen/Qwen3-Coder-Next-FP8" {
+		t.Errorf("expected picompat model, got %q", s.Model)
+	}
+	if s.BaseURL != "http://localhost:8000/v1" {
+		t.Errorf("expected picompat base URL, got %q", s.BaseURL)
+	}
+}
+
+func TestLoadAll_UserOverridesPiCompat(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	home := t.TempDir()
+
+	// Set up ~/.pi/agent/ (Level -1)
+	piDir := filepath.Join(home, ".pi", "agent")
+	mkDir(t, piDir)
+	writeJSON(t, filepath.Join(piDir, "settings.json"), `{
+		"defaultProvider": "vllm",
+		"defaultModel": "base-model"
+	}`)
+	writeJSON(t, filepath.Join(piDir, "models.json"), `{"providers": {}}`)
+
+	// Set up ~/.pi-go/ (Level 0) to override
+	mkDir(t, filepath.Join(home, ".pi-go"))
+	writeJSON(t, filepath.Join(home, ".pi-go", "settings.json"), `{"model":"user-override"}`)
+
+	s, err := LoadAllWithHome(project, home, nil)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if s.Model != "user-override" {
+		t.Errorf("user settings should override picompat, got %q", s.Model)
+	}
+}
+
 // Helpers
 
 func mkDir(t *testing.T, path string) {
