@@ -54,6 +54,36 @@ func TestWriter_WriteAndRead(t *testing.T) {
 	}
 }
 
+func TestSessionID_Validation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		id      string
+		wantErr bool
+	}{
+		{"valid alphanumeric", "abc123", false},
+		{"valid with dash", "session-42", false},
+		{"valid with underscore", "test_session", false},
+		{"path traversal", "../../../etc/passwd", true},
+		{"dot dot", "..", true},
+		{"empty", "", true},
+		{"slash", "foo/bar", true},
+		{"backslash", "foo\\bar", true},
+		{"space", "foo bar", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			valid := validSessionID.MatchString(tt.id)
+			if valid == tt.wantErr {
+				t.Errorf("validSessionID.MatchString(%q) = %v, want %v", tt.id, valid, !tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestCompact_BelowThreshold(t *testing.T) {
 	t.Parallel()
 

@@ -7,12 +7,18 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 )
+
+// validSessionID validates that a session ID contains only safe characters
+// to prevent path traversal attacks.
+var validSessionID = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // RecordType identifies the type of JSONL record.
 type RecordType string
@@ -78,6 +84,9 @@ type Writer struct {
 
 // NewWriter creates a Writer for the given session ID.
 func NewWriter(sessionID string) (*Writer, error) {
+	if !validSessionID.MatchString(sessionID) {
+		return nil, fmt.Errorf("invalid session ID %q: must match [a-zA-Z0-9_-]+", sessionID)
+	}
 	dir := config.SessionsDir()
 	if err := config.EnsureDir(dir); err != nil {
 		return nil, fmt.Errorf("creating sessions dir: %w", err)
@@ -125,6 +134,10 @@ func (w *Writer) Close() error {
 
 // ReadRecords reads all records from a session file.
 func ReadRecords(sessionID string) ([]Record, error) {
+	if !validSessionID.MatchString(sessionID) {
+		return nil, fmt.Errorf("invalid session ID %q: must match [a-zA-Z0-9_-]+", sessionID)
+	}
+
 	path := filepath.Join(config.SessionsDir(), sessionID+".jsonl")
 	f, err := os.Open(path)
 	if err != nil {
@@ -136,10 +149,13 @@ func ReadRecords(sessionID string) ([]Record, error) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
 
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		var rec Record
 		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
-			continue // Skip malformed lines
+			log.Printf("warning: session %s line %d: malformed JSONL: %v", sessionID, lineNum, err)
+			continue
 		}
 		records = append(records, rec)
 	}

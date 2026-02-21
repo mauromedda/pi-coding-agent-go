@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -70,10 +71,11 @@ func (a *AuthStore) GetKey(provider string) string {
 		return key
 	}
 
-	// Try environment variables
+	// Try environment variables (normalize provider to uppercase for consistency).
+	upper := strings.ToUpper(provider)
 	envVars := []string{
-		"PI_API_KEY_" + provider,
-		provider + "_API_KEY",
+		"PI_API_KEY_" + upper,
+		upper + "_API_KEY",
 	}
 	for _, env := range envVars {
 		if v := os.Getenv(env); v != "" {

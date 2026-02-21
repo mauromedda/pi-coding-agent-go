@@ -105,3 +105,15 @@ func TestAuthStore_SetAndGet(t *testing.T) {
 		t.Errorf("GetKey = %q, want %q", got, "sk-test")
 	}
 }
+
+func TestAuthStore_GetKey_CaseNormalization(t *testing.T) {
+	store := &AuthStore{Keys: make(map[string]string)}
+
+	// Set env var with uppercase; query with lowercase provider.
+	t.Setenv("PI_API_KEY_OPENAI", "from-env")
+
+	got := store.GetKey("openai")
+	if got != "from-env" {
+		t.Errorf("GetKey(openai) = %q, want %q (should normalize to uppercase)", got, "from-env")
+	}
+}
