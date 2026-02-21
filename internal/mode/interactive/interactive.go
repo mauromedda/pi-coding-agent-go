@@ -497,6 +497,14 @@ func (a *App) runAgent() {
 	_ = assistantContent // history is tracked via llmCtx
 	}
 
+	// Clean up completed tool components to prevent unbounded container growth.
+	// The user has already seen the streaming output; completed tools render as
+	// one-line status indicators, but accumulating hundreds still degrades render.
+	container = a.tui.Container()
+	for _, te := range toolExecs {
+		container.Remove(te)
+	}
+
 	a.activeAgent = nil
 	a.updateFooter()
 	a.tui.RequestRender()

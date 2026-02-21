@@ -1,10 +1,11 @@
 // ABOUTME: Tool execution progress display component
-// ABOUTME: Shows tool name, arguments, and streaming output
+// ABOUTME: Shows tool name, arguments, and completion status
 
 package components
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 )
@@ -13,7 +14,7 @@ import (
 type ToolExec struct {
 	name   string
 	args   string
-	output string
+	output strings.Builder
 	done   bool
 	err    string
 }
@@ -25,13 +26,15 @@ func NewToolExec(name, args string) *ToolExec {
 
 // AppendOutput adds streaming output.
 func (t *ToolExec) AppendOutput(output string) {
-	t.output += output
+	t.output.WriteString(output)
 }
 
-// SetDone marks execution as complete.
+// SetDone marks execution as complete and releases accumulated output memory.
 func (t *ToolExec) SetDone(errMsg string) {
 	t.done = true
 	t.err = errMsg
+	// Release output buffer: it's not rendered and no longer needed
+	t.output.Reset()
 }
 
 // Render draws the tool execution status.
