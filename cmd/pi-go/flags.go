@@ -1,19 +1,24 @@
 // ABOUTME: CLI flag parsing using stdlib flag package
-// ABOUTME: Supports --yolo, --model, --plan, --print, --thinking, --version, --update
+// ABOUTME: Supports --yolo, --model, --plan, --print, --thinking, --version, --update, SDK flags
 
 package main
 
 import "flag"
 
 type cliArgs struct {
-	yolo     bool
-	model    string
-	plan     bool
-	print    bool
-	thinking bool
-	version  bool
-	update   bool
-	baseURL  string
+	yolo         bool
+	model        string
+	plan         bool
+	print        bool
+	thinking     bool
+	version      bool
+	update       bool
+	baseURL      string
+	maxTurns     int
+	maxBudget    float64
+	outputFormat string
+	inputFormat  string
+	jsonSchema   string
 }
 
 func parseFlags() cliArgs {
@@ -27,6 +32,11 @@ func parseFlags() cliArgs {
 	flag.BoolVar(&args.version, "version", false, "Show version and exit")
 	flag.BoolVar(&args.update, "update", false, "Self-update to latest version")
 	flag.StringVar(&args.baseURL, "base-url", "", "Custom API base URL")
+	flag.IntVar(&args.maxTurns, "max-turns", 0, "Maximum agent turns (0 = unlimited)")
+	flag.Float64Var(&args.maxBudget, "max-budget-usd", 0.0, "Maximum budget in USD (0 = unlimited)")
+	flag.StringVar(&args.outputFormat, "output-format", "text", "Output format: text, json, stream-json")
+	flag.StringVar(&args.inputFormat, "input-format", "", "Input format: empty = plain text, stream-json = JSONL from stdin")
+	flag.StringVar(&args.jsonSchema, "json-schema", "", "Path to JSON schema file for output validation")
 
 	flag.Parse()
 	return args

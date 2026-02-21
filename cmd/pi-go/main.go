@@ -124,10 +124,19 @@ func run(args cliArgs) error {
 
 	// Print mode: non-interactive, streams to stdout
 	if args.print {
+		outputFormat := args.outputFormat
+		if outputFormat == "" {
+			outputFormat = "text"
+		}
+
 		promptText := strings.Join(args.remaining(), " ")
 		return print.RunWithConfig(context.Background(), print.Config{
-			OutputFormat: "text",
+			OutputFormat: outputFormat,
+			MaxTurns:     args.maxTurns,
+			MaxBudgetUSD: args.maxBudget,
 			SystemPrompt: systemPrompt,
+			InputFormat:  args.inputFormat,
+			JSONSchema:   args.jsonSchema,
 		}, print.Deps{
 			Provider: provider,
 			Model:    model,

@@ -24,7 +24,17 @@ type Config struct {
 	AppendSystemPrompt string  // Append to system prompt
 	ContinueSession    bool    // Continue last session
 	ResumeSessionID    string  // Resume specific session
+	InputFormat        string  // "" = plain text, "stream-json" = JSONL from stdin
+	JSONSchema         string  // Path to JSON schema file for output validation
 }
+
+// Conservative per-token cost estimates for budget tracking.
+const (
+	costPerInputToken  = 0.003 / 1000  // $0.003 per 1K input tokens
+	costPerOutputToken = 0.015 / 1000  // $0.015 per 1K output tokens
+	defaultInputTokensPerTurn  = 1000  // Estimated input tokens when usage unavailable
+	defaultOutputTokensPerTurn = 500   // Estimated output tokens when usage unavailable
+)
 
 // Deps provides dependencies for print mode.
 type Deps struct {
@@ -103,6 +113,7 @@ func runAgentLoop(ctx context.Context, cfg Config, deps Deps, llmCtx *ai.Context
 	events := ag.Prompt(ctx, llmCtx, opts)
 
 	turns := 0
+	var cumulativeCostUSD float64
 	f.start()
 
 	for evt := range events {
@@ -116,8 +127,17 @@ func runAgentLoop(ctx context.Context, cfg Config, deps Deps, llmCtx *ai.Context
 				f.toolEnd(evt.ToolName, evt.ToolResult)
 			}
 			turns++
-			if cfg.MaxTurns > 0 && turns >= cfg.MaxTurns {
+
+			// Budget tracking: estimate cost per turn using conservative defaults.
+			// The agent events don't carry token usage, so we use fixed estimates.
+			cumulativeCostUSD += estimateTurnCost(defaultInputTokensPerTurn, defaultOutputTokensPerTurn)
+
+			if shouldAbort(cfg, turns, cumulativeCostUSD) {
 				ag.Abort()
+				// Drain remaining events to allow the agent goroutine to finish cleanly.
+				drainEvents(events)
+				f.end()
+				return nil
 			}
 		case agent.EventError:
 			f.err(evt.Error)
@@ -126,6 +146,29 @@ func runAgentLoop(ctx context.Context, cfg Config, deps Deps, llmCtx *ai.Context
 
 	f.end()
 	return nil
+}
+
+// estimateTurnCost calculates the approximate USD cost for a single turn.
+func estimateTurnCost(inputTokens, outputTokens int) float64 {
+	return float64(inputTokens)*costPerInputToken + float64(outputTokens)*costPerOutputToken
+}
+
+// shouldAbort returns true when the agent should stop due to turn or budget limits.
+func shouldAbort(cfg Config, turns int, costUSD float64) bool {
+	if cfg.MaxTurns > 0 && turns >= cfg.MaxTurns {
+		return true
+	}
+	if cfg.MaxBudgetUSD > 0 && costUSD >= cfg.MaxBudgetUSD {
+		return true
+	}
+	return false
+}
+
+// drainEvents consumes remaining events from the channel so the agent
+// goroutine can finish and the channel can be garbage collected.
+func drainEvents(events <-chan agent.AgentEvent) {
+	for range events {
+	}
 }
 
 func runSimpleStream(ctx context.Context, deps Deps, llmCtx *ai.Context, opts *ai.StreamOptions, f formatter) error {
