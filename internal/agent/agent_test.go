@@ -23,7 +23,7 @@ type mockProvider struct {
 
 func (m *mockProvider) Api() ai.Api { return ai.ApiAnthropic }
 
-func (m *mockProvider) Stream(model *ai.Model, ctx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
+func (m *mockProvider) Stream(_ context.Context, model *ai.Model, ctx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
 	idx := int(m.callCount.Add(1)) - 1
 	stream := ai.NewEventStream(16)
 

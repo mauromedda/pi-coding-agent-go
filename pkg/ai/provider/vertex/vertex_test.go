@@ -4,6 +4,7 @@
 package vertex
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -70,7 +71,7 @@ func TestProviderStreamTextContent(t *testing.T) {
 	}
 	opts := &ai.StreamOptions{MaxTokens: 1024}
 
-	stream := provider.Stream(model, ctx, opts)
+	stream := provider.Stream(context.Background(), model, ctx, opts)
 
 	var texts []string
 	for ev := range stream.Events() {
@@ -105,7 +106,7 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 
 	provider := New("proj", "us-central1", srv.URL)
 	model := &ai.Model{ID: "gemini-2.5-pro", Api: ai.ApiVertex}
-	stream := provider.Stream(model, &ai.Context{
+	stream := provider.Stream(context.Background(), model, &ai.Context{
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
 	}, nil)
 

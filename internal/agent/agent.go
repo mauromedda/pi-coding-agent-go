@@ -92,12 +92,13 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 		// Preserve StateCancelled if Abort() was called.
 		a.state.CompareAndSwap(int32(StateRunning), int32(StateIdle))
 	}()
-
-	a.emit(AgentEvent{Type: EventAgentStart})
+	// Terminal events (start, end, errors that break the loop) use emitFinal
+	// so they are delivered even after context cancellation.
+	a.emitFinal(AgentEvent{Type: EventAgentStart})
 
 	for {
 		if err := ctx.Err(); err != nil {
-			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("agent cancelled: %w", err)})
+			a.emitFinal(AgentEvent{Type: EventError, Error: fmt.Errorf("agent cancelled: %w", err)})
 			break
 		}
 
@@ -105,7 +106,7 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 
 		msg, err := a.streamResponse(ctx, llmCtx, opts)
 		if err != nil {
-			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("streaming response: %w", err)})
+			a.emitFinal(AgentEvent{Type: EventError, Error: fmt.Errorf("streaming response: %w", err)})
 			break
 		}
 
@@ -118,14 +119,14 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 
 		results, err := a.executeTools(ctx, toolCalls)
 		if err != nil {
-			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("executing tools: %w", err)})
+			a.emitFinal(AgentEvent{Type: EventError, Error: fmt.Errorf("executing tools: %w", err)})
 			break
 		}
 
 		llmCtx.Messages = append(llmCtx.Messages, toolResultMessage(results))
 	}
 
-	a.emit(AgentEvent{Type: EventAgentEnd})
+	a.emitFinal(AgentEvent{Type: EventAgentEnd})
 }
 
 // drainSteeringMessages appends any pending steering messages to the context.
@@ -142,13 +143,13 @@ func (a *Agent) drainSteeringMessages(llmCtx *ai.Context) {
 
 // streamResponse streams a single LLM response, emitting text/thinking events.
 func (a *Agent) streamResponse(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOptions) (*ai.AssistantMessage, error) {
-	stream := a.provider.Stream(a.model, llmCtx, opts)
+	stream := a.provider.Stream(ctx, a.model, llmCtx, opts)
 
 	for evt := range stream.Events() {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("context cancelled during stream: %w", ctx.Err())
 		}
-		a.forwardStreamEvent(evt)
+		a.forwardStreamEvent(ctx, evt)
 	}
 
 	result := stream.Result()
@@ -160,23 +161,31 @@ func (a *Agent) streamResponse(ctx context.Context, llmCtx *ai.Context, opts *ai
 }
 
 // forwardStreamEvent translates an ai.StreamEvent into an AgentEvent.
-func (a *Agent) forwardStreamEvent(evt ai.StreamEvent) {
+func (a *Agent) forwardStreamEvent(ctx context.Context, evt ai.StreamEvent) {
 	switch evt.Type {
 	case ai.EventContentDelta:
-		a.emit(AgentEvent{Type: EventAssistantText, Text: evt.Text})
+		a.emit(ctx, AgentEvent{Type: EventAssistantText, Text: evt.Text})
 	case ai.EventThinkingDelta:
-		a.emit(AgentEvent{Type: EventAssistantThinking, Text: evt.Text})
+		a.emit(ctx, AgentEvent{Type: EventAssistantThinking, Text: evt.Text})
 	case ai.EventError:
-		a.emit(AgentEvent{Type: EventError, Error: evt.Error})
+		a.emit(ctx, AgentEvent{Type: EventError, Error: evt.Error})
 	}
 }
 
-// emit sends an event; silently drops if the channel is full.
-func (a *Agent) emit(evt AgentEvent) {
+// emit sends an event; blocks until delivered or context is cancelled.
+func (a *Agent) emit(ctx context.Context, evt AgentEvent) {
 	select {
 	case a.events <- evt:
-	default:
+	case <-ctx.Done():
 	}
+}
+
+// emitFinal sends a lifecycle event unconditionally.
+// Used for start, end, and loop-terminating errors that must be delivered
+// even after context cancellation. Safe because the loop is the sole producer
+// and the channel is buffered.
+func (a *Agent) emitFinal(evt AgentEvent) {
+	a.events <- evt
 }
 
 // toolCall holds a parsed tool invocation from the model's response.
@@ -287,20 +296,20 @@ func (a *Agent) executeSingleTool(ctx context.Context, tc toolCall) (toolExecRes
 	if a.permCheck != nil {
 		if err := a.permCheck(tc.Name, tc.Args); err != nil {
 			result := ToolResult{Content: err.Error(), IsError: true}
-			a.emit(AgentEvent{
+			a.emit(ctx, AgentEvent{
 				Type: EventToolEnd, ToolID: tc.ID, ToolName: tc.Name, ToolResult: &result,
 			})
 			return toolExecResult{ID: tc.ID, Result: result}, nil
 		}
 	}
 
-	a.emit(AgentEvent{
+	a.emit(ctx, AgentEvent{
 		Type: EventToolStart, ToolID: tc.ID, ToolName: tc.Name, ToolArgs: tc.Args,
 	})
 
 	start := time.Now()
 	onUpdate := func(u ToolUpdate) {
-		a.emit(AgentEvent{Type: EventToolUpdate, ToolID: tc.ID, ToolName: tc.Name, Text: u.Output})
+		a.emit(ctx, AgentEvent{Type: EventToolUpdate, ToolID: tc.ID, ToolName: tc.Name, Text: u.Output})
 	}
 
 	result, err := tool.Execute(ctx, tc.ID, tc.Args, onUpdate)
@@ -311,7 +320,7 @@ func (a *Agent) executeSingleTool(ctx context.Context, tc toolCall) (toolExecRes
 		result.IsError = true
 	}
 
-	a.emit(AgentEvent{
+	a.emit(ctx, AgentEvent{
 		Type: EventToolEnd, ToolID: tc.ID, ToolName: tc.Name, ToolResult: &result,
 	})
 

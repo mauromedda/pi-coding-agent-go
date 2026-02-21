@@ -4,6 +4,7 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -47,7 +48,7 @@ func TestProviderStreamTextContent(t *testing.T) {
 	}
 	opts := &ai.StreamOptions{MaxTokens: 1024}
 
-	stream := provider.Stream(model, ctx, opts)
+	stream := provider.Stream(context.Background(), model, ctx, opts)
 
 	var texts []string
 	for ev := range stream.Events() {
@@ -97,7 +98,7 @@ func TestProviderStreamToolUse(t *testing.T) {
 	}
 	opts := &ai.StreamOptions{MaxTokens: 1024}
 
-	stream := provider.Stream(model, ctx, opts)
+	stream := provider.Stream(context.Background(), model, ctx, opts)
 
 	var toolStarted bool
 	var toolDeltas []string
@@ -175,7 +176,7 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	}
 	opts := &ai.StreamOptions{MaxTokens: 1024}
 
-	stream := provider.Stream(model, ctx, opts)
+	stream := provider.Stream(context.Background(), model, ctx, opts)
 
 	var gotError bool
 	for ev := range stream.Events() {

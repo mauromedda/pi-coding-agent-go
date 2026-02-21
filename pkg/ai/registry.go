@@ -3,7 +3,10 @@
 
 package ai
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // ProviderFactory creates an ApiProvider given a base URL override (optional).
 type ProviderFactory func(baseURL string) ApiProvider
@@ -14,7 +17,8 @@ type ApiProvider interface {
 	Api() Api
 
 	// Stream initiates a streaming LLM call and returns an EventStream.
-	Stream(model *Model, ctx *Context, opts *StreamOptions) *EventStream
+	// The context.Context controls cancellation of the underlying HTTP request.
+	Stream(ctx context.Context, model *Model, llmCtx *Context, opts *StreamOptions) *EventStream
 }
 
 var (

@@ -52,11 +52,11 @@ func (p *Provider) Api() ai.Api {
 }
 
 // Stream initiates a streaming generation request via Vertex AI.
-func (p *Provider) Stream(model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
+func (p *Provider) Stream(ctx context.Context, model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
 	stream := ai.NewEventStream(64)
 
 	go func() {
-		if err := p.doStream(model, llmCtx, opts, stream); err != nil {
+		if err := p.doStream(ctx, model, llmCtx, opts, stream); err != nil {
 			stream.FinishWithError(err)
 		}
 	}()
@@ -64,7 +64,7 @@ func (p *Provider) Stream(model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOp
 	return stream
 }
 
-func (p *Provider) doStream(model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions, stream *ai.EventStream) error {
+func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions, stream *ai.EventStream) error {
 	body := buildVertexRequestBody(llmCtx, opts)
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -74,7 +74,7 @@ func (p *Provider) doStream(model *ai.Model, llmCtx *ai.Context, opts *ai.Stream
 	url := fmt.Sprintf("%s/projects/%s/locations/%s/publishers/google/models/%s:streamGenerateContent",
 		p.baseURL, p.projectID, p.location, model.ID)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		url, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)

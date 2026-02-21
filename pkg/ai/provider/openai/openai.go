@@ -45,11 +45,11 @@ func (p *Provider) Api() ai.Api {
 }
 
 // Stream initiates a streaming chat completion.
-func (p *Provider) Stream(model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
+func (p *Provider) Stream(ctx context.Context, model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
 	stream := ai.NewEventStream(64)
 
 	go func() {
-		if err := p.doStream(model, llmCtx, opts, stream); err != nil {
+		if err := p.doStream(ctx, model, llmCtx, opts, stream); err != nil {
 			stream.FinishWithError(err)
 		}
 	}()
@@ -57,14 +57,14 @@ func (p *Provider) Stream(model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOp
 	return stream
 }
 
-func (p *Provider) doStream(model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions, stream *ai.EventStream) error {
+func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions, stream *ai.EventStream) error {
 	body := buildRequestBody(model, llmCtx, opts)
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		p.baseURL+"/v1/chat/completions", bytes.NewReader(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)

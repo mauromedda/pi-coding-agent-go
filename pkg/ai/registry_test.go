@@ -4,6 +4,7 @@
 package ai
 
 import (
+	"context"
 	"testing"
 )
 
@@ -14,7 +15,7 @@ type stubProvider struct {
 
 func (s *stubProvider) Api() Api { return s.api }
 
-func (s *stubProvider) Stream(_ *Model, _ *Context, _ *StreamOptions) *EventStream {
+func (s *stubProvider) Stream(_ context.Context, _ *Model, _ *Context, _ *StreamOptions) *EventStream {
 	return NewEventStream(1)
 }
 

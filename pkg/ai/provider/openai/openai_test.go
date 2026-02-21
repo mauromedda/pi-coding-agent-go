@@ -4,6 +4,7 @@
 package openai
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -59,7 +60,7 @@ func TestProviderStreamTextContent(t *testing.T) {
 	}
 	opts := &ai.StreamOptions{MaxTokens: 1024}
 
-	stream := provider.Stream(model, ctx, opts)
+	stream := provider.Stream(context.Background(), model, ctx, opts)
 
 	var texts []string
 	for ev := range stream.Events() {
@@ -118,7 +119,7 @@ func TestProviderStreamToolCalls(t *testing.T) {
 		}},
 	}
 
-	stream := provider.Stream(model, ctx, nil)
+	stream := provider.Stream(context.Background(), model, ctx, nil)
 
 	var toolStarted bool
 	var toolDeltas []string
@@ -177,7 +178,7 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	provider := New("bad-key", srv.URL)
-	stream := provider.Stream(&ai.ModelGPT4o, &ai.Context{
+	stream := provider.Stream(context.Background(), &ai.ModelGPT4o, &ai.Context{
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
 	}, nil)
 

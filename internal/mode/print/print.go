@@ -129,8 +129,7 @@ func runAgentLoop(ctx context.Context, cfg Config, deps Deps, llmCtx *ai.Context
 }
 
 func runSimpleStream(ctx context.Context, deps Deps, llmCtx *ai.Context, opts *ai.StreamOptions, f formatter) error {
-	stream := deps.Provider.Stream(deps.Model, llmCtx, opts)
-	_ = ctx
+	stream := deps.Provider.Stream(ctx, deps.Model, llmCtx, opts)
 
 	f.start()
 	for event := range stream.Events() {

@@ -97,8 +97,7 @@ func (s *Session) NeedsCompaction() bool {
 func (s *Session) Stream(ctx context.Context, systemPrompt string, tools []ai.Tool, opts *ai.StreamOptions) *ai.EventStream {
 	llmCtx := s.BuildContext(systemPrompt)
 	llmCtx.Tools = tools
-	_ = ctx // Context propagation handled by provider
-	return s.Provider.Stream(s.Model, llmCtx, opts)
+	return s.Provider.Stream(ctx, s.Model, llmCtx, opts)
 }
 
 // Close closes the session writer.

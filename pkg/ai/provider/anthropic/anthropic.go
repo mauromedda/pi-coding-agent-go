@@ -57,10 +57,10 @@ func (p *Provider) Api() ai.Api {
 }
 
 // Stream initiates a streaming call to the Anthropic Messages API.
-func (p *Provider) Stream(model *ai.Model, aiCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
+func (p *Provider) Stream(ctx context.Context, model *ai.Model, aiCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
 	stream := ai.NewEventStream(streamBufferSize)
 
-	go p.runStream(context.Background(), stream, model, aiCtx, opts)
+	go p.runStream(ctx, stream, model, aiCtx, opts)
 
 	return stream
 }

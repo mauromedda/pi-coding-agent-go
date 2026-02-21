@@ -4,6 +4,7 @@
 package google
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -44,7 +45,7 @@ func TestProviderStreamAPIKeyInHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	provider := New("secret-key", srv.URL)
-	stream := provider.Stream(&ai.ModelGemini25Pro, &ai.Context{
+	stream := provider.Stream(context.Background(), &ai.ModelGemini25Pro, &ai.Context{
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
 	}, nil)
 
@@ -93,7 +94,7 @@ func TestProviderStreamTextContent(t *testing.T) {
 	}
 	opts := &ai.StreamOptions{MaxTokens: 1024}
 
-	stream := provider.Stream(model, ctx, opts)
+	stream := provider.Stream(context.Background(), model, ctx, opts)
 
 	var texts []string
 	for ev := range stream.Events() {
@@ -160,7 +161,7 @@ func TestProviderStreamToolCall(t *testing.T) {
 		}},
 	}
 
-	stream := provider.Stream(&ai.ModelGemini25Pro, ctx, nil)
+	stream := provider.Stream(context.Background(), &ai.ModelGemini25Pro, ctx, nil)
 
 	var toolStarted bool
 	for ev := range stream.Events() {
@@ -205,7 +206,7 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	provider := New("bad-key", srv.URL)
-	stream := provider.Stream(&ai.ModelGemini25Pro, &ai.Context{
+	stream := provider.Stream(context.Background(), &ai.ModelGemini25Pro, &ai.Context{
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
 	}, nil)
 
