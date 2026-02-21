@@ -5,6 +5,7 @@ package agent
 
 import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/types"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
 // Re-export shared types so existing consumers of internal/agent continue to compile.
@@ -23,6 +24,7 @@ const (
 	EventToolStart                              // Tool execution began
 	EventToolUpdate                             // Incremental tool output
 	EventToolEnd                                // Tool execution completed
+	EventUsageUpdate                            // Token usage stats from LLM response
 	EventError                                  // Non-recoverable error
 )
 
@@ -34,6 +36,7 @@ type AgentEvent struct {
 	ToolName   string
 	ToolArgs   map[string]any
 	ToolResult *ToolResult
+	Usage      *ai.Usage
 	Error      error
 }
 

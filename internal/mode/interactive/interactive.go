@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
@@ -80,6 +83,11 @@ type App struct {
 	activeDialog *components.PermissionDialog
 	messages     []ai.Message // conversation history
 	cmdRegistry  *commands.Registry
+
+	// Token stats + context info
+	totalInputTokens  int
+	totalOutputTokens int
+	gitBranch         string
 }
 
 // NewFromDeps creates a fully-wired interactive app from dependencies.
@@ -131,6 +139,9 @@ func (a *App) Run() error {
 	a.term.OnResize(func(width, height int) {
 		a.tui.SetSize(width, height)
 	})
+
+	// Detect git branch
+	a.gitBranch = detectGitBranch()
 
 	// Set up editor and footer
 	a.editor = component.NewEditor()
@@ -426,6 +437,13 @@ func (a *App) runAgent() {
 				te.SetDone(errMsg)
 			}
 
+		case agent.EventUsageUpdate:
+			if evt.Usage != nil {
+				a.totalInputTokens += evt.Usage.InputTokens
+				a.totalOutputTokens += evt.Usage.OutputTokens
+				a.updateFooter()
+			}
+
 		case agent.EventError:
 			if a.current != nil && evt.Error != nil {
 				a.current.AppendText(fmt.Sprintf("\n[error: %v]", evt.Error))
@@ -473,16 +491,65 @@ func (a *App) askPermission(tool string, args map[string]any) (bool, error) {
 	return allowed, nil
 }
 
-// updateFooter refreshes the footer content.
+// updateFooter refreshes the footer content with cwd, git branch, mode, model, and token stats.
 func (a *App) updateFooter() {
 	if a.footer == nil {
 		return
 	}
+
+	var parts []string
+
+	// CWD (shortened to ~ if under HOME)
+	cwd, _ := os.Getwd()
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(cwd, home) {
+		cwd = "~" + cwd[len(home):]
+	}
+	cwdPart := cwd
+	if a.gitBranch != "" {
+		cwdPart = fmt.Sprintf("%s (%s)", filepath.Base(cwd), a.gitBranch)
+	}
+	parts = append(parts, cwdPart)
+
+	// Mode + hint
+	parts = append(parts, a.ModeLabel())
+
+	// Model
 	modelName := "none"
 	if a.model != nil {
 		modelName = a.model.Name
 	}
-	a.footer.SetContent(fmt.Sprintf("%s | %s", a.ModeLabel(), modelName))
+	parts = append(parts, modelName)
+
+	// Token stats (only if we have any)
+	if a.totalInputTokens > 0 || a.totalOutputTokens > 0 {
+		stats := fmt.Sprintf("\u2191%s \u2193%s",
+			formatTokenCount(a.totalInputTokens),
+			formatTokenCount(a.totalOutputTokens))
+		parts = append(parts, stats)
+	}
+
+	a.footer.SetContent(strings.Join(parts, " | "))
+}
+
+// formatTokenCount formats a token count for compact display.
+func formatTokenCount(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.0fk", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
+// detectGitBranch returns the current git branch name, or empty string.
+func detectGitBranch() string {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // ToggleMode switches between Plan and Edit modes.

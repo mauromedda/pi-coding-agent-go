@@ -22,6 +22,11 @@ func (f *Footer) SetContent(content string) {
 	f.content = content
 }
 
+// Content returns the current footer text.
+func (f *Footer) Content() string {
+	return f.content
+}
+
 // Render writes the footer line with styling.
 func (f *Footer) Render(out *tui.RenderBuffer, width int) {
 	// Dim style for footer

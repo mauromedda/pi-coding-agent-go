@@ -4,8 +4,10 @@
 package interactive
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
@@ -150,5 +152,66 @@ func TestOnKey_BackTab_TogglesMode(t *testing.T) {
 
 	if app.Mode() != ModeEdit {
 		t.Errorf("expected ModeEdit after BackTab, got %v", app.Mode())
+	}
+}
+
+func TestFormatTokenCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input int
+		want  string
+	}{
+		{"small", 500, "500"},
+		{"thousand", 1500, "2k"},
+		{"large_k", 12345, "12k"},
+		{"million", 1_200_000, "1.2M"},
+		{"zero", 0, "0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := formatTokenCount(tt.input); got != tt.want {
+				t.Errorf("formatTokenCount(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateFooter_WithTokenStats(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "gpt-4o"},
+		Checker:  checker,
+	})
+	app.footer = components.NewFooter()
+	app.totalInputTokens = 12000
+	app.totalOutputTokens = 8000
+	app.gitBranch = "main"
+
+	app.updateFooter()
+
+	// Render the footer to check content
+	content := app.footer.Content()
+	if !strings.Contains(content, "main") {
+		t.Errorf("footer should contain git branch, got %q", content)
+	}
+	if !strings.Contains(content, "PLAN") {
+		t.Errorf("footer should contain mode, got %q", content)
+	}
+	if !strings.Contains(content, "gpt-4o") {
+		t.Errorf("footer should contain model, got %q", content)
+	}
+	if !strings.Contains(content, "\u219112k") {
+		t.Errorf("footer should contain input tokens, got %q", content)
+	}
+	if !strings.Contains(content, "\u21938k") {
+		t.Errorf("footer should contain output tokens, got %q", content)
 	}
 }

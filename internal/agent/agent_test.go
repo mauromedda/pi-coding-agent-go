@@ -113,6 +113,43 @@ func TestAgent_SimpleTextResponse(t *testing.T) {
 	}
 }
 
+func TestAgent_EmitsUsageUpdate(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "Hi"}},
+				StopReason: ai.StopEndTurn,
+				Usage:      ai.Usage{InputTokens: 100, OutputTokens: 50},
+			},
+		},
+	}
+
+	ag := New(provider, newTestModel(), nil)
+	events := collectEvents(ag.Prompt(context.Background(), newTestContext(), &ai.StreamOptions{}))
+
+	var usageEvt *AgentEvent
+	for _, evt := range events {
+		if evt.Type == EventUsageUpdate {
+			usageEvt = &evt
+		}
+	}
+
+	if usageEvt == nil {
+		t.Fatal("missing EventUsageUpdate")
+	}
+	if usageEvt.Usage == nil {
+		t.Fatal("EventUsageUpdate has nil Usage")
+	}
+	if usageEvt.Usage.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", usageEvt.Usage.InputTokens)
+	}
+	if usageEvt.Usage.OutputTokens != 50 {
+		t.Errorf("OutputTokens = %d, want 50", usageEvt.Usage.OutputTokens)
+	}
+}
+
 func TestAgent_SingleToolCall(t *testing.T) {
 	t.Parallel()
 

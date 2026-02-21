@@ -165,6 +165,10 @@ func (a *Agent) streamResponse(ctx context.Context, llmCtx *ai.Context, opts *ai
 		return nil, fmt.Errorf("stream completed without result")
 	}
 
+	// Emit token usage stats
+	usage := result.Usage
+	a.emit(ctx, AgentEvent{Type: EventUsageUpdate, Usage: &usage})
+
 	return result, nil
 }
 
