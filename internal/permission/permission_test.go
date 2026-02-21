@@ -174,6 +174,148 @@ func TestSandbox_SymlinkResolution(t *testing.T) {
 	}
 }
 
+func TestMode_String_AllModes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mode Mode
+		want string
+	}{
+		{ModeNormal, "normal"},
+		{ModeAcceptEdits, "accept-edits"},
+		{ModePlan, "plan"},
+		{ModeDontAsk, "dont-ask"},
+		{ModeYolo, "yolo"},
+		{Mode(99), "unknown"},
+	}
+
+	for _, tt := range tests {
+		if got := tt.mode.String(); got != tt.want {
+			t.Errorf("Mode(%d).String() = %q, want %q", tt.mode, got, tt.want)
+		}
+	}
+}
+
+func TestParseMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input   string
+		want    Mode
+		wantErr bool
+	}{
+		{"default", ModeNormal, false},
+		{"acceptEdits", ModeAcceptEdits, false},
+		{"plan", ModePlan, false},
+		{"dontAsk", ModeDontAsk, false},
+		{"bypassPermissions", ModeYolo, false},
+		{"", ModeNormal, false},
+		{"normal", ModeNormal, false},
+		{"unknown", 0, true},
+		{"YOLO", 0, true},
+	}
+
+	for _, tt := range tests {
+		got, err := ParseMode(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ParseMode(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if !tt.wantErr && got != tt.want {
+			t.Errorf("ParseMode(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestChecker_AcceptEditsMode_AllowsEditWrite(t *testing.T) {
+	t.Parallel()
+
+	askCalled := false
+	askFn := func(tool string, args map[string]any) (bool, error) {
+		askCalled = true
+		return true, nil
+	}
+
+	c := NewChecker(ModeAcceptEdits, askFn)
+
+	// edit, write, notebook_edit should pass without asking
+	for _, tool := range []string{"edit", "write", "notebook_edit"} {
+		askCalled = false
+		if err := c.Check(tool, nil); err != nil {
+			t.Errorf("%s should be allowed in accept-edits mode: %v", tool, err)
+		}
+		if askCalled {
+			t.Errorf("askFn should NOT have been called for %s in accept-edits mode", tool)
+		}
+	}
+
+	// read-only tools should also pass without asking
+	askCalled = false
+	if err := c.Check("read", nil); err != nil {
+		t.Errorf("read should be allowed: %v", err)
+	}
+	if askCalled {
+		t.Error("askFn should NOT have been called for read")
+	}
+}
+
+func TestChecker_AcceptEditsMode_PromptsBash(t *testing.T) {
+	t.Parallel()
+
+	askCalled := false
+	askFn := func(tool string, args map[string]any) (bool, error) {
+		askCalled = true
+		return true, nil
+	}
+
+	c := NewChecker(ModeAcceptEdits, askFn)
+
+	// bash should trigger askFn (not an edit tool)
+	if err := c.Check("bash", nil); err != nil {
+		t.Errorf("bash should be allowed after user approval: %v", err)
+	}
+	if !askCalled {
+		t.Error("askFn should have been called for bash in accept-edits mode")
+	}
+}
+
+func TestChecker_DontAskMode_DeniesUnlessAllowed(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeDontAsk, nil)
+
+	// read-only tools should be allowed
+	for _, tool := range []string{"read", "grep", "find", "ls"} {
+		if err := c.Check(tool, nil); err != nil {
+			t.Errorf("%s should be allowed in dont-ask mode: %v", tool, err)
+		}
+	}
+
+	// non-allowed tools should be denied
+	for _, tool := range []string{"bash", "write", "edit"} {
+		if err := c.Check(tool, nil); err == nil {
+			t.Errorf("%s should be denied in dont-ask mode", tool)
+		}
+	}
+}
+
+func TestChecker_DontAskMode_AllowRulePermits(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeDontAsk, nil)
+	c.AddAllowRule(Rule{Tool: "bash"})
+
+	// bash should be allowed via explicit rule
+	if err := c.Check("bash", nil); err != nil {
+		t.Errorf("bash should be allowed by allow rule in dont-ask mode: %v", err)
+	}
+
+	// write should still be denied
+	if err := c.Check("write", nil); err == nil {
+		t.Error("write should be denied in dont-ask mode without allow rule")
+	}
+}
+
 func TestChecker_NilAskFn_DeniesWriteInNormalMode(t *testing.T) {
 	t.Parallel()
 

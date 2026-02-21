@@ -1,5 +1,5 @@
-// ABOUTME: Permission checker supporting normal, yolo, and plan modes
-// ABOUTME: Controls tool execution access based on mode and allow/deny rules
+// ABOUTME: Permission checker supporting normal, accept-edits, plan, dont-ask, and yolo modes
+// ABOUTME: Controls tool execution access based on mode, allow/deny rules, and glob patterns
 
 package permission
 
@@ -12,9 +12,11 @@ import (
 type Mode int
 
 const (
-	ModeNormal Mode = iota // Prompt user for dangerous operations
-	ModeYolo               // Skip all prompts (--yolo)
-	ModePlan               // Read-only: block write/bash
+	ModeNormal      Mode = iota // Prompt user for dangerous operations
+	ModeAcceptEdits             // Auto-allow edit/write; prompt for bash
+	ModePlan                    // Read-only: block write/bash
+	ModeDontAsk                 // Deny all non-allowed tools without prompting
+	ModeYolo                    // Skip all prompts (--yolo)
 )
 
 // String returns the mode name.
@@ -22,13 +24,42 @@ func (m Mode) String() string {
 	switch m {
 	case ModeNormal:
 		return "normal"
-	case ModeYolo:
-		return "yolo"
+	case ModeAcceptEdits:
+		return "accept-edits"
 	case ModePlan:
 		return "plan"
+	case ModeDontAsk:
+		return "dont-ask"
+	case ModeYolo:
+		return "yolo"
 	default:
 		return "unknown"
 	}
+}
+
+// ParseMode converts a settings string to a Mode constant.
+// Recognized values: "default"/"normal"/""→Normal, "acceptEdits"→AcceptEdits,
+// "plan"→Plan, "dontAsk"→DontAsk, "bypassPermissions"→Yolo.
+func ParseMode(s string) (Mode, error) {
+	switch s {
+	case "", "default", "normal":
+		return ModeNormal, nil
+	case "acceptEdits":
+		return ModeAcceptEdits, nil
+	case "plan":
+		return ModePlan, nil
+	case "dontAsk":
+		return ModeDontAsk, nil
+	case "bypassPermissions":
+		return ModeYolo, nil
+	default:
+		return 0, fmt.Errorf("unknown permission mode: %q", s)
+	}
+}
+
+// editWriteTools lists tools that are auto-allowed in accept-edits mode.
+var editWriteTools = map[string]bool{
+	"edit": true, "write": true, "notebook_edit": true,
 }
 
 // Rule defines a permission rule for a specific tool pattern.
@@ -143,8 +174,18 @@ func (c *Checker) Check(tool string, args map[string]any) error {
 		return nil
 	}
 
-	// Normal mode for write tools: ask user or deny if no askFn
-	if c.mode == ModeNormal && !readOnlyTools[tool] {
+	// AcceptEdits mode: auto-allow edit/write tools, ask for others
+	if c.mode == ModeAcceptEdits && editWriteTools[tool] {
+		return nil
+	}
+
+	// DontAsk mode: deny non-read-only tools without prompting
+	if c.mode == ModeDontAsk && !readOnlyTools[tool] {
+		return fmt.Errorf("tool %q denied in dont-ask mode", tool)
+	}
+
+	// Normal + AcceptEdits for non-edit tools: ask user or deny if no askFn
+	if (c.mode == ModeNormal || c.mode == ModeAcceptEdits) && !readOnlyTools[tool] {
 		if c.askFn == nil {
 			return fmt.Errorf("tool %q denied: no interactive approval available", tool)
 		}
