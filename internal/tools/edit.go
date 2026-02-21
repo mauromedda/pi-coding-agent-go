@@ -70,6 +70,14 @@ func executeEdit(sb *permission.Sandbox, _ context.Context, _ string, params map
 
 	replaceAll := boolParam(params, "replace_all", false)
 
+	info, err := os.Stat(path)
+	if err != nil {
+		return errResult(fmt.Errorf("stat file %s: %w", path, err)), nil
+	}
+	if info.Size() > maxFileReadSize {
+		return errResult(fmt.Errorf("file %s is too large (%d bytes); maximum is %d bytes", path, info.Size(), maxFileReadSize)), nil
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return errResult(fmt.Errorf("reading file %s: %w", path, err)), nil

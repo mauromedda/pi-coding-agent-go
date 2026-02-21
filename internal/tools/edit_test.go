@@ -155,6 +155,43 @@ func TestEditTool_DiffOutput(t *testing.T) {
 	}
 }
 
+func TestEditTool_FileTooLargeRejected(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+
+	// Create an 11MB file.
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := strings.Repeat("A", 1024*1024) // 1MB
+	for range 11 {
+		if _, err := f.WriteString(chunk); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	tool := NewEditTool()
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{
+		"path":       path,
+		"old_string": "AAAA",
+		"new_string": "BBBB",
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for file exceeding 10MB")
+	}
+	if !strings.Contains(result.Content, "too large") {
+		t.Errorf("expected 'too large' in error message, got %q", result.Content)
+	}
+}
+
 func TestEditTool_OutOfSandboxRejected(t *testing.T) {
 	t.Parallel()
 

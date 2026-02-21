@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -15,7 +16,8 @@ import (
 )
 
 const (
-	maxReadOutput    = 100 * 1024 // 100KB
+	maxReadOutput    = 100 * 1024        // 100KB
+	maxFileReadSize  = 10 * 1024 * 1024  // 10MB: cap on bytes read from disk
 	binaryCheckBytes = 512
 )
 
@@ -62,7 +64,13 @@ func executeRead(sb *permission.Sandbox, _ context.Context, _ string, params map
 		}
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return errResult(fmt.Errorf("reading file %s: %w", path, err)), nil
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxFileReadSize))
 	if err != nil {
 		return errResult(fmt.Errorf("reading file %s: %w", path, err)), nil
 	}

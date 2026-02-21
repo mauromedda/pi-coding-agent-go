@@ -5,6 +5,7 @@ package tools
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 )
@@ -44,6 +45,9 @@ func intParam(params map[string]any, key string, defaultVal int) int {
 	}
 	switch n := v.(type) {
 	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) || n > float64(math.MaxInt) || n < float64(math.MinInt) {
+			return defaultVal
+		}
 		return int(n)
 	case int:
 		return n

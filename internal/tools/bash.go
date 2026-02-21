@@ -7,14 +7,52 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 )
 
-const defaultBashTimeoutMs = 120_000
+const (
+	defaultBashTimeoutMs = 120_000
+	maxBashOutput        = 10 * 1024 * 1024 // 10MB
+)
+
+var errOutputLimitExceeded = errors.New("output limit exceeded")
+
+// limitedWriter wraps an io.Writer and stops accepting data after limit bytes.
+// When the limit is hit, Write returns errOutputLimitExceeded.
+type limitedWriter struct {
+	w        io.Writer
+	limit    int
+	written  int
+	exceeded bool
+}
+
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	remaining := lw.limit - lw.written
+	if remaining <= 0 {
+		lw.exceeded = true
+		return 0, errOutputLimitExceeded
+	}
+
+	if len(p) > remaining {
+		n, err := lw.w.Write(p[:remaining])
+		lw.written += n
+		lw.exceeded = true
+		if err != nil {
+			return n, err
+		}
+		return n, errOutputLimitExceeded
+	}
+
+	n, err := lw.w.Write(p)
+	lw.written += n
+	return n, err
+}
 
 // NewBashTool creates a tool that executes shell commands.
 func NewBashTool() *agent.AgentTool {
@@ -59,6 +97,7 @@ func executeBash(ctx context.Context, _ string, params map[string]any, onUpdate 
 }
 
 // runBashCommand executes a command string and returns combined stdout+stderr.
+// Output is capped at maxBashOutput bytes; the process is killed if exceeded.
 func runBashCommand(ctx context.Context, command string) (string, error) {
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
@@ -67,15 +106,25 @@ func runBashCommand(ctx context.Context, command string) (string, error) {
 	cmd := exec.CommandContext(ctx, bashPath, "-c", command)
 
 	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	lw := &limitedWriter{w: &buf, limit: maxBashOutput}
+	cmd.Stdout = lw
+	cmd.Stderr = lw
 
 	err = cmd.Run()
 
 	output := buf.String()
+
+	if lw.exceeded {
+		output += "\n... [output truncated: exceeded 10MB limit]"
+	}
+
 	if err != nil {
 		if ctx.Err() != nil {
 			return output, fmt.Errorf("command timed out: %w", ctx.Err())
+		}
+		// Output limit exceeded kills the process, which is expected.
+		if lw.exceeded {
+			return output, nil
 		}
 		// Return output even on non-zero exit; include exit error.
 		return output + "\n" + err.Error(), nil

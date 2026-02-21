@@ -317,6 +317,101 @@ func TestAgent_ToolBlockedByPermission(t *testing.T) {
 	}
 }
 
+func TestAgent_ToolArgParseErrorReturnedAsResult(t *testing.T) {
+	t.Parallel()
+
+	// Invalid JSON input: triggers a parse error in extractToolCalls.
+	badInput := json.RawMessage(`not valid json`)
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content: []ai.Content{
+					{Type: ai.ContentToolUse, ID: "tool_bad", Name: "read", Input: badInput},
+				},
+				StopReason: ai.StopToolUse,
+			},
+			{
+				// Model receives the error and responds with text.
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "I see the parse error"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	readTool := &AgentTool{
+		Name:     "read",
+		ReadOnly: true,
+		Execute: func(_ context.Context, _ string, _ map[string]any, _ func(ToolUpdate)) (ToolResult, error) {
+			t.Error("tool Execute should not be called for unparseable input")
+			return ToolResult{Content: "should not happen"}, nil
+		},
+	}
+
+	ag := New(provider, newTestModel(), []*AgentTool{readTool})
+	events := collectEvents(ag.Prompt(context.Background(), newTestContext(), &ai.StreamOptions{}))
+
+	// The loop must NOT silently skip the bad tool call. It should produce
+	// at least one tool call (as a parse-error result) that the LLM sees,
+	// allowing self-correction. Verify:
+	// 1. provider.callCount == 2 (first with tool_use, second after error result)
+	// 2. No EventError that breaks the loop early
+	// 3. An EventAgentEnd is present (loop completed)
+	if provider.callCount.Load() != 2 {
+		t.Errorf("expected 2 provider calls (initial + after error result); got %d", provider.callCount.Load())
+	}
+
+	var hasEnd bool
+	var hasParseError bool
+	for _, evt := range events {
+		if evt.Type == EventAgentEnd {
+			hasEnd = true
+		}
+	}
+
+	if !hasEnd {
+		t.Error("expected EventAgentEnd; loop should complete after model responds to parse error")
+	}
+
+	// Also verify the tool result message contains the parse error.
+	// The second call to the provider should include a tool_result with is_error.
+	// We check via extractToolCalls unit test below.
+	_ = hasParseError
+}
+
+func TestExtractToolCalls_ParseError(t *testing.T) {
+	t.Parallel()
+
+	msg := &ai.AssistantMessage{
+		Content: []ai.Content{
+			{Type: ai.ContentToolUse, ID: "t1", Name: "read", Input: json.RawMessage(`{"path":"ok"}`)},
+			{Type: ai.ContentToolUse, ID: "t2", Name: "write", Input: json.RawMessage(`bad json`)},
+			{Type: ai.ContentText, Text: "some text"},
+		},
+	}
+
+	calls, errResults := extractToolCalls(msg)
+
+	if len(calls) != 1 {
+		t.Errorf("expected 1 valid call; got %d", len(calls))
+	}
+	if len(calls) > 0 && calls[0].ID != "t1" {
+		t.Errorf("expected valid call ID 't1'; got %q", calls[0].ID)
+	}
+
+	if len(errResults) != 1 {
+		t.Errorf("expected 1 error result; got %d", len(errResults))
+	}
+	if len(errResults) > 0 {
+		if errResults[0].ID != "t2" {
+			t.Errorf("expected error result ID 't2'; got %q", errResults[0].ID)
+		}
+		if !errResults[0].Result.IsError {
+			t.Error("expected error result IsError = true")
+		}
+	}
+}
+
 func TestAgent_AbortCancelsExecution(t *testing.T) {
 	t.Parallel()
 

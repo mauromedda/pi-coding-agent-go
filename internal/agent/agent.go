@@ -110,17 +110,25 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 			break
 		}
 
-		toolCalls := extractToolCalls(msg)
+		toolCalls, parseErrResults := extractToolCalls(msg)
 		llmCtx.Messages = append(llmCtx.Messages, assistantMessage(msg))
 
-		if len(toolCalls) == 0 {
+		if len(toolCalls) == 0 && len(parseErrResults) == 0 {
 			break
 		}
 
-		results, err := a.executeTools(ctx, toolCalls)
-		if err != nil {
-			a.emitFinal(AgentEvent{Type: EventError, Error: fmt.Errorf("executing tools: %w", err)})
-			break
+		var results []toolExecResult
+
+		// Include parse-error results so the LLM can self-correct.
+		results = append(results, parseErrResults...)
+
+		if len(toolCalls) > 0 {
+			execResults, err := a.executeTools(ctx, toolCalls)
+			if err != nil {
+				a.emitFinal(AgentEvent{Type: EventError, Error: fmt.Errorf("executing tools: %w", err)})
+				break
+			}
+			results = append(results, execResults...)
 		}
 
 		llmCtx.Messages = append(llmCtx.Messages, toolResultMessage(results))
@@ -196,8 +204,11 @@ type toolCall struct {
 }
 
 // extractToolCalls pulls tool-use content blocks from the assistant message.
-func extractToolCalls(msg *ai.AssistantMessage) []toolCall {
+// Returns valid parsed calls and error results for any calls whose input
+// could not be parsed, so the LLM receives feedback and can self-correct.
+func extractToolCalls(msg *ai.AssistantMessage) ([]toolCall, []toolExecResult) {
 	var calls []toolCall
+	var errResults []toolExecResult
 	for _, c := range msg.Content {
 		if c.Type != ai.ContentToolUse {
 			continue
@@ -205,12 +216,19 @@ func extractToolCalls(msg *ai.AssistantMessage) []toolCall {
 
 		args, err := ParseToolArgs(c.Input)
 		if err != nil {
+			errResults = append(errResults, toolExecResult{
+				ID: c.ID,
+				Result: ToolResult{
+					Content: fmt.Sprintf("failed to parse arguments for tool %s: %v", c.Name, err),
+					IsError: true,
+				},
+			})
 			continue
 		}
 
 		calls = append(calls, toolCall{ID: c.ID, Name: c.Name, Args: args})
 	}
-	return calls
+	return calls, errResults
 }
 
 // toolExecResult pairs a tool call ID with its execution result.

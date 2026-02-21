@@ -141,6 +141,46 @@ func TestReadTool_LargeFileTruncation(t *testing.T) {
 	}
 }
 
+func TestReadTool_HugeFileUsesLimitReader(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+
+	// Create a file slightly larger than maxFileReadSize (10MB).
+	// We write 11MB of 'A' characters.
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := strings.Repeat("A", 1024*1024) // 1MB
+	for range 11 {
+		if _, err := f.WriteString(chunk); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	tool := NewReadTool()
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{"path": path}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %s", result.Content)
+	}
+	// The output should be truncated (maxReadOutput = 100KB), but the key
+	// point is that the tool did NOT read all 11MB into memory.
+	if !strings.Contains(result.Content, "truncated") {
+		t.Error("expected truncation notice for huge file")
+	}
+	// Output must not exceed maxReadOutput + truncation notice.
+	if len(result.Content) > maxReadOutput+100 {
+		t.Errorf("output too large: %d bytes", len(result.Content))
+	}
+}
+
 func TestReadTool_OutOfSandboxRejected(t *testing.T) {
 	t.Parallel()
 

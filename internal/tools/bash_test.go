@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -92,6 +93,62 @@ func TestBashTool_MissingCommand(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError for missing command")
+	}
+}
+
+func TestBashTool_OutputExceedsLimit(t *testing.T) {
+	t.Parallel()
+
+	tool := NewBashTool()
+	// Generate ~11MB of output (exceeds maxBashOutput of 10MB).
+	// dd writes 11*1024*1024 bytes of zero, tr converts to 'A'.
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{
+		"command":    "dd if=/dev/zero bs=1048576 count=11 2>/dev/null | tr '\\0' 'A'",
+		"timeout_ms": float64(30000),
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "truncated") {
+		t.Error("expected truncation notice in output")
+	}
+	// Output should be at most maxBashOutput + truncation notice length.
+	if len(result.Content) > 10*1024*1024+100 {
+		t.Errorf("output too large: %d bytes", len(result.Content))
+	}
+}
+
+func TestLimitedWriter_Limit(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	lw := &limitedWriter{w: &buf, limit: 10}
+
+	n, err := lw.Write([]byte("hello"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 5 {
+		t.Errorf("wrote %d; want 5", n)
+	}
+
+	// Write more to exceed limit.
+	n, err = lw.Write([]byte("world!!!"))
+	if err != errOutputLimitExceeded {
+		t.Errorf("expected errOutputLimitExceeded; got %v", err)
+	}
+	// Only 5 more bytes should be accepted (limit=10, already wrote 5).
+	if n != 5 {
+		t.Errorf("wrote %d; want 5", n)
+	}
+	if !lw.exceeded {
+		t.Error("expected exceeded = true")
+	}
+	if buf.String() != "helloworld" {
+		t.Errorf("buf = %q; want %q", buf.String(), "helloworld")
 	}
 }
 
