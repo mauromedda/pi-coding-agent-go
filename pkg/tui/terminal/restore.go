@@ -26,3 +26,19 @@ func RestoreOnPanic(t Terminal) {
 	fmt.Fprintf(os.Stderr, "\npanic: %v\n\n%s\n", r, debug.Stack())
 	os.Exit(1)
 }
+
+// RecoverGoroutine should be deferred at the top of background goroutines
+// that run while the terminal is in raw mode. Unlike RestoreOnPanic it
+// does NOT call os.Exit, allowing the main goroutine to handle shutdown.
+func RecoverGoroutine(t Terminal) {
+	r := recover()
+	if r == nil {
+		return
+	}
+
+	// Best-effort: show cursor and exit raw mode.
+	_, _ = os.Stdout.Write([]byte("\033[?25h")) // show cursor
+	_ = t.ExitRawMode()
+
+	fmt.Fprintf(os.Stderr, "\ngoroutine panic: %v\n\n%s\n", r, debug.Stack())
+}
