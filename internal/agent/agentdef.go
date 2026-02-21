@@ -18,7 +18,22 @@ type Definition struct {
 	SystemPrompt    string
 	Tools           []string
 	DisallowedTools []string
+	AllowedTools    []string
 	MaxTurns        int
+}
+
+// ResolveAgentModel maps shorthand names to full model IDs.
+func ResolveAgentModel(shorthand string) string {
+	switch shorthand {
+	case "fast":
+		return "claude-haiku-4-5-20251001"
+	case "default", "":
+		return "claude-sonnet-4-6"
+	case "powerful":
+		return "claude-opus-4-6"
+	default:
+		return shorthand // assume it's already a full model ID
+	}
 }
 
 // BuiltinDefinitions returns the built-in agent definitions.
@@ -142,6 +157,8 @@ func parseAgentFile(content, filename string) Definition {
 			def.Tools = splitTrimCSV(value)
 		case "disallowed-tools":
 			def.DisallowedTools = splitTrimCSV(value)
+		case "allowed-tools":
+			def.AllowedTools = splitTrimCSV(value)
 		}
 	}
 
