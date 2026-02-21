@@ -5,6 +5,7 @@ package component
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/killring"
@@ -23,7 +24,10 @@ type editorState struct {
 }
 
 // Editor is a multi-line text editor with word-wrap display and cursor tracking.
+// Thread-safe: mu protects all mutable state for concurrent access from
+// the StdinBuffer goroutine (HandleKey) and the render goroutine (Render).
 type Editor struct {
+	mu        sync.Mutex
 	lines     [][]rune
 	row       int
 	col       int
@@ -45,6 +49,9 @@ func NewEditor() *Editor {
 
 // Text returns the full editor content as a string with newline separators.
 func (ed *Editor) Text() string {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	parts := make([]string, len(ed.lines))
 	for i, line := range ed.lines {
 		parts[i] = string(line)
@@ -54,6 +61,9 @@ func (ed *Editor) Text() string {
 
 // SetText replaces the editor content and resets the cursor.
 func (ed *Editor) SetText(s string) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	raw := splitLines(s)
 	ed.lines = make([][]rune, len(raw))
 	for i, l := range raw {
@@ -66,28 +76,77 @@ func (ed *Editor) SetText(s string) {
 
 // CursorPos returns the cursor position as (row, col).
 func (ed *Editor) CursorPos() (int, int) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	return ed.row, ed.col
 }
 
 // SetFocused sets the focus state.
 func (ed *Editor) SetFocused(focused bool) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	ed.focused = focused
 	ed.dirty = true
 }
 
 // IsFocused returns the focus state.
 func (ed *Editor) IsFocused() bool {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	return ed.focused
 }
 
 // Invalidate marks the component for re-render.
 func (ed *Editor) Invalidate() {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	ed.dirty = true
 }
 
 // HandleInput processes raw terminal input data.
 func (ed *Editor) HandleInput(data string) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	k := key.ParseKey(data)
+	ed.dispatchKey(k, data)
+}
+
+// HandleKey processes an already-parsed key event. Thread-safe.
+func (ed *Editor) HandleKey(k key.Key) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
+	ed.dispatchKey(k, "")
+}
+
+// dispatchKey routes a key to the appropriate editing operation.
+// Must be called with ed.mu held.
+func (ed *Editor) dispatchKey(k key.Key, rawData string) {
+	// Handle Ctrl+key combinations via the Key struct
+	if k.Ctrl && k.Type == key.KeyRune {
+		switch k.Rune {
+		case 'a':
+			ed.moveCursorHome()
+			return
+		case 'e':
+			ed.moveCursorEnd()
+			return
+		case 'k':
+			ed.killToEnd()
+			return
+		case 'y':
+			ed.yank()
+			return
+		case 'z':
+			ed.doUndo()
+			return
+		}
+	}
 
 	switch k.Type {
 	case key.KeyRune:
@@ -111,7 +170,9 @@ func (ed *Editor) HandleInput(data string) {
 	case key.KeyEnd:
 		ed.moveCursorEnd()
 	default:
-		ed.handleControlByte(data)
+		if rawData != "" {
+			ed.handleControlByte(rawData)
+		}
 	}
 }
 
@@ -312,6 +373,9 @@ func (ed *Editor) saveUndo() {
 
 // Render writes the editor content into the buffer with word-wrap.
 func (ed *Editor) Render(out *tui.RenderBuffer, w int) {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	if w <= 0 {
 		return
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
 )
 
 func TestEditor_NewEditor(t *testing.T) {
@@ -449,5 +450,143 @@ func TestEditor_EnterSplitsLine(t *testing.T) {
 	row, col := ed.CursorPos()
 	if row != 1 || col != 0 {
 		t.Errorf("expected cursor at (1,0), got (%d,%d)", row, col)
+	}
+}
+
+func TestEditor_HandleKey_Rune(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'H'})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'i'})
+
+	if ed.Text() != "Hi" {
+		t.Errorf("expected 'Hi', got %q", ed.Text())
+	}
+	row, col := ed.CursorPos()
+	if row != 0 || col != 2 {
+		t.Errorf("expected cursor at (0,2), got (%d,%d)", row, col)
+	}
+}
+
+func TestEditor_HandleKey_Enter(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'a'})
+	ed.HandleKey(key.Key{Type: key.KeyEnter})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'b'})
+
+	if ed.Text() != "a\nb" {
+		t.Errorf("expected 'a\\nb', got %q", ed.Text())
+	}
+}
+
+func TestEditor_HandleKey_Backspace(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'x'})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'y'})
+	ed.HandleKey(key.Key{Type: key.KeyBackspace})
+
+	if ed.Text() != "x" {
+		t.Errorf("expected 'x', got %q", ed.Text())
+	}
+}
+
+func TestEditor_HandleKey_Navigation(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'a'})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'b'})
+	ed.HandleKey(key.Key{Type: key.KeyLeft})
+	ed.HandleKey(key.Key{Type: key.KeyLeft})
+	ed.HandleKey(key.Key{Type: key.KeyRight})
+
+	_, col := ed.CursorPos()
+	if col != 1 {
+		t.Errorf("expected col 1, got %d", col)
+	}
+}
+
+func TestEditor_HandleKey_HomeEnd(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'a'})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'b'})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'c'})
+	ed.HandleKey(key.Key{Type: key.KeyHome})
+
+	_, col := ed.CursorPos()
+	if col != 0 {
+		t.Errorf("expected col 0 after Home, got %d", col)
+	}
+
+	ed.HandleKey(key.Key{Type: key.KeyEnd})
+	_, col = ed.CursorPos()
+	if col != 3 {
+		t.Errorf("expected col 3 after End, got %d", col)
+	}
+}
+
+func TestEditor_HandleKey_CtrlA_CtrlE(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'x'})
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'y'})
+
+	// Ctrl+A = home
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'a', Ctrl: true})
+	_, col := ed.CursorPos()
+	if col != 0 {
+		t.Errorf("expected col 0 after Ctrl+A, got %d", col)
+	}
+
+	// Ctrl+E = end
+	ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'e', Ctrl: true})
+	_, col = ed.CursorPos()
+	if col != 2 {
+		t.Errorf("expected col 2 after Ctrl+E, got %d", col)
+	}
+}
+
+func TestEditor_HandleKey_ConcurrentSafety(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'a'})
+		}
+	}()
+
+	// Concurrent renders
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	for i := 0; i < 100; i++ {
+		buf.Lines = buf.Lines[:0]
+		ed.Render(buf, 80)
+	}
+
+	<-done
+
+	text := ed.Text()
+	if len(text) != 100 {
+		t.Errorf("expected 100 'a's, got %d chars: %q", len(text), text)
 	}
 }
