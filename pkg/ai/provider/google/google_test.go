@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/gemini"
 )
 
 func TestProviderApi(t *testing.T) {
@@ -36,7 +37,7 @@ func TestProviderStreamAPIKeyInHeader(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		resp := geminiResponse{
 			Candidates: []geminiCandidate{{
-				Content:      geminiContent{Role: "model", Parts: []geminiPart{{Text: "ok"}}},
+				Content:      gemini.Content{Role: "model", Parts: []gemini.Part{{Text: "ok"}}},
 				FinishReason: "STOP",
 			}},
 		}
@@ -73,7 +74,7 @@ func TestProviderStreamTextContent(t *testing.T) {
 		// Gemini streams as JSON array or newline-delimited JSON objects
 		resp := geminiResponse{
 			Candidates: []geminiCandidate{{
-				Content:      geminiContent{Role: "model", Parts: []geminiPart{{Text: "Hello from Gemini!"}}},
+				Content:      gemini.Content{Role: "model", Parts: []gemini.Part{{Text: "Hello from Gemini!"}}},
 				FinishReason: "STOP",
 			}},
 			UsageMetadata: &geminiUsage{
@@ -135,10 +136,10 @@ func TestProviderStreamToolCall(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		resp := geminiResponse{
 			Candidates: []geminiCandidate{{
-				Content: geminiContent{
+				Content: gemini.Content{
 					Role: "model",
-					Parts: []geminiPart{{
-						FunctionCall: &geminiFunctionCall{
+					Parts: []gemini.Part{{
+						FunctionCall: &gemini.FunctionCall{
 							Name: "get_weather",
 							Args: map[string]string{"city": "Paris"},
 						},

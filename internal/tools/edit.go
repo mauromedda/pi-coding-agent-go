@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/diff"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
@@ -93,8 +94,8 @@ func executeEdit(sb *permission.Sandbox, _ context.Context, _ string, params map
 		return errResult(fmt.Errorf("writing file %s: %w", path, err)), nil
 	}
 
-	diff := simpleDiff(path, original, result)
-	return agent.ToolResult{Content: diff}, nil
+	d := diff.Simple(path, original, result)
+	return agent.ToolResult{Content: d}, nil
 }
 
 // applyReplacement performs the string substitution with uniqueness checks.
@@ -112,41 +113,4 @@ func applyReplacement(content, oldStr, newStr string, replaceAll bool) (string, 
 	}
 
 	return strings.Replace(content, oldStr, newStr, 1), nil
-}
-
-// simpleDiff produces a minimal unified-style diff of the changes.
-func simpleDiff(path, before, after string) string {
-	oldLines := strings.Split(before, "\n")
-	newLines := strings.Split(after, "\n")
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "--- %s\n+++ %s\n", path, path)
-
-	maxLen := len(oldLines)
-	if len(newLines) > maxLen {
-		maxLen = len(newLines)
-	}
-
-	for i := 0; i < maxLen; i++ {
-		oldLine := lineAt(oldLines, i)
-		newLine := lineAt(newLines, i)
-		if oldLine != newLine {
-			if i < len(oldLines) {
-				fmt.Fprintf(&b, "-%s\n", oldLine)
-			}
-			if i < len(newLines) {
-				fmt.Fprintf(&b, "+%s\n", newLine)
-			}
-		}
-	}
-
-	return b.String()
-}
-
-// lineAt safely returns the line at index i, or empty string if out of range.
-func lineAt(lines []string, i int) string {
-	if i < len(lines) {
-		return lines[i]
-	}
-	return ""
 }

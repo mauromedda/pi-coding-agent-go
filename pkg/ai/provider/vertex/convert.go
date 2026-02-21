@@ -1,42 +1,19 @@
 // ABOUTME: Message format conversion for Vertex AI
-// ABOUTME: Uses same Gemini format with Vertex-specific request structure
+// ABOUTME: Uses shared Gemini types with Vertex-specific request/response wrappers
 
 package vertex
 
 import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/gemini"
 )
 
-// Vertex uses the same format as Google AI (Gemini)
+// Vertex-specific request/response types that wrap shared Gemini types.
 type vertexRequest struct {
-	Contents         []vertexContent         `json:"contents"`
-	SystemInstruction *vertexContent         `json:"systemInstruction,omitempty"`
-	Tools            []vertexToolDef         `json:"tools,omitempty"`
-	GenerationConfig *vertexGenerationConfig `json:"generationConfig,omitempty"`
-}
-
-type vertexContent struct {
-	Role  string       `json:"role,omitempty"`
-	Parts []vertexPart `json:"parts"`
-}
-
-type vertexPart struct {
-	Text string `json:"text,omitempty"`
-}
-
-type vertexToolDef struct {
-	FunctionDeclarations []vertexFunctionDecl `json:"functionDeclarations"`
-}
-
-type vertexFunctionDecl struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Parameters  any    `json:"parameters"`
-}
-
-type vertexGenerationConfig struct {
-	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
-	Temperature     float64 `json:"temperature,omitempty"`
+	Contents          []gemini.Content          `json:"contents"`
+	SystemInstruction *gemini.Content           `json:"systemInstruction,omitempty"`
+	Tools             []gemini.ToolDef          `json:"tools,omitempty"`
+	GenerationConfig  *gemini.GenerationConfig  `json:"generationConfig,omitempty"`
 }
 
 type vertexResponse struct {
@@ -44,44 +21,44 @@ type vertexResponse struct {
 }
 
 type vertexCandidate struct {
-	Content vertexContent `json:"content"`
+	Content gemini.Content `json:"content"`
 }
 
 func buildVertexRequestBody(ctx *ai.Context, opts *ai.StreamOptions) vertexRequest {
 	req := vertexRequest{}
 
 	if ctx.System != "" {
-		req.SystemInstruction = &vertexContent{
-			Parts: []vertexPart{{Text: ctx.System}},
+		req.SystemInstruction = &gemini.Content{
+			Parts: []gemini.Part{{Text: ctx.System}},
 		}
 	}
 
 	for _, msg := range ctx.Messages {
-		content := vertexContent{
+		content := gemini.Content{
 			Role: vertexRole(msg.Role),
 		}
 		for _, c := range msg.Content {
 			if c.Type == ai.ContentText {
-				content.Parts = append(content.Parts, vertexPart{Text: c.Text})
+				content.Parts = append(content.Parts, gemini.Part{Text: c.Text})
 			}
 		}
 		req.Contents = append(req.Contents, content)
 	}
 
 	if len(ctx.Tools) > 0 {
-		var decls []vertexFunctionDecl
+		var decls []gemini.FunctionDecl
 		for _, t := range ctx.Tools {
-			decls = append(decls, vertexFunctionDecl{
+			decls = append(decls, gemini.FunctionDecl{
 				Name:        t.Name,
 				Description: t.Description,
 				Parameters:  t.Parameters,
 			})
 		}
-		req.Tools = []vertexToolDef{{FunctionDeclarations: decls}}
+		req.Tools = []gemini.ToolDef{{FunctionDeclarations: decls}}
 	}
 
 	if opts != nil {
-		req.GenerationConfig = &vertexGenerationConfig{
+		req.GenerationConfig = &gemini.GenerationConfig{
 			MaxOutputTokens: opts.MaxTokens,
 			Temperature:     opts.Temperature,
 		}

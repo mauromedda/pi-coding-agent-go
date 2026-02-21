@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/gemini"
 )
 
 func TestProviderApi(t *testing.T) {
@@ -49,9 +50,9 @@ func TestProviderStreamTextContent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		resp := vertexResponse{
 			Candidates: []vertexCandidate{{
-				Content: vertexContent{
+				Content: gemini.Content{
 					Role:  "model",
-					Parts: []vertexPart{{Text: "Hello from Vertex!"}},
+					Parts: []gemini.Part{{Text: "Hello from Vertex!"}},
 				},
 			}},
 		}

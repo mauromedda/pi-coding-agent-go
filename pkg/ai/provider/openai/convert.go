@@ -148,7 +148,7 @@ func convertMessages(ctx *ai.Context) []chatMessage {
 			case ai.ContentToolResult:
 				msgs = append(msgs, chatMessage{
 					Role:       "tool",
-					Content:    c.Content,
+					Content:    c.ResultText,
 					ToolCallID: c.ID,
 				})
 				continue

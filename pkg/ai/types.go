@@ -42,7 +42,7 @@ type Content struct {
 	ID        string          `json:"id,omitempty"`         // Tool use/result ID
 	Name      string          `json:"name,omitempty"`       // Tool name
 	Input     json.RawMessage `json:"input,omitempty"`      // Tool use input
-	Content   string          `json:"content,omitempty"`    // Tool result content
+	ResultText string         `json:"result_text,omitempty"` // Tool result content
 	IsError   bool            `json:"is_error,omitempty"`   // Tool result error flag
 	MediaType string          `json:"media_type,omitempty"` // Image media type
 	Data      string          `json:"data,omitempty"`       // Base64 image data

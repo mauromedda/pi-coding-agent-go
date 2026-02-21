@@ -268,7 +268,6 @@ func (a *Agent) executeReadOnlyTools(ctx context.Context, calls []toolCall) ([]t
 	g, gCtx := errgroup.WithContext(ctx)
 
 	for i, tc := range calls {
-		i, tc := i, tc
 		g.Go(func() error {
 			res, err := a.executeSingleTool(gCtx, tc)
 			if err != nil {
@@ -370,7 +369,7 @@ func toolResultMessage(results []toolExecResult) ai.Message {
 		contents = append(contents, ai.Content{
 			Type:    ai.ContentToolResult,
 			ID:      r.ID,
-			Content: r.Result.Content,
+			ResultText: r.Result.Content,
 			IsError: r.Result.IsError,
 		})
 	}

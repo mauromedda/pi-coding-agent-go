@@ -5,61 +5,25 @@ package google
 
 import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/gemini"
 )
 
-// Gemini API types
+// Google-specific request/response types that wrap shared Gemini types.
 type geminiRequest struct {
-	Contents         []geminiContent       `json:"contents"`
-	SystemInstruction *geminiContent       `json:"systemInstruction,omitempty"`
-	Tools            []geminiToolDef       `json:"tools,omitempty"`
-	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
-}
-
-type geminiContent struct {
-	Role  string       `json:"role,omitempty"`
-	Parts []geminiPart `json:"parts"`
-}
-
-type geminiPart struct {
-	Text         string              `json:"text,omitempty"`
-	FunctionCall *geminiFunctionCall `json:"functionCall,omitempty"`
-	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
-}
-
-type geminiFunctionCall struct {
-	Name string `json:"name"`
-	Args any    `json:"args"`
-}
-
-type geminiFunctionResponse struct {
-	Name     string `json:"name"`
-	Response any    `json:"response"`
-}
-
-type geminiToolDef struct {
-	FunctionDeclarations []geminiFunctionDecl `json:"functionDeclarations"`
-}
-
-type geminiFunctionDecl struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Parameters  any    `json:"parameters"`
-}
-
-type geminiGenerationConfig struct {
-	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
-	Temperature     float64 `json:"temperature,omitempty"`
-	TopP            float64 `json:"topP,omitempty"`
+	Contents          []gemini.Content          `json:"contents"`
+	SystemInstruction *gemini.Content           `json:"systemInstruction,omitempty"`
+	Tools             []gemini.ToolDef          `json:"tools,omitempty"`
+	GenerationConfig  *gemini.GenerationConfig  `json:"generationConfig,omitempty"`
 }
 
 type geminiResponse struct {
-	Candidates    []geminiCandidate  `json:"candidates"`
-	UsageMetadata *geminiUsage       `json:"usageMetadata,omitempty"`
+	Candidates    []geminiCandidate `json:"candidates"`
+	UsageMetadata *geminiUsage      `json:"usageMetadata,omitempty"`
 }
 
 type geminiCandidate struct {
-	Content      geminiContent `json:"content"`
-	FinishReason string        `json:"finishReason"`
+	Content      gemini.Content `json:"content"`
+	FinishReason string         `json:"finishReason"`
 }
 
 type geminiUsage struct {
@@ -73,32 +37,32 @@ func buildGeminiRequestBody(ctx *ai.Context, opts *ai.StreamOptions) geminiReque
 
 	// System instruction
 	if ctx.System != "" {
-		req.SystemInstruction = &geminiContent{
-			Parts: []geminiPart{{Text: ctx.System}},
+		req.SystemInstruction = &gemini.Content{
+			Parts: []gemini.Part{{Text: ctx.System}},
 		}
 	}
 
 	// Convert messages
 	for _, msg := range ctx.Messages {
-		content := geminiContent{
+		content := gemini.Content{
 			Role: mapRole(msg.Role),
 		}
 		for _, c := range msg.Content {
 			switch c.Type {
 			case ai.ContentText:
-				content.Parts = append(content.Parts, geminiPart{Text: c.Text})
+				content.Parts = append(content.Parts, gemini.Part{Text: c.Text})
 			case ai.ContentToolUse:
-				content.Parts = append(content.Parts, geminiPart{
-					FunctionCall: &geminiFunctionCall{
+				content.Parts = append(content.Parts, gemini.Part{
+					FunctionCall: &gemini.FunctionCall{
 						Name: c.Name,
 						Args: c.Input,
 					},
 				})
 			case ai.ContentToolResult:
-				content.Parts = append(content.Parts, geminiPart{
-					FunctionResponse: &geminiFunctionResponse{
+				content.Parts = append(content.Parts, gemini.Part{
+					FunctionResponse: &gemini.FunctionResponse{
 						Name:     c.Name,
-						Response: map[string]string{"result": c.Content},
+						Response: map[string]string{"result": c.ResultText},
 					},
 				})
 			}
@@ -108,20 +72,20 @@ func buildGeminiRequestBody(ctx *ai.Context, opts *ai.StreamOptions) geminiReque
 
 	// Convert tools
 	if len(ctx.Tools) > 0 {
-		var decls []geminiFunctionDecl
+		var decls []gemini.FunctionDecl
 		for _, t := range ctx.Tools {
-			decls = append(decls, geminiFunctionDecl{
+			decls = append(decls, gemini.FunctionDecl{
 				Name:        t.Name,
 				Description: t.Description,
 				Parameters:  t.Parameters,
 			})
 		}
-		req.Tools = []geminiToolDef{{FunctionDeclarations: decls}}
+		req.Tools = []gemini.ToolDef{{FunctionDeclarations: decls}}
 	}
 
 	// Generation config
 	if opts != nil {
-		req.GenerationConfig = &geminiGenerationConfig{
+		req.GenerationConfig = &gemini.GenerationConfig{
 			MaxOutputTokens: opts.MaxTokens,
 			Temperature:     opts.Temperature,
 			TopP:            opts.TopP,

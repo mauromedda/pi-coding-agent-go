@@ -55,7 +55,7 @@ func convertContentBlock(b ai.Content) map[string]any {
 		result := map[string]any{
 			"type":       "tool_result",
 			"tool_use_id": b.ID,
-			"content":    b.Content,
+			"content":    b.ResultText,
 		}
 		if b.IsError {
 			result["is_error"] = true
