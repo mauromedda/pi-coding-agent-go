@@ -104,8 +104,11 @@ func (fm *FileMentionSelector) ScanProject() error {
 		return err
 	}
 
+	fm.mu.Lock()
 	fm.items = files
-	fm.applyFilter()
+	fm.applyFilterLocked()
+	fm.dirty = true
+	fm.mu.Unlock()
 	return nil
 }
 
