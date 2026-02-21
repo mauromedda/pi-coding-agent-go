@@ -315,6 +315,83 @@ func TestTUI_ShrinkMode(t *testing.T) {
 	}
 }
 
+func TestTUI_ClampKeepsBottom(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 5) // tiny terminal: 5 rows
+
+	// Component produces 8 lines; only bottom 5 should survive
+	comp := &mockComponent{lines: []string{
+		"line1", "line2", "line3",
+		"line4", "line5", "line6",
+		"line7", "line8",
+	}}
+	ui.Container().Add(comp)
+	ui.RenderOnce()
+
+	result := out.String()
+	// Bottom lines must be visible
+	if !strings.Contains(result, "line8") {
+		t.Errorf("expected bottom line 'line8' in output, got %q", result)
+	}
+	// Top lines must be clipped
+	if strings.Contains(result, "line1") {
+		t.Errorf("top line 'line1' should be clipped, got %q", result)
+	}
+}
+
+func TestTUI_ClampPreservesCursor(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 3) // 3-row terminal
+
+	// 5 lines; cursor marker on last line
+	comp := &mockComponent{lines: []string{
+		"top1", "top2",
+		"mid",
+		"near-bottom",
+		"bottom" + CursorMarker + "line",
+	}}
+	ui.Container().Add(comp)
+	ui.RenderOnce()
+
+	result := out.String()
+	// Cursor should be shown (not hidden)
+	if !strings.Contains(result, "\x1b[?25h") {
+		t.Errorf("cursor should be visible, got %q", result)
+	}
+	if strings.Contains(result, "top1") {
+		t.Errorf("top1 should be clipped")
+	}
+}
+
+func TestTUI_ClampTransition(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 4) // 4-row terminal
+
+	comp := &mockComponent{lines: []string{"a", "b", "c"}} // fits
+	ui.Container().Add(comp)
+	ui.RenderOnce()
+
+	// Grow past terminal height
+	out.Reset()
+	comp.lines = []string{"a", "b", "c", "d", "e", "f"} // 6 > 4
+	ui.RenderOnce()
+
+	result := out.String()
+	// Bottom 4 lines should be visible
+	if !strings.Contains(result, "f") {
+		t.Errorf("expected 'f' in output, got %q", result)
+	}
+	if strings.Contains(result, "a") {
+		t.Errorf("'a' should be clipped after transition, got %q", result)
+	}
+}
+
 func TestTUI_WidthChange(t *testing.T) {
 	t.Parallel()
 
