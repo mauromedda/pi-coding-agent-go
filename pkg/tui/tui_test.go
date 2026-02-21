@@ -190,3 +190,16 @@ func TestOverlay_Center(t *testing.T) {
 		t.Error("overlay content not found in output")
 	}
 }
+
+func TestTUI_DoubleStopNoPanic(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	ui := New(&out, 80, 24)
+	ui.Start()
+
+	// First stop: normal.
+	ui.Stop()
+	// Second stop: must not panic (double close).
+	ui.Stop()
+}

@@ -29,6 +29,7 @@ type TUI struct {
 	overlays      []Overlay
 	renderCh      chan struct{}
 	stopCh        chan struct{}
+	stopOnce      sync.Once
 	running       bool
 }
 
@@ -100,16 +101,18 @@ func (t *TUI) Start() {
 	go t.renderLoop()
 }
 
-// Stop terminates the render loop.
+// Stop terminates the render loop. Safe to call multiple times.
 func (t *TUI) Stop() {
-	t.mu.Lock()
-	if !t.running {
+	t.stopOnce.Do(func() {
+		t.mu.Lock()
+		if !t.running {
+			t.mu.Unlock()
+			return
+		}
+		t.running = false
 		t.mu.Unlock()
-		return
-	}
-	t.running = false
-	t.mu.Unlock()
-	close(t.stopCh)
+		close(t.stopCh)
+	})
 }
 
 // RenderOnce performs a single synchronous render. Useful for testing.

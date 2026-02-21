@@ -157,9 +157,12 @@ func runInteractive(model *ai.Model, checker *permission.Checker, auth *config.A
 		app.SetYoloMode()
 	}
 
-	_ = auth     // Auth store available for key retrieval during session
-	_ = toolReg  // Tool registry available for agent loop
-	_ = model    // Model available for session creation
+	// TODO(M21): Wire auth, toolReg, and model into the interactive agent loop.
+	// This requires connecting the permission checker + sandbox-aware tool registry
+	// to a running Agent, and binding agent events to TUI components.
+	_ = auth
+	_ = toolReg
+	_ = model
 
 	app.Start()
 	defer app.Stop()
