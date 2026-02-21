@@ -294,6 +294,35 @@ func TestUpdateFooter_WithTokenStats(t *testing.T) {
 	}
 }
 
+func TestUpdateFooter_IncludesModeLabel(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test-model"},
+		Checker:  checker,
+	})
+	app.footer = components.NewFooter()
+
+	// Initial mode is Plan
+	app.updateFooter()
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	app.footer.Render(buf, 80)
+
+	if buf.Len() < 2 {
+		t.Fatalf("expected 2 footer lines, got %d", buf.Len())
+	}
+
+	line2 := buf.Lines[1]
+	if !strings.Contains(line2, "PLAN") {
+		t.Errorf("footer line2 should contain mode label PLAN, got %q", line2)
+	}
+}
+
 func TestHandleFileMentionInput_Tab_AcceptsSelection(t *testing.T) {
 	t.Parallel()
 

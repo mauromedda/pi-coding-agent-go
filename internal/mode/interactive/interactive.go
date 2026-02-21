@@ -729,6 +729,7 @@ func (a *App) updateFooter() {
 		modelName = a.model.Name
 	}
 	a.footer.SetLine2(stats, modelName)
+	a.footer.SetModeLabel(a.ModeLabel())
 }
 
 // formatTokenCount formats a token count for compact display.

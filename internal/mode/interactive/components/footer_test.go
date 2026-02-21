@@ -199,4 +199,42 @@ func TestFooter(t *testing.T) {
 			t.Errorf("Content() = %q, want %q", got, "test")
 		}
 	})
+
+	t.Run("mode_label_shown_in_line2", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetModeLabel("[PLAN] Shift+Tab -> Edit")
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		stripped := width.StripANSI(buf.Lines[1])
+		if !strings.Contains(stripped, "[PLAN]") {
+			t.Errorf("line2 should contain mode label, got %q", stripped)
+		}
+	})
+
+	t.Run("mode_label_empty_no_extra_space", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetLine2("stats", "model")
+		f.SetModeLabel("")
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 2 {
+			t.Fatalf("expected 2 lines, got %d", len(buf.Lines))
+		}
+		stripped := width.StripANSI(buf.Lines[1])
+		if strings.Contains(stripped, "[]") {
+			t.Errorf("empty mode label should not add brackets, got %q", stripped)
+		}
+	})
 }

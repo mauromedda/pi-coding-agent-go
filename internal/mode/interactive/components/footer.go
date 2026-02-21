@@ -4,8 +4,11 @@
 package components
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
@@ -16,51 +19,105 @@ type Footer struct {
 	line1      string
 	line2Left  string
 	line2Right string
+	modeLabel  string
+	thinking   config.ThinkingLevel
+	model      string
+	mu         sync.Mutex
 }
 
 // NewFooter creates a Footer component.
 func NewFooter() *Footer {
-	return &Footer{}
+	return &Footer{
+		thinking: config.ThinkingOff,
+	}
 }
 
 // SetLine1 sets the first line content (e.g. project path, branch).
 func (f *Footer) SetLine1(s string) {
+	f.mu.Lock()
 	f.line1 = s
+	f.mu.Unlock()
 }
 
 // SetLine2 sets the second line with left-aligned and right-aligned parts.
 func (f *Footer) SetLine2(left, right string) {
+	f.mu.Lock()
 	f.line2Left = left
 	f.line2Right = right
+	f.mu.Unlock()
 }
 
 // SetContent updates the footer text (backward compatibility).
 // Sets line1 to the given content and clears line2.
 func (f *Footer) SetContent(content string) {
+	f.mu.Lock()
 	f.line1 = content
 	f.line2Left = ""
 	f.line2Right = ""
+	f.mu.Unlock()
 }
 
 // Content returns the current line1 text (backward compatibility).
 func (f *Footer) Content() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.line1
+}
+
+// SetThinkingLevel sets the thinking level for display
+func (f *Footer) SetThinkingLevel(level config.ThinkingLevel) {
+	f.mu.Lock()
+	f.thinking = level
+	f.mu.Unlock()
+}
+
+// SetModel sets the model name for display
+func (f *Footer) SetModel(name string) {
+	f.mu.Lock()
+	f.model = name
+	f.mu.Unlock()
+}
+
+// SetModeLabel sets the Plan/Edit mode indicator for display.
+func (f *Footer) SetModeLabel(label string) {
+	f.mu.Lock()
+	f.modeLabel = label
+	f.mu.Unlock()
 }
 
 // Render writes the two footer lines with dim styling.
 func (f *Footer) Render(out *tui.RenderBuffer, w int) {
-	// Line 1
-	out.WriteLine("\x1b[2m" + f.line1 + "\x1b[0m")
+	f.mu.Lock()
+	line1 := f.line1
+	line2Left := f.line2Left
+	line2Right := f.line2Right
+	modeLabel := f.modeLabel
+	thinking := f.thinking
+	model := f.model
+	f.mu.Unlock()
 
-	// Line 2: left + padding + right
-	leftW := width.VisibleWidth(f.line2Left)
-	rightW := width.VisibleWidth(f.line2Right)
-	pad := w - leftW - rightW
-	if pad < 1 {
-		pad = 1
+	// Line 1
+	out.WriteLine("\x1b[2m" + line1 + "\x1b[0m")
+
+	// Build line 2 with optional mode label and thinking level
+	line2 := line2Left
+	if modeLabel != "" {
+		line2 += fmt.Sprintf(" \x1b[33m%s\x1b[0m", modeLabel) // yellow for mode
 	}
-	line2 := "\x1b[2m" + f.line2Left + strings.Repeat(" ", pad) + f.line2Right + "\x1b[0m"
-	out.WriteLine(line2)
+	if thinking != config.ThinkingOff {
+		thinkingColor := "\x1b[36m" // cyan for thinking levels
+		thinkingStr := thinking.String()
+		line2 += fmt.Sprintf(" \x1b[90m[%s]\x1b[0m", fmt.Sprintf("%s\x1b[36m%s\x1b[0m", thinkingColor, thinkingStr))
+	}
+	if model != "" {
+		line2 += fmt.Sprintf(" \x1b[90m(%s)\x1b[0m", model)
+	}
+
+	leftW := width.VisibleWidth(line2)
+	rightW := width.VisibleWidth(line2Right)
+	pad := max(w-leftW-rightW, 1)
+	fullLine2 := "\x1b[2m" + line2 + strings.Repeat(" ", pad) + line2Right + "\x1b[0m"
+	out.WriteLine(fullLine2)
 }
 
 // Invalidate is a no-op for Footer.
