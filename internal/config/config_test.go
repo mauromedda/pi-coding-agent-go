@@ -149,6 +149,205 @@ func containsAll(slice []string, items ...string) bool {
 	return true
 }
 
+func TestSettings_EffectivePermissions_Merge(t *testing.T) {
+	t.Parallel()
+
+	s := &Settings{
+		Allow: []string{"read", "grep"},
+		Deny:  []string{"rm*"},
+		Ask:   []string{"bash"},
+		Permissions: &PermissionsConfig{
+			Allow: []string{"write", "read"}, // "read" is a dup
+			Deny:  []string{"eval"},
+			Ask:   []string{"exec"},
+		},
+	}
+
+	allow, deny, ask := s.EffectivePermissions()
+
+	// Union with dedup
+	if !containsAll(allow, "read", "grep", "write") {
+		t.Errorf("allow = %v, want read, grep, write", allow)
+	}
+	// "read" should not appear twice
+	count := 0
+	for _, a := range allow {
+		if a == "read" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("allow has %d instances of 'read', want 1", count)
+	}
+
+	if !containsAll(deny, "rm*", "eval") {
+		t.Errorf("deny = %v, want rm*, eval", deny)
+	}
+	if !containsAll(ask, "bash", "exec") {
+		t.Errorf("ask = %v, want bash, exec", ask)
+	}
+}
+
+func TestSettings_EffectivePermissions_NilPermissions(t *testing.T) {
+	t.Parallel()
+
+	s := &Settings{
+		Allow: []string{"read"},
+		Deny:  []string{"rm*"},
+	}
+
+	allow, deny, ask := s.EffectivePermissions()
+
+	if !containsAll(allow, "read") || len(allow) != 1 {
+		t.Errorf("allow = %v, want [read]", allow)
+	}
+	if !containsAll(deny, "rm*") || len(deny) != 1 {
+		t.Errorf("deny = %v, want [rm*]", deny)
+	}
+	if len(ask) != 0 {
+		t.Errorf("ask = %v, want empty", ask)
+	}
+}
+
+func TestSettings_EffectiveDefaultMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		defaultMode string
+		permissions *PermissionsConfig
+		want        string
+	}{
+		{"empty", "", nil, ""},
+		{"top-level only", "acceptEdits", nil, "acceptEdits"},
+		{"nested only", "", &PermissionsConfig{DefaultMode: "dontAsk"}, "dontAsk"},
+		{"nested overrides top-level", "acceptEdits", &PermissionsConfig{DefaultMode: "dontAsk"}, "dontAsk"},
+		{"nested empty falls back to top-level", "acceptEdits", &PermissionsConfig{}, "acceptEdits"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Settings{
+				DefaultMode: tt.defaultMode,
+				Permissions: tt.permissions,
+			}
+			if got := s.EffectiveDefaultMode(); got != tt.want {
+				t.Errorf("EffectiveDefaultMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMerge_DefaultMode(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{DefaultMode: "acceptEdits"}
+	project := &Settings{DefaultMode: "dontAsk"}
+
+	result := merge(global, project)
+	if result.DefaultMode != "dontAsk" {
+		t.Errorf("DefaultMode = %q, want %q", result.DefaultMode, "dontAsk")
+	}
+}
+
+func TestMerge_StatusLine(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{}
+	project := &Settings{
+		StatusLine: &StatusLineConfig{
+			Type:    "command",
+			Command: "echo hello",
+			Padding: 2,
+		},
+	}
+
+	result := merge(global, project)
+	if result.StatusLine == nil {
+		t.Fatal("StatusLine should be set")
+	}
+	if result.StatusLine.Command != "echo hello" {
+		t.Errorf("StatusLine.Command = %q, want %q", result.StatusLine.Command, "echo hello")
+	}
+	if result.StatusLine.Padding != 2 {
+		t.Errorf("StatusLine.Padding = %d, want 2", result.StatusLine.Padding)
+	}
+}
+
+func TestMerge_Permissions(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Permissions: &PermissionsConfig{
+			Allow: []string{"read"},
+			Deny:  []string{"rm*"},
+		},
+	}
+	project := &Settings{
+		Permissions: &PermissionsConfig{
+			Allow:       []string{"write"},
+			DefaultMode: "dontAsk",
+		},
+	}
+
+	result := merge(global, project)
+	if result.Permissions == nil {
+		t.Fatal("Permissions should be set")
+	}
+	if !containsAll(result.Permissions.Allow, "read", "write") {
+		t.Errorf("Permissions.Allow = %v, want read, write", result.Permissions.Allow)
+	}
+	if !containsAll(result.Permissions.Deny, "rm*") {
+		t.Errorf("Permissions.Deny = %v, want rm*", result.Permissions.Deny)
+	}
+	if result.Permissions.DefaultMode != "dontAsk" {
+		t.Errorf("Permissions.DefaultMode = %q, want %q", result.Permissions.DefaultMode, "dontAsk")
+	}
+}
+
+func TestLoadFile_WithNewFields(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	data := `{
+		"defaultMode": "acceptEdits",
+		"permissions": {
+			"allow": ["bash"],
+			"deny": ["rm*"],
+			"defaultMode": "dontAsk"
+		},
+		"statusLine": {
+			"type": "command",
+			"command": "echo test",
+			"padding": 3
+		}
+	}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.DefaultMode != "acceptEdits" {
+		t.Errorf("DefaultMode = %q, want %q", s.DefaultMode, "acceptEdits")
+	}
+	if s.Permissions == nil {
+		t.Fatal("Permissions should be set")
+	}
+	if s.Permissions.DefaultMode != "dontAsk" {
+		t.Errorf("Permissions.DefaultMode = %q, want %q", s.Permissions.DefaultMode, "dontAsk")
+	}
+	if s.StatusLine == nil {
+		t.Fatal("StatusLine should be set")
+	}
+	if s.StatusLine.Command != "echo test" {
+		t.Errorf("StatusLine.Command = %q, want %q", s.StatusLine.Command, "echo test")
+	}
+}
+
 func TestAuthStore_GetKey_EnvFallback(t *testing.T) {
 	store := &AuthStore{Keys: make(map[string]string)}
 

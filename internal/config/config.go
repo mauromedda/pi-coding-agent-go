@@ -20,16 +20,38 @@ type Settings struct {
 	Thinking    bool              `json:"thinking,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
 
-	// Permission rules
+	// Permission rules (top-level, for backward compat)
 	Allow []string `json:"allow,omitempty"`
 	Deny  []string `json:"deny,omitempty"`
 	Ask   []string `json:"ask,omitempty"`
+
+	// Nested permission config (Claude Code parity)
+	DefaultMode string             `json:"defaultMode,omitempty"`
+	Permissions *PermissionsConfig `json:"permissions,omitempty"`
+
+	// Status line configuration
+	StatusLine *StatusLineConfig `json:"statusLine,omitempty"`
 
 	// Hooks: event name -> list of hook definitions
 	Hooks map[string][]HookDef `json:"hooks,omitempty"`
 
 	// Sandbox configuration
 	Sandbox SandboxSettings `json:"sandbox,omitempty"`
+}
+
+// PermissionsConfig holds nested permission settings (Claude Code format).
+type PermissionsConfig struct {
+	Allow       []string `json:"allow,omitempty"`
+	Deny        []string `json:"deny,omitempty"`
+	Ask         []string `json:"ask,omitempty"`
+	DefaultMode string   `json:"defaultMode,omitempty"`
+}
+
+// StatusLineConfig configures the footer status line.
+type StatusLineConfig struct {
+	Type    string `json:"type,omitempty"`    // "command" or empty for built-in
+	Command string `json:"command,omitempty"` // Shell command for external status line
+	Padding int    `json:"padding,omitempty"` // Padding characters
 }
 
 // HookDef describes a lifecycle hook.
@@ -152,6 +174,30 @@ func LoadAll(projectRoot string, cliOverrides *Settings) (*Settings, error) {
 	return LoadAllWithHome(projectRoot, home, cliOverrides)
 }
 
+// EffectivePermissions returns the merged allow/deny/ask lists from both
+// top-level and nested Permissions fields (union with dedup).
+func (s *Settings) EffectivePermissions() (allow, deny, ask []string) {
+	allow = append([]string{}, s.Allow...)
+	deny = append([]string{}, s.Deny...)
+	ask = append([]string{}, s.Ask...)
+
+	if s.Permissions != nil {
+		allow = dedupStrings(allow, s.Permissions.Allow)
+		deny = dedupStrings(deny, s.Permissions.Deny)
+		ask = dedupStrings(ask, s.Permissions.Ask)
+	}
+	return allow, deny, ask
+}
+
+// EffectiveDefaultMode returns the effective default permission mode.
+// Nested Permissions.DefaultMode takes precedence over top-level DefaultMode.
+func (s *Settings) EffectiveDefaultMode() string {
+	if s.Permissions != nil && s.Permissions.DefaultMode != "" {
+		return s.Permissions.DefaultMode
+	}
+	return s.DefaultMode
+}
+
 // merge deep-merges project settings onto global settings.
 // Non-zero project values override global values.
 func merge(global, project *Settings) *Settings {
@@ -182,6 +228,9 @@ func merge(global, project *Settings) *Settings {
 	if project.Thinking {
 		result.Thinking = true
 	}
+	if project.DefaultMode != "" {
+		result.DefaultMode = project.DefaultMode
+	}
 
 	// Merge env maps
 	if len(project.Env) > 0 {
@@ -202,6 +251,30 @@ func merge(global, project *Settings) *Settings {
 	}
 	if len(project.Ask) > 0 {
 		result.Ask = dedupStrings(result.Ask, project.Ask)
+	}
+
+	// Permissions: merge nested config
+	if project.Permissions != nil {
+		if result.Permissions == nil {
+			result.Permissions = &PermissionsConfig{}
+		}
+		if len(project.Permissions.Allow) > 0 {
+			result.Permissions.Allow = dedupStrings(result.Permissions.Allow, project.Permissions.Allow)
+		}
+		if len(project.Permissions.Deny) > 0 {
+			result.Permissions.Deny = dedupStrings(result.Permissions.Deny, project.Permissions.Deny)
+		}
+		if len(project.Permissions.Ask) > 0 {
+			result.Permissions.Ask = dedupStrings(result.Permissions.Ask, project.Permissions.Ask)
+		}
+		if project.Permissions.DefaultMode != "" {
+			result.Permissions.DefaultMode = project.Permissions.DefaultMode
+		}
+	}
+
+	// StatusLine: override if present
+	if project.StatusLine != nil {
+		result.StatusLine = project.StatusLine
 	}
 
 	// Hooks: merge by event name
