@@ -38,6 +38,7 @@ func New(apiKey, baseURL string) *Provider {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
+	baseURL = httputil.NormalizeBaseURL(baseURL)
 
 	headers := map[string]string{
 		"x-api-key":        apiKey,

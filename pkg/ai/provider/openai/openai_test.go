@@ -268,6 +268,34 @@ func TestMapFinishReason(t *testing.T) {
 	}
 }
 
+func TestProviderNormalizesBaseURLWithV1(t *testing.T) {
+	t.Parallel()
+
+	sseBody := buildSSETextResponse("ok")
+	var gotPath string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(sseBody))
+	}))
+	t.Cleanup(srv.Close)
+
+	// Pass baseURL with /v1 suffix — the provider should strip it to avoid /v1/v1/...
+	provider := New("test-key", srv.URL+"/v1")
+	stream := provider.Stream(context.Background(), &ai.ModelGPT4o, &ai.Context{
+		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
+	}, nil)
+
+	for range stream.Events() {
+	}
+
+	if gotPath != "/v1/chat/completions" {
+		t.Errorf("request path = %q, want %q", gotPath, "/v1/chat/completions")
+	}
+}
+
 func TestAppendTextContent(t *testing.T) {
 	t.Parallel()
 

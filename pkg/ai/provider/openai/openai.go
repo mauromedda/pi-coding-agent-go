@@ -13,6 +13,7 @@ import (
 	"os"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/httputil"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/sse"
 )
 
@@ -33,6 +34,7 @@ func New(apiKey, baseURL string) *Provider {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
+	baseURL = httputil.NormalizeBaseURL(baseURL)
 	return &Provider{
 		baseURL: baseURL,
 		apiKey:  apiKey,
