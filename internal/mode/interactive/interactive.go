@@ -75,9 +75,14 @@ type App struct {
 	version      string
 
 	// TUI components
-	editor  *component.Editor
-	footer  *components.Footer
-	current *components.AssistantMessage // current streaming response
+	editor    *component.Editor
+	editorSep *components.Separator // permanent separator above editor
+	footer    *components.Footer
+	current   *components.AssistantMessage // current streaming response
+
+	// File mention selector (for @ file autocomplete)
+	fileMentionSelector *component.FileMentionSelector
+	fileMentionVisible  bool
 
 	// State
 	agentRunning atomic.Bool
@@ -119,19 +124,34 @@ func NewFromDeps(deps AppDeps) *App {
 		cmdRegistry:  commands.NewRegistry(),
 		statusEngine: deps.StatusEngine,
 	}
+	// Initialize file mention selector
+	app.initFileMentionSelector()
 	return app
 }
 
 // New creates a new interactive app (backwards-compatible constructor).
 func New(writer tuipkg.Writer, width, height int, checker *permission.Checker) *App {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &App{
+	app := &App{
 		tui:      tuipkg.New(writer, width, height),
 		mode:     ModePlan,
 		checker:  checker,
 		ctx:      ctx,
 		cancelFn: cancel,
 	}
+	// Initialize file mention selector
+	app.initFileMentionSelector()
+	return app
+}
+
+// initFileMentionSelector initializes the file mention selector component.
+func (a *App) initFileMentionSelector() {
+	cwd, _ := os.Getwd()
+	a.fileMentionSelector = component.NewFileMentionSelector(cwd, cwd)
+	// Scan project files in background
+	go func() {
+		_ = a.fileMentionSelector.ScanProject()
+	}()
 }
 
 // Run is the blocking main loop. Enters raw mode, sets up components,
@@ -155,7 +175,8 @@ func (a *App) Run() error {
 	// Detect git branch
 	a.gitBranch = detectGitBranch()
 
-	// Set up editor and footer
+	// Set up editor separator, editor, and footer
+	a.editorSep = components.NewSeparator()
 	a.editor = component.NewEditor()
 	a.editor.SetFocused(true)
 	a.editor.SetPrompt("❯ ")
@@ -164,6 +185,7 @@ func (a *App) Run() error {
 	a.updateFooter()
 
 	container := a.tui.Container()
+	container.Add(a.editorSep)
 	container.Add(a.editor)
 	container.Add(a.footer)
 
@@ -205,10 +227,12 @@ func (a *App) printWelcome(container *tuipkg.Container) {
 	welcome := components.NewWelcomeMessage(ver, modelName, cwd, len(a.tools))
 	sep := components.NewSeparator()
 
+	container.Remove(a.editorSep)
 	container.Remove(a.editor)
 	container.Remove(a.footer)
 	container.Add(welcome)
 	container.Add(sep)
+	container.Add(a.editorSep)
 	container.Add(a.editor)
 	container.Add(a.footer)
 }
@@ -275,7 +299,21 @@ func (a *App) onKey(k key.Key) {
 		}
 	}
 
-	// 6. Default: route to editor
+	// 7. @ key: show file mention selector (if agent not running)
+	if k.Type == key.KeyRune && k.Rune == '@' && !a.agentRunning.Load() && !a.fileMentionVisible {
+		a.showFileMentionSelector()
+		a.tui.RequestRender()
+		return
+	}
+
+	// 8. Handle file mention selector input if visible
+	if a.fileMentionVisible {
+		if handled := a.handleFileMentionInput(k); handled {
+			return
+		}
+	}
+
+	// 9. Default: route to editor
 	a.editor.HandleKey(k)
 	a.tui.RequestRender()
 }
@@ -294,6 +332,7 @@ func (a *App) submitPrompt(text string) {
 	}
 
 	// Remove editor+footer temporarily
+	container.Remove(a.editorSep)
 	container.Remove(a.editor)
 	container.Remove(a.footer)
 
@@ -304,7 +343,8 @@ func (a *App) submitPrompt(text string) {
 	a.current = components.NewAssistantMessage()
 	container.Add(a.current)
 
-	// Re-add editor+footer at bottom
+	// Re-add separator+editor+footer at bottom
+	container.Add(a.editorSep)
 	container.Add(a.editor)
 	container.Add(a.footer)
 
@@ -343,11 +383,15 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 		ExitFn: func() {
 			a.cancelFn()
 		},
+		ReloadFn: func() (string, error) {
+			return "Configuration reloaded.", nil
+		},
 	}
 
 	result, err := a.cmdRegistry.Dispatch(cmdCtx, text)
 
 	// Display result
+	container.Remove(a.editorSep)
 	container.Remove(a.editor)
 	container.Remove(a.footer)
 
@@ -361,11 +405,73 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 	}
 	container.Add(msg)
 
+	container.Add(a.editorSep)
 	container.Add(a.editor)
 	container.Add(a.footer)
 
 	a.updateFooter()
 	a.tui.RequestRender()
+}
+
+// showFileMentionSelector displays the file mention selector component.
+func (a *App) showFileMentionSelector() {
+	a.fileMentionVisible = true
+
+	// Add file mention selector to container
+	container := a.tui.Container()
+	container.Add(a.fileMentionSelector)
+}
+
+// handleFileMentionInput handles input for the file mention selector.
+func (a *App) handleFileMentionInput(k key.Key) bool {
+	if !a.fileMentionVisible || a.fileMentionSelector == nil {
+		return false
+	}
+
+	switch k.Type {
+	case key.KeyEscape:
+		// Cancel file mention selection
+		a.hideFileMentionSelector()
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyEnter:
+		// Accept selection and insert into editor
+		filePath := a.fileMentionSelector.SelectionAccepted()
+		a.hideFileMentionSelector()
+
+		// Insert @filename into editor
+		if filePath != "" {
+			currentText := a.editor.Text()
+			newText := currentText + "@" + filePath
+			a.editor.SetText(newText)
+		}
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyUp, key.KeyDown:
+		// Navigation handled by selector
+		a.fileMentionSelector.HandleInput(k.String())
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyRune:
+		// Filter by typing
+		a.fileMentionSelector.SetFilter(a.fileMentionSelector.Filter() + string(k.Rune))
+		a.tui.RequestRender()
+		return true
+	}
+
+	return false
+}
+
+// hideFileMentionSelector hides the file mention selector component.
+func (a *App) hideFileMentionSelector() {
+	a.fileMentionVisible = false
+
+	// Remove selector from container
+	container := a.tui.Container()
+	container.Remove(a.fileMentionSelector)
 }
 
 // runAgent executes the agent loop, streaming events to TUI components.
@@ -446,10 +552,12 @@ func (a *App) runAgent() {
 			}
 			te := components.NewToolExec(evt.ToolName, argsStr)
 			toolExecs[evt.ToolID] = te
-			// Insert before editor
+			// Insert before editor separator
+			container.Remove(a.editorSep)
 			container.Remove(a.editor)
 			container.Remove(a.footer)
 			container.Add(te)
+			container.Add(a.editorSep)
 			container.Add(a.editor)
 			container.Add(a.footer)
 
