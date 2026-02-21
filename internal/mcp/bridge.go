@@ -12,6 +12,8 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 )
 
+const maxBridgeTextBytes = 1 << 20 // 1MB cap on MCP tool text output
+
 // BridgeTool converts an MCPTool from a named server into an AgentTool.
 func BridgeTool(serverName string, tool MCPTool, client *Client) *agent.AgentTool {
 	name := fmt.Sprintf("mcp__%s__%s", sanitizeName(serverName), sanitizeName(tool.Name))
@@ -33,6 +35,12 @@ func BridgeTool(serverName string, tool MCPTool, client *Client) *agent.AgentToo
 				if item.Text != "" {
 					if text.Len() > 0 {
 						text.WriteString("\n")
+					}
+					if text.Len()+len(item.Text) > maxBridgeTextBytes {
+						return agent.ToolResult{
+							Content: fmt.Sprintf("MCP tool %q output exceeded %d bytes limit", tool.Name, maxBridgeTextBytes),
+							IsError: true,
+						}, nil
 					}
 					text.WriteString(item.Text)
 				}

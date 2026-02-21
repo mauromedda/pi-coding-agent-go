@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -314,6 +315,45 @@ func TestBridgeAllTools(t *testing.T) {
 	bridged := BridgeAllTools("test", c)
 	if len(bridged) != 2 {
 		t.Fatalf("expected 2 bridged tools, got %d", len(bridged))
+	}
+}
+
+func TestBridgeTool_TextCap(t *testing.T) {
+	oversized := make([]byte, maxBridgeTextBytes+100)
+	for i := range oversized {
+		oversized[i] = 'A'
+	}
+
+	mt := newMockTransport(func(req *Request) *Response {
+		switch req.Method {
+		case "initialize":
+			result, _ := json.Marshal(InitializeResult{ProtocolVersion: "2024-11-05"})
+			return &Response{ID: req.ID, Result: result}
+		case "tools/call":
+			result, _ := json.Marshal(ToolCallResult{
+				Content: []ContentItem{{Type: "text", Text: string(oversized)}},
+			})
+			return &Response{ID: req.ID, Result: result}
+		default:
+			return &Response{ID: req.ID, Error: &RPCError{Code: -32601, Message: "unknown"}}
+		}
+	})
+
+	c := NewClient(mt)
+	_ = c.Connect(context.Background())
+
+	tool := MCPTool{Name: "big-tool", Description: "returns oversized text"}
+	bridged := BridgeTool("test", tool, c)
+
+	result, err := bridged.Execute(context.Background(), "1", nil, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for oversized response")
+	}
+	if !strings.Contains(result.Content, "exceeded") {
+		t.Errorf("expected truncation message, got %q", result.Content[:100])
 	}
 }
 
