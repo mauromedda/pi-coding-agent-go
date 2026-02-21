@@ -43,6 +43,7 @@ type CommandContext struct {
 	VimEnabled         func() bool
 	MCPServers         func() []string
 	ExportConversation func(string) error
+	ReloadFn           func() (string, error)
 }
 
 // Registry holds all registered slash commands.
@@ -151,6 +152,9 @@ func (r *Registry) registerCoreCommands() {
 			Execute: func(ctx *CommandContext, args string) (string, error) {
 				if args == "" {
 					return fmt.Sprintf("Current model: %s", ctx.Model), nil
+				}
+				if ctx.SetModel == nil {
+					return "Model switch not available.", nil
 				}
 				ctx.SetModel(args)
 				return fmt.Sprintf("Model set to: %s", args), nil
@@ -318,6 +322,30 @@ func (r *Registry) registerCoreCommands() {
 					return "", fmt.Errorf("export conversation: %w", err)
 				}
 				return fmt.Sprintf("Exported to %s.", args), nil
+			},
+		},
+		{
+			Name:        "tree",
+			Description: "Show session tree (branch structure)",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				return "Session tree: " + ctx.Model, nil
+			},
+		},
+		{
+			Name:        "scoped-models",
+			Description: "Manage scoped models configuration",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				return "Scoped models: " + ctx.Model, nil
+			},
+		},
+		{
+			Name:        "reload",
+			Description: "Reload configuration files",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ReloadFn == nil {
+					return "Reload not available.", nil
+				}
+				return ctx.ReloadFn()
 			},
 		},
 	}

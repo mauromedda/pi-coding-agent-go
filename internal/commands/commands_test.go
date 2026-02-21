@@ -91,8 +91,8 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 	expected := []string{
 		"clear", "compact", "config", "context", "cost",
 		"exit", "export", "help", "init", "mcp", "memory",
-		"model", "plan", "rename", "resume", "sandbox",
-		"status", "vim",
+		"model", "plan", "reload", "rename", "resume", "sandbox",
+		"scoped-models", "status", "tree", "vim",
 	}
 	for _, name := range expected {
 		cmd, ok := reg.Get(name)
@@ -232,6 +232,22 @@ func TestDispatch_Model_Set(t *testing.T) {
 	}
 	if !strings.Contains(result, "gpt-4") {
 		t.Errorf("expected confirmation to contain 'gpt-4', got %q", result)
+	}
+}
+
+func TestDispatch_Model_NilSetModel(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.SetModel = nil
+
+	result, err := reg.Dispatch(ctx, "/model gpt-4")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil SetModel, got %q", result)
 	}
 }
 
