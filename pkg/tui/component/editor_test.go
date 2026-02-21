@@ -1,0 +1,453 @@
+// ABOUTME: Tests for the multi-line text editor component
+// ABOUTME: Covers typing, cursor movement, word-wrap, undo/redo, kill ring, focus
+
+package component
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+)
+
+func TestEditor_NewEditor(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	if ed.Text() != "" {
+		t.Errorf("expected empty text, got %q", ed.Text())
+	}
+	row, col := ed.CursorPos()
+	if row != 0 || col != 0 {
+		t.Errorf("expected cursor at (0,0), got (%d,%d)", row, col)
+	}
+}
+
+func TestEditor_TypeCharacters(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("H")
+	ed.HandleInput("i")
+
+	if ed.Text() != "Hi" {
+		t.Errorf("expected 'Hi', got %q", ed.Text())
+	}
+	row, col := ed.CursorPos()
+	if row != 0 || col != 2 {
+		t.Errorf("expected cursor at (0,2), got (%d,%d)", row, col)
+	}
+}
+
+func TestEditor_Enter(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("\r") // enter
+	ed.HandleInput("c")
+
+	if ed.Text() != "ab\nc" {
+		t.Errorf("expected 'ab\\nc', got %q", ed.Text())
+	}
+	row, col := ed.CursorPos()
+	if row != 1 || col != 1 {
+		t.Errorf("expected cursor at (1,1), got (%d,%d)", row, col)
+	}
+}
+
+func TestEditor_Backspace(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("\x7f") // backspace
+
+	if ed.Text() != "a" {
+		t.Errorf("expected 'a', got %q", ed.Text())
+	}
+}
+
+func TestEditor_BackspaceJoinsLines(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("\r") // enter
+	ed.HandleInput("b")
+	// Cursor at (1,1). Move to start of line 1
+	ed.HandleInput("\x1b[H") // home -> (1,0)
+	ed.HandleInput("\x7f")   // backspace should join with previous line
+
+	if ed.Text() != "ab" {
+		t.Errorf("expected 'ab', got %q", ed.Text())
+	}
+	row, col := ed.CursorPos()
+	if row != 0 || col != 1 {
+		t.Errorf("expected cursor at (0,1), got (%d,%d)", row, col)
+	}
+}
+
+func TestEditor_BackspaceAtStart(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("\x7f") // backspace on empty
+
+	if ed.Text() != "" {
+		t.Errorf("expected empty, got %q", ed.Text())
+	}
+}
+
+func TestEditor_Delete(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("\x1b[D") // left
+	ed.HandleInput("\x1b[D") // left
+	ed.HandleInput("\x1b[3~") // delete
+
+	if ed.Text() != "b" {
+		t.Errorf("expected 'b', got %q", ed.Text())
+	}
+}
+
+func TestEditor_DeleteJoinsLines(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("\r") // enter
+	ed.HandleInput("b")
+	// Move to end of line 0
+	ed.HandleInput("\x1b[A") // up
+	ed.HandleInput("\x1b[F") // end
+	ed.HandleInput("\x1b[3~") // delete at end of first line joins
+
+	if ed.Text() != "ab" {
+		t.Errorf("expected 'ab', got %q", ed.Text())
+	}
+}
+
+func TestEditor_ArrowUpDown(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("c")
+	ed.HandleInput("\r")
+	ed.HandleInput("d")
+	ed.HandleInput("e")
+
+	row, _ := ed.CursorPos()
+	if row != 1 {
+		t.Errorf("expected row 1, got %d", row)
+	}
+
+	ed.HandleInput("\x1b[A") // up
+	row, _ = ed.CursorPos()
+	if row != 0 {
+		t.Errorf("expected row 0 after up, got %d", row)
+	}
+
+	ed.HandleInput("\x1b[B") // down
+	row, _ = ed.CursorPos()
+	if row != 1 {
+		t.Errorf("expected row 1 after down, got %d", row)
+	}
+}
+
+func TestEditor_ArrowLeftRight(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+
+	ed.HandleInput("\x1b[D") // left
+	_, col := ed.CursorPos()
+	if col != 1 {
+		t.Errorf("expected col 1, got %d", col)
+	}
+
+	ed.HandleInput("\x1b[C") // right
+	_, col = ed.CursorPos()
+	if col != 2 {
+		t.Errorf("expected col 2, got %d", col)
+	}
+}
+
+func TestEditor_HomeEnd(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("h")
+	ed.HandleInput("e")
+	ed.HandleInput("l")
+	ed.HandleInput("l")
+	ed.HandleInput("o")
+
+	ed.HandleInput("\x1b[H") // home
+	_, col := ed.CursorPos()
+	if col != 0 {
+		t.Errorf("expected col 0 after Home, got %d", col)
+	}
+
+	ed.HandleInput("\x1b[F") // end
+	_, col = ed.CursorPos()
+	if col != 5 {
+		t.Errorf("expected col 5 after End, got %d", col)
+	}
+}
+
+func TestEditor_KillLine(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	for _, ch := range "hello" {
+		ed.HandleInput(string(ch))
+	}
+	ed.HandleInput("\x1b[H") // home
+	ed.HandleInput("\x1b[C") // right -> col 1
+	ed.HandleInput("\x0b")   // Ctrl+K
+
+	if ed.Text() != "h" {
+		t.Errorf("expected 'h', got %q", ed.Text())
+	}
+}
+
+func TestEditor_Yank(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	for _, ch := range "hello" {
+		ed.HandleInput(string(ch))
+	}
+	ed.HandleInput("\x1b[H") // home
+	ed.HandleInput("\x1b[C") // right -> col 1
+	ed.HandleInput("\x0b")   // Ctrl+K -> kills "ello"
+	ed.HandleInput("\x19")   // Ctrl+Y -> yank
+
+	if ed.Text() != "hello" {
+		t.Errorf("expected 'hello', got %q", ed.Text())
+	}
+}
+
+func TestEditor_Undo(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("c")
+	ed.HandleInput("\x1a") // Ctrl+Z = undo
+
+	if ed.Text() != "ab" {
+		t.Errorf("expected 'ab' after undo, got %q", ed.Text())
+	}
+}
+
+func TestEditor_SetText(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetText("line1\nline2\nline3")
+
+	if ed.Text() != "line1\nline2\nline3" {
+		t.Errorf("expected three lines, got %q", ed.Text())
+	}
+}
+
+func TestEditor_Focus(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	if ed.IsFocused() {
+		t.Error("expected not focused initially")
+	}
+	ed.SetFocused(true)
+	if !ed.IsFocused() {
+		t.Error("expected focused after SetFocused(true)")
+	}
+}
+
+func TestEditor_RenderBasic(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	for _, ch := range "hello" {
+		ed.HandleInput(string(ch))
+	}
+	ed.HandleInput("\r")
+	for _, ch := range "world" {
+		ed.HandleInput(string(ch))
+	}
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+
+	ed.Render(buf, 40)
+
+	if buf.Len() < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", buf.Len())
+	}
+}
+
+func TestEditor_RenderWithCursorMarker(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+
+	ed.Render(buf, 40)
+
+	found := false
+	for _, line := range buf.Lines {
+		if strings.Contains(line, tui.CursorMarker) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected cursor marker in rendered output")
+	}
+}
+
+func TestEditor_RenderNoCursorWhenUnfocused(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.HandleInput("a")
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+
+	ed.Render(buf, 40)
+
+	for _, line := range buf.Lines {
+		if strings.Contains(line, tui.CursorMarker) {
+			t.Error("expected no cursor marker when unfocused")
+			break
+		}
+	}
+}
+
+func TestEditor_RenderWordWrap(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	// Type a string that exceeds 10 columns
+	for _, ch := range "abcdefghijklmno" {
+		ed.HandleInput(string(ch))
+	}
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+
+	ed.Render(buf, 10)
+
+	// With width=10, 15 chars should wrap to at least 2 lines
+	if buf.Len() < 2 {
+		t.Errorf("expected word-wrap to produce >=2 lines for 15 chars at width 10, got %d", buf.Len())
+	}
+}
+
+func TestEditor_Invalidate(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.HandleInput("test")
+	ed.Invalidate()
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+
+	ed.Render(buf, 40)
+	if buf.Len() < 1 {
+		t.Fatal("expected at least 1 line after invalidate")
+	}
+}
+
+func TestEditor_MultilineNavigation(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	// Line 0: "abc"
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("c")
+	// Line 1: "de"
+	ed.HandleInput("\r")
+	ed.HandleInput("d")
+	ed.HandleInput("e")
+
+	// Go up: cursor should clamp to shorter line length
+	ed.HandleInput("\x1b[A") // up -> row 0
+	row, col := ed.CursorPos()
+	if row != 0 {
+		t.Errorf("expected row 0, got %d", row)
+	}
+	if col > 3 {
+		t.Errorf("expected col <= 3, got %d", col)
+	}
+}
+
+func TestEditor_InsertAtMiddleOfLine(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("c")
+	ed.HandleInput("\x1b[D") // left
+	ed.HandleInput("b")
+
+	if ed.Text() != "abc" {
+		t.Errorf("expected 'abc', got %q", ed.Text())
+	}
+}
+
+func TestEditor_EnterSplitsLine(t *testing.T) {
+	t.Parallel()
+
+	ed := NewEditor()
+	ed.SetFocused(true)
+	ed.HandleInput("a")
+	ed.HandleInput("b")
+	ed.HandleInput("c")
+	ed.HandleInput("\x1b[D") // left -> cursor at col 2 ("ab|c")
+	ed.HandleInput("\r")     // enter splits line
+
+	if ed.Text() != "ab\nc" {
+		t.Errorf("expected 'ab\\nc', got %q", ed.Text())
+	}
+	row, col := ed.CursorPos()
+	if row != 1 || col != 0 {
+		t.Errorf("expected cursor at (1,0), got (%d,%d)", row, col)
+	}
+}

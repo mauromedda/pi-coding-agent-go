@@ -1,6 +1,6 @@
 # Binaries
-pi-go
-pi-go.exe
+/pi-go
+/pi-go.exe
 dist/
 
 # Test artifacts
