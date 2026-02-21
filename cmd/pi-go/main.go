@@ -64,16 +64,19 @@ func run(args cliArgs) error {
 
 	home, _ := os.UserHomeDir()
 
-	// W6: Use LoadAll for five-level merge instead of Load
-	cfg, err := config.LoadAll(cwd, nil)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	// W4: Load auth and pass keys to provider constructors
+	// Load auth first so picompat keys are available before provider registration
 	auth, err := config.LoadAuth()
 	if err != nil {
 		return fmt.Errorf("loading auth: %w", err)
+	}
+
+	// Merge API keys from ~/.pi/agent/ (does not overwrite existing keys)
+	config.MergePiAuth(auth, config.PiAgentDir())
+
+	// Load config with CLI overrides; picompat is Level -1 inside LoadAll
+	cfg, err := config.LoadAll(cwd, buildCLIOverrides(args))
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
 	}
 
 	model, err := resolveModel(args, cfg)
@@ -168,16 +171,44 @@ func registerProvidersWithAuth(auth *config.AuthStore, _ string) {
 			return anthropic.New(key, baseURL)
 		})
 	}
-	if key := auth.GetKey("openai"); key != "" {
+
+	// OpenAI-compatible: also check vllm and ollama keys
+	openaiKey := auth.GetKey("openai")
+	if openaiKey == "" {
+		openaiKey = auth.GetKey("vllm")
+	}
+	if openaiKey == "" {
+		openaiKey = auth.GetKey("ollama")
+	}
+	if openaiKey != "" {
 		ai.RegisterProvider(ai.ApiOpenAI, func(baseURL string) ai.ApiProvider {
-			return openai.New(key, baseURL)
+			return openai.New(openaiKey, baseURL)
 		})
 	}
+
 	if key := auth.GetKey("google"); key != "" {
 		ai.RegisterProvider(ai.ApiGoogle, func(baseURL string) ai.ApiProvider {
 			return google.New(key, baseURL)
 		})
 	}
+}
+
+// buildCLIOverrides maps CLI flags to a Settings struct for LoadAll.
+func buildCLIOverrides(args cliArgs) *config.Settings {
+	s := &config.Settings{}
+	if args.model != "" {
+		s.Model = args.model
+	}
+	if args.baseURL != "" {
+		s.BaseURL = args.baseURL
+	}
+	if args.thinking {
+		s.Thinking = true
+	}
+	if args.yolo {
+		s.Yolo = true
+	}
+	return s
 }
 
 // resolveModel determines the model from CLI flag, config, or default.
