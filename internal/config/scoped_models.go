@@ -86,16 +86,16 @@ func ThinkingLevelFromIndex(idx int) ThinkingLevel {
 
 // ScopedModel represents a model configuration with scope level
 type ScopedModel struct {
-	Name       string        `json:"name"`
-	Thinking   ThinkingLevel `json:"thinking,omitempty"`
-	Provider   string        `json:"provider,omitempty"`
-	Capabilities []string    `json:"capabilities,omitempty"`
+	Name         string        `json:"name"`
+	Thinking     ThinkingLevel `json:"thinking,omitempty"`
+	Provider     string        `json:"provider,omitempty"`
+	Capabilities []string      `json:"capabilities,omitempty"`
 }
 
 // ScopedModelsConfig holds scoped model configurations
 type ScopedModelsConfig struct {
-	Models   []ScopedModel `json:"models"`
-	Default  string        `json:"default,omitempty"`
+	Models  []ScopedModel `json:"models"`
+	Default string        `json:"default,omitempty"`
 }
 
 // NewScopedModelsConfig creates a new config with defaults

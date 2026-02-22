@@ -114,8 +114,8 @@ func TestEditor_Delete(t *testing.T) {
 	ed.SetFocused(true)
 	ed.HandleInput("a")
 	ed.HandleInput("b")
-	ed.HandleInput("\x1b[D") // left
-	ed.HandleInput("\x1b[D") // left
+	ed.HandleInput("\x1b[D")  // left
+	ed.HandleInput("\x1b[D")  // left
 	ed.HandleInput("\x1b[3~") // delete
 
 	if ed.Text() != "b" {
@@ -132,8 +132,8 @@ func TestEditor_DeleteJoinsLines(t *testing.T) {
 	ed.HandleInput("\r") // enter
 	ed.HandleInput("b")
 	// Move to end of line 0
-	ed.HandleInput("\x1b[A") // up
-	ed.HandleInput("\x1b[F") // end
+	ed.HandleInput("\x1b[A")  // up
+	ed.HandleInput("\x1b[F")  // end
 	ed.HandleInput("\x1b[3~") // delete at end of first line joins
 
 	if ed.Text() != "ab" {
@@ -610,8 +610,8 @@ func TestEditor_PromptCursorOffset(t *testing.T) {
 		t.Error("expected cursor marker in rendered output")
 	}
 	// Cursor marker should come after the prompt
-	markerIdx := strings.Index(line0, tui.CursorMarker)
-	beforeMarker := line0[:markerIdx]
+	before, _, _ := strings.Cut(line0, tui.CursorMarker)
+	beforeMarker := before
 	if !strings.Contains(beforeMarker, "❯") {
 		t.Errorf("expected prompt before cursor marker, got %q", beforeMarker)
 	}
@@ -785,7 +785,7 @@ func TestEditor_HandleKey_ConcurrentSafety(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			ed.HandleKey(key.Key{Type: key.KeyRune, Rune: 'a'})
 		}
 	}()
@@ -793,7 +793,7 @@ func TestEditor_HandleKey_ConcurrentSafety(t *testing.T) {
 	// Concurrent renders
 	buf := tui.AcquireBuffer()
 	defer tui.ReleaseBuffer(buf)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		buf.Lines = buf.Lines[:0]
 		ed.Render(buf, 80)
 	}

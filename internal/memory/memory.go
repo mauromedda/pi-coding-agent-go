@@ -1,5 +1,5 @@
-// ABOUTME: Memory hierarchy loading with 8-level resolution and @import expansion
-// ABOUTME: Loads PIGOMD.md, CLAUDE.md, rules dirs, auto-memory, and local overrides
+// ABOUTME: Memory hierarchy loading with 5-level resolution and @import expansion
+// ABOUTME: Loads CLAUDE.md, rules dirs, and auto-memory
 
 package memory
 
@@ -17,27 +17,24 @@ import (
 type Level int
 
 const (
-	ProjectRules    Level = iota // .pi-go/rules/*.md
-	ProjectMemory                // ./PIGOMD.md or ./.pi-go/PIGOMD.md
-	ClaudeCompat                 // ./CLAUDE.md or ./.claude/CLAUDE.md
-	ClaudeRules                  // .claude/rules/*.md
-	UserMemory                   // ~/.pi-go/PIGOMD.md
-	UserClaudeCompat             // ~/.claude/CLAUDE.md
-	AutoMemory                   // ~/.pi-go/projects/<sha256>/memory/
-	ProjectLocal                 // ./PIGOMD.local.md (gitignored)
+	ProjectRules     Level = iota // .pi-go/rules/*.md
+	ClaudeCompat                  // ./CLAUDE.md or ./.claude/CLAUDE.md
+	ClaudeRules                   // .claude/rules/*.md
+	UserClaudeCompat              // ~/.claude/CLAUDE.md
+	AutoMemory                    // ~/.pi-go/projects/<sha256>/memory/
 )
 
 const maxImportDepth = 5
 
 // Entry represents a single loaded memory file.
 type Entry struct {
-	Source  string   // File path
-	Content string   // Resolved content (imports expanded)
+	Source  string // File path
+	Content string // Resolved content (imports expanded)
 	Level   Level
 	Paths   []string // Glob patterns for path-specific rules
 }
 
-// Load reads memory entries from all 8 levels, returning them sorted by level.
+// Load reads memory entries from all 5 levels, returning them sorted by level.
 func Load(projectDir, homeDir string) ([]Entry, error) {
 	var entries []Entry
 
@@ -47,15 +44,7 @@ func Load(projectDir, homeDir string) ([]Entry, error) {
 		entries = append(entries, ruleEntries...)
 	}
 
-	// Level 1: Project memory (PIGOMD.md or .pi-go/PIGOMD.md)
-	if e, ok := loadFirstFile(projectDir, ProjectMemory,
-		filepath.Join(projectDir, "PIGOMD.md"),
-		filepath.Join(projectDir, ".pi-go", "PIGOMD.md"),
-	); ok {
-		entries = append(entries, e)
-	}
-
-	// Level 2: Claude compat project (CLAUDE.md or .claude/CLAUDE.md)
+	// Level 1: Claude compat project (CLAUDE.md or .claude/CLAUDE.md)
 	if e, ok := loadFirstFile(projectDir, ClaudeCompat,
 		filepath.Join(projectDir, "CLAUDE.md"),
 		filepath.Join(projectDir, ".claude", "CLAUDE.md"),
@@ -63,31 +52,21 @@ func Load(projectDir, homeDir string) ([]Entry, error) {
 		entries = append(entries, e)
 	}
 
-	// Level 3: Claude rules (.claude/rules/*.md)
+	// Level 2: Claude rules (.claude/rules/*.md)
 	claudeRulesDir := filepath.Join(projectDir, ".claude", "rules")
 	if ruleEntries, err := loadRulesDir(claudeRulesDir, ClaudeRules); err == nil {
 		entries = append(entries, ruleEntries...)
 	}
 
-	// Level 4: User memory (~/.pi-go/PIGOMD.md)
-	if e, ok := loadSingleFile(filepath.Join(homeDir, ".pi-go", "PIGOMD.md"), UserMemory); ok {
-		entries = append(entries, e)
-	}
-
-	// Level 5: User Claude compat (~/.claude/CLAUDE.md)
+	// Level 3: User Claude compat (~/.claude/CLAUDE.md)
 	if e, ok := loadSingleFile(filepath.Join(homeDir, ".claude", "CLAUDE.md"), UserClaudeCompat); ok {
 		entries = append(entries, e)
 	}
 
-	// Level 6: Auto-memory (stub; load if directory exists)
+	// Level 4: Auto-memory (load if directory exists)
 	autoDir := AutoMemoryDir(projectDir, homeDir)
 	if autoEntries, err := loadRulesDir(autoDir, AutoMemory); err == nil {
 		entries = append(entries, autoEntries...)
-	}
-
-	// Level 7: Project local (PIGOMD.local.md)
-	if e, ok := loadSingleFile(filepath.Join(projectDir, "PIGOMD.local.md"), ProjectLocal); ok {
-		entries = append(entries, e)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -200,7 +179,7 @@ func parseFrontmatter(content string) (string, []string) {
 	body := strings.TrimSpace(content[4+endIdx+4:])
 
 	var paths []string
-	for _, line := range strings.Split(fm, "\n") {
+	for line := range strings.SplitSeq(fm, "\n") {
 		line = strings.TrimSpace(line)
 		key, value, ok := strings.Cut(line, ":")
 		if !ok {

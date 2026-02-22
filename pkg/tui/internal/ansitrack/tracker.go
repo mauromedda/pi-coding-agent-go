@@ -10,16 +10,16 @@ import (
 
 // Tracker maintains the current SGR (Select Graphic Rendition) state.
 type Tracker struct {
-	bold       bool
-	dim        bool
-	italic     bool
-	underline  bool
-	blink      bool
-	reverse    bool
-	hidden     bool
+	bold          bool
+	dim           bool
+	italic        bool
+	underline     bool
+	blink         bool
+	reverse       bool
+	hidden        bool
 	strikethrough bool
-	fg         string // e.g., "31" or "38;5;196"
-	bg         string
+	fg            string // e.g., "31" or "38;5;196"
+	bg            string
 }
 
 // Reset clears all SGR state.
@@ -40,7 +40,7 @@ func (t *Tracker) Process(seq string) {
 	}
 
 	parts := strings.Split(params, ";")
-	for i := 0; i < len(parts); i++ {
+	for i := range parts {
 		code, err := strconv.Atoi(parts[i])
 		if err != nil {
 			continue

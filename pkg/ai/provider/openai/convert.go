@@ -10,11 +10,11 @@ import (
 )
 
 type chatMessage struct {
-	Role       string          `json:"role"`
-	Content    any             `json:"content,omitempty"`
-	ToolCalls  []toolCallReq   `json:"tool_calls,omitempty"`
-	ToolCallID string          `json:"tool_call_id,omitempty"`
-	Name       string          `json:"name,omitempty"`
+	Role       string        `json:"role"`
+	Content    any           `json:"content,omitempty"`
+	ToolCalls  []toolCallReq `json:"tool_calls,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	Name       string        `json:"name,omitempty"`
 }
 
 type toolCallReq struct {
@@ -41,15 +41,15 @@ type toolFuncDef struct {
 
 // SSE response types
 type chatCompletionChunk struct {
-	ID      string              `json:"id"`
-	Choices []chunkChoice       `json:"choices"`
-	Usage   *chunkUsage         `json:"usage,omitempty"`
+	ID      string        `json:"id"`
+	Choices []chunkChoice `json:"choices"`
+	Usage   *chunkUsage   `json:"usage,omitempty"`
 }
 
 type chunkChoice struct {
-	Index        int         `json:"index"`
-	Delta        chunkDelta  `json:"delta"`
-	FinishReason string      `json:"finish_reason"`
+	Index        int        `json:"index"`
+	Delta        chunkDelta `json:"delta"`
+	FinishReason string     `json:"finish_reason"`
 }
 
 type chunkDelta struct {
@@ -59,10 +59,10 @@ type chunkDelta struct {
 }
 
 type toolCallDelta struct {
-	Index    int             `json:"index"`
-	ID       string          `json:"id,omitempty"`
-	Type     string          `json:"type,omitempty"`
-	Function toolCallFuncDelta `json:"function,omitempty"`
+	Index    int               `json:"index"`
+	ID       string            `json:"id,omitempty"`
+	Type     string            `json:"type,omitempty"`
+	Function toolCallFuncDelta `json:"function"`
 }
 
 type toolCallFuncDelta struct {

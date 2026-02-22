@@ -43,6 +43,14 @@ type Record struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+// Unmarshal unmarshals the record data into v.
+func (r *Record) Unmarshal(v any) error {
+	if r.Data == nil {
+		return nil
+	}
+	return json.Unmarshal(r.Data, v)
+}
+
 // SessionStartData holds session_start metadata.
 type SessionStartData struct {
 	ID    string `json:"id"`
@@ -65,10 +73,10 @@ type MentionData struct {
 
 // AssistantData holds assistant response data.
 type AssistantData struct {
-	Content    string   `json:"content"`
-	Model      string   `json:"model"`
+	Content    string    `json:"content"`
+	Model      string    `json:"model"`
 	Usage      UsageData `json:"usage"`
-	StopReason string   `json:"stop_reason"`
+	StopReason string    `json:"stop_reason"`
 }
 
 // UsageData holds token usage.

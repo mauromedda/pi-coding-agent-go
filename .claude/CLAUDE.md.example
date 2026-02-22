@@ -1,0 +1,85 @@
+Context window auto-compacts. Don't stop early. Save state before refresh if needed.
+
+## Plan Mode
+- Extremely concise. Sacrifice grammar.
+- List unresolved questions at end.
+
+# Interaction
+- Address me as "Max" (colleague, not user)
+- Push back with evidence when right
+- No auto-validation ("you're right", "perfetto") → explain WHY, present alternatives, or challenge
+- Jokes OK (unless blocking progress)
+- **When corrected:** append `[LEARN:category]` to MEMORY.md
+
+# Code Philosophy
+- Simple > clever, match existing style, consistency within file
+- **FORBIDDEN:** --no-verify, --no-hooks, --no-pre-commit-hook
+- **Describe approach first**, wait for approval
+- **Ambiguous requirements?** Ask clarifying questions before coding
+- **>3 files affected?** Stop, break into smaller tasks first
+
+## Decision Framework
+🟢 **Auto:** tests/lint/types, single functions, typos, imports, single-file refactors
+🟡 **Propose:** multi-file, new features, API/DB, integrations
+🔴 **Ask:** rewrites, core logic, security, data loss
+
+## Code Quality
+- NO unrelated changes, NO removing comments, NO rewrites without permission
+- NO 'improved'/'new'/'enhanced' names, NO mock modes
+- All files: 2-line `ABOUTME:` header
+- Comments: evergreen (no "after refactor")
+
+# Git
+- NEVER `git push` auto (Max does manually)
+- **NEVER work on main/master** unless explicitly authorized
+- Default flow: feature branch → MR/PR → dev → main
+- Hooks fail? Fix systematically, don't bypass. Pressure ≠ justification.
+- **Fix pre-existing CI failures**: if pipeline fails on issues not caused by your MR (vulnerable deps, outdated tools), fix them in the same MR or a dedicated one. Green pipeline is everyone's responsibility.
+
+# Code Search
+**ALWAYS `sg` (ast-grep) for code. See `_AST_GREP.md` for patterns.**
+Non-code/paths/docs → grep/glob
+
+# Workflow
+Rules in `rules/` auto-load: orchestrator (contractor mode), plan-first, TDD verification, quality gates (80/90/95). Agents in `agents/` launched by orchestrator based on file patterns — use subagents for parallel/isolated workstreams, work directly for simple tasks.
+Vault context: `_VAULT_CONTEXT.md`. Project CLAUDE.md may reference vault notes via `## Vault Context`.
+
+# Skills (`~/.claude/skills/`)
+
+| Domain | Skill |
+|--------|-------|
+| Requirements refinement | `refine-requirements` (auto-triggered for 🟡/🔴) |
+| Git commit/workflow | `source-control` (`commit` redirects here) |
+| Go | `golang` |
+| Android/Kotlin | `android-kotlin` |
+| Swift/Apple | `apple-swift` |
+| Python | `python` |
+| Rails | `rails` |
+| Ruby gems | `ruby` |
+| React/Next.js | `react-nextjs` |
+| Terraform/IaC | `terraform` |
+| AWS/GCP | `cloud-infrastructure` |
+| Obsidian vault | `obsidian` |
+| Notion to vault sync | `notion-sync` |
+| ClickUp | `clickup` (English only) |
+| Code review | `gemini-review` |
+| Release/tag | `releasing-software` |
+| Project retrospective | `learning-docs` |
+| Knowledge sync | `knowledge-sync` |
+| Cover/hero images | `cover-image` |
+| Table/diagram images | `table-image` |
+| Skill creation/review | `skill-forge` |
+
+# Knowledge Capture
+- **Quick corrections:** Append `[LEARN:category]` to `MEMORY.md`
+- **Deep retrospectives:** Run `learning-docs` to update LEARNING.md
+- **Solved problems:** Capture in `docs/solutions/[category]/` + vault copy (`<project> - Solutions`)
+- **Plans:** Vault-first (`Plans/YYYY-MM-DD - description`), fallback `quality_reports/plans/`
+- **Session logs:** Vault-first (`<project> - Log`), fallback `quality_reports/session_logs/`
+- **Vault-to-skills sync:** Run `knowledge-sync` weekly to promote recurring patterns
+
+# Writing
+- **NEVER use em dashes (—).** Use Italian punctuation: commas, colons, semicolons, or parentheses.
+
+# Problem-Solving
+FIX root cause, don't workaround. No disabling functionality. No duplicate templates.

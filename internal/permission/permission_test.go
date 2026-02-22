@@ -316,6 +316,76 @@ func TestChecker_DontAskMode_AllowRulePermits(t *testing.T) {
 	}
 }
 
+func TestChecker_Rules(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeNormal, nil)
+	c.AddAllowRule(Rule{Tool: "read"})
+	c.AddAllowRule(Rule{Tool: "grep"})
+	c.AddDenyRule(Rule{Tool: "bash", Message: "no bash"})
+
+	rules := c.Rules()
+	if len(rules) != 3 {
+		t.Fatalf("expected 3 rules, got %d", len(rules))
+	}
+
+	// Allow rules come first (order matches allowRules then denyRules).
+	tests := []struct {
+		tool  string
+		allow bool
+	}{
+		{"read", true},
+		{"grep", true},
+		{"bash", false},
+	}
+	for i, tt := range tests {
+		if rules[i].Tool != tt.tool {
+			t.Errorf("rules[%d].Tool = %q; want %q", i, rules[i].Tool, tt.tool)
+		}
+		if rules[i].Allow != tt.allow {
+			t.Errorf("rules[%d].Allow = %v; want %v", i, rules[i].Allow, tt.allow)
+		}
+	}
+}
+
+func TestChecker_RemoveRule(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeYolo, nil)
+	c.AddAllowRule(Rule{Tool: "read"})
+	c.AddDenyRule(Rule{Tool: "bash", Message: "blocked"})
+
+	// Verify deny rule blocks bash (even in yolo mode, deny rules take priority).
+	if err := c.Check("bash", nil); err == nil {
+		t.Fatal("expected bash to be denied before removal")
+	}
+
+	// Remove the deny rule.
+	if !c.RemoveRule("bash") {
+		t.Fatal("RemoveRule should return true for existing rule")
+	}
+
+	// After removal, bash should be allowed (yolo mode).
+	if err := c.Check("bash", nil); err != nil {
+		t.Errorf("bash should be allowed after deny rule removal: %v", err)
+	}
+
+	// Remove the allow rule.
+	if !c.RemoveRule("read") {
+		t.Fatal("RemoveRule should return true for existing allow rule")
+	}
+
+	// Rules() should now be empty.
+	if len(c.Rules()) != 0 {
+		t.Errorf("expected 0 rules after removal, got %d", len(c.Rules()))
+	}
+
+	// Removing a non-existent rule returns false.
+	if c.RemoveRule("nonexistent") {
+		t.Error("RemoveRule should return false for non-existent rule")
+	}
+}
+
 func TestChecker_NilAskFn_DeniesWriteInNormalMode(t *testing.T) {
 	t.Parallel()
 

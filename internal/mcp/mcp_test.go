@@ -517,8 +517,7 @@ func TestStdioTransport_ApprovalDenied(t *testing.T) {
 }
 
 func TestStdioTransport_RecvLoopExitsOnClose(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// "cat" blocks on stdin; closing stdout pipe should unblock the scanner
 	transport, err := NewStdioTransport(ctx, "cat", nil, nil)

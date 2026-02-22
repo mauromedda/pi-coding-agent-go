@@ -181,7 +181,7 @@ func TestWebCache_Eviction(t *testing.T) {
 	c := newWebCache()
 
 	// Fill to capacity
-	for i := 0; i < cacheMaxEntries+5; i++ {
+	for i := range cacheMaxEntries + 5 {
 		c.Set(string(rune('a'+i%26))+string(rune('0'+i/26)), "v")
 	}
 

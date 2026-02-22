@@ -44,10 +44,7 @@ func executeWebSearch(ctx context.Context, _ string, params map[string]any, _ fu
 		return errResult(err), nil
 	}
 
-	count := intParam(params, "count", 10)
-	if count > 20 {
-		count = 20
-	}
+	count := min(intParam(params, "count", 10), 20)
 
 	apiKey := os.Getenv("BRAVE_SEARCH_API_KEY")
 	if apiKey == "" {

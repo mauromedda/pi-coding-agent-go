@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
@@ -16,8 +17,8 @@ import (
 )
 
 const (
-	maxReadOutput    = 100 * 1024        // 100KB
-	maxFileReadSize  = 10 * 1024 * 1024  // 10MB: cap on bytes read from disk
+	maxReadOutput    = 100 * 1024       // 100KB
+	maxFileReadSize  = 10 * 1024 * 1024 // 10MB: cap on bytes read from disk
 	binaryCheckBytes = 512
 )
 
@@ -87,16 +88,8 @@ func executeRead(sb *permission.Sandbox, _ context.Context, _ string, params map
 
 // isBinary checks for null bytes in the first binaryCheckBytes of data.
 func isBinary(data []byte) bool {
-	limit := len(data)
-	if limit > binaryCheckBytes {
-		limit = binaryCheckBytes
-	}
-	for _, b := range data[:limit] {
-		if b == 0 {
-			return true
-		}
-	}
-	return false
+	limit := min(len(data), binaryCheckBytes)
+	return slices.Contains(data[:limit], 0)
 }
 
 // applyOffsetLimit extracts a line range from content based on offset/limit params.

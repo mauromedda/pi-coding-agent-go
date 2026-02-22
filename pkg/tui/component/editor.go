@@ -1,5 +1,6 @@
 // ABOUTME: Multi-line text editor component with word-wrap, cursor tracking, undo/redo
 // ABOUTME: Supports Emacs-style keybindings, kill ring, and line-based editing operations
+// ABOUTME: Supports Ctrl+V for image paste from clipboard
 
 package component
 
@@ -8,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/image"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/killring"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/undo"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
@@ -18,9 +20,9 @@ const editorUndoDepth = 200
 
 // editorState captures the full editor state for undo/redo.
 type editorState struct {
-	lines  [][]rune
-	row    int
-	col    int
+	lines [][]rune
+	row   int
+	col   int
 }
 
 // Editor is a multi-line text editor with word-wrap display and cursor tracking.
@@ -176,6 +178,9 @@ func (ed *Editor) dispatchKey(k key.Key, rawData string) {
 			return
 		case 'z':
 			ed.doUndo()
+			return
+		case 'v': // Ctrl+V = paste image
+			ed.pasteImage()
 			return
 		}
 	}
@@ -390,6 +395,38 @@ func (ed *Editor) doUndo() {
 	ed.dirty = true
 }
 
+// pasteImage pastes an image from the clipboard as a reference.
+// Uses the image package to detect the protocol and get clipboard data.
+func (ed *Editor) pasteImage() {
+	// Try to paste image
+	if img, err := image.ClipboardImage(); err == nil && len(img) > 0 {
+		// Insert image placeholder
+		ed.insertRune('[')
+		ed.insertText("Image")
+		ed.insertText("]")
+		ed.insertNewline()
+		// Add placeholder with file size
+		ed.insertText(image.ImagePlaceholder(img))
+		ed.insertNewline()
+	} else {
+		// No image in clipboard - just insert a newline
+		ed.insertNewline()
+	}
+}
+
+func (ed *Editor) insertText(text string) {
+	ed.saveUndo()
+	line := ed.lines[ed.row]
+	runes := []rune(text)
+	newLine := make([]rune, len(line)+len(runes))
+	copy(newLine, line[:ed.col])
+	copy(newLine[ed.col:], runes)
+	copy(newLine[ed.col+len(runes):], line[ed.col:])
+	ed.lines[ed.row] = newLine
+	ed.col += len(runes)
+	ed.dirty = true
+}
+
 func (ed *Editor) saveUndo() {
 	lines := make([][]rune, len(ed.lines))
 	for i, l := range ed.lines {
@@ -413,10 +450,7 @@ func (ed *Editor) Render(out *tui.RenderBuffer, w int) {
 	}
 
 	// Effective width for text content (reduced by prompt prefix)
-	ew := w - ed.promptWidth
-	if ew < 1 {
-		ew = 1
-	}
+	ew := max(w-ed.promptWidth, 1)
 
 	// Placeholder: shown when empty, focused, and placeholder is set
 	if ed.focused && ed.isEmpty() && ed.placeholder != "" {

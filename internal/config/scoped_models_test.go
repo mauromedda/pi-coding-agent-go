@@ -61,9 +61,9 @@ func TestScopedModelsConfig_New(t *testing.T) {
 func TestScopedModelsConfig_SaveLoad(t *testing.T) {
 	cfg := NewScopedModelsConfig()
 	cfg.Models = append(cfg.Models, ScopedModel{
-		Name:       "test-model",
-		Thinking:   ThinkingHigh,
-		Provider:   "openai",
+		Name:         "test-model",
+		Thinking:     ThinkingHigh,
+		Provider:     "openai",
 		Capabilities: []string{"tools", "vision"},
 	})
 
@@ -156,7 +156,7 @@ func TestScopedModelsConfig_CycleModels(t *testing.T) {
 func TestScopedModelsConfig_GetCapabilities(t *testing.T) {
 	cfg := NewScopedModelsConfig()
 	cfg.Models = append(cfg.Models, ScopedModel{
-		Name:       "test",
+		Name:         "test",
 		Capabilities: []string{"tool-use", "multi-turn"},
 	})
 

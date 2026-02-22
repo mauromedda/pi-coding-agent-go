@@ -17,12 +17,9 @@ func Simple(path, before, after string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "--- %s\n+++ %s\n", path, path)
 
-	maxLen := len(oldLines)
-	if len(newLines) > maxLen {
-		maxLen = len(newLines)
-	}
+	maxLen := max(len(newLines), len(oldLines))
 
-	for i := 0; i < maxLen; i++ {
+	for i := range maxLen {
 		oldLine := lineAt(oldLines, i)
 		newLine := lineAt(newLines, i)
 		if oldLine != newLine {
@@ -48,15 +45,12 @@ func Unified(path, oldContent, newContent string) string {
 	b.WriteString(fmt.Sprintf("--- a/%s\n", path))
 	b.WriteString(fmt.Sprintf("+++ b/%s\n", path))
 
-	maxLen := len(oldLines)
-	if len(newLines) > maxLen {
-		maxLen = len(newLines)
-	}
+	maxLen := max(len(newLines), len(oldLines))
 
 	hunkStart := -1
 	var hunk strings.Builder
 
-	for i := 0; i < maxLen; i++ {
+	for i := range maxLen {
 		var oldLine, newLine string
 		if i < len(oldLines) {
 			oldLine = oldLines[i]

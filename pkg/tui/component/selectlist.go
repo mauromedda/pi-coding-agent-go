@@ -148,10 +148,7 @@ func (sl *SelectList) Render(out *tui.RenderBuffer, w int) {
 		return
 	}
 
-	end := sl.scrollOff + sl.maxHeight
-	if end > len(sl.visible) {
-		end = len(sl.visible)
-	}
+	end := min(sl.scrollOff+sl.maxHeight, len(sl.visible))
 
 	for i := sl.scrollOff; i < end; i++ {
 		item := sl.visible[i]

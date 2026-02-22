@@ -76,13 +76,13 @@ func (r *Reader) Next() (*Event, error) {
 
 // parseLine splits an SSE line into field name and value.
 func parseLine(line string) (string, string) {
-	idx := strings.Index(line, ":")
-	if idx < 0 {
+	before, after, ok := strings.Cut(line, ":")
+	if !ok {
 		return line, ""
 	}
 
-	field := line[:idx]
-	value := line[idx+1:]
+	field := before
+	value := after
 
 	// Strip optional leading space after colon.
 	if len(value) > 0 && value[0] == ' ' {

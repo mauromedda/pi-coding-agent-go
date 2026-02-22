@@ -294,10 +294,9 @@ func (inp *Input) Render(out *tui.RenderBuffer, w int) {
 
 	var b strings.Builder
 	visibleStart := inp.scrollOff
-	visibleEnd := visibleStart + w - 1 // leave room for cursor
-	if visibleEnd > len(inp.text) {
-		visibleEnd = len(inp.text)
-	}
+	visibleEnd := min(
+		// leave room for cursor
+		visibleStart+w-1, len(inp.text))
 
 	for i := visibleStart; i < visibleEnd; i++ {
 		if i == inp.cursor {

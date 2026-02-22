@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -55,12 +56,7 @@ func isExcludedCmd(command string, excluded []string) bool {
 		return false
 	}
 	first := strings.Fields(command)[0]
-	for _, ex := range excluded {
-		if first == ex {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(excluded, first)
 }
 
 // validateWritePath checks if a write path is within allowed dirs.

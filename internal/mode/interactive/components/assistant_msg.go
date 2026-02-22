@@ -1,5 +1,6 @@
 // ABOUTME: Assistant message display component with streaming text and wrap caching
 // ABOUTME: Uses strings.Builder for O(1) amortized appends; braille spinner for thinking
+// ABOUTME: Supports inline tool calls with Claude-style rendering
 
 package components
 
@@ -33,6 +34,9 @@ type AssistantMessage struct {
 	thinking string
 	dirty    bool
 
+	// Tool calls attached to this message
+	toolCalls []*ToolCall
+
 	// Cached wrapped output to avoid re-wrapping on every render.
 	cachedLines []string
 	cachedWidth int
@@ -59,6 +63,31 @@ func (a *AssistantMessage) SetThinking(text string) {
 	a.mu.Unlock()
 }
 
+// AddToolCall adds a tool call to the message
+func (a *AssistantMessage) AddToolCall(tc *ToolCall) {
+	a.mu.Lock()
+	a.toolCalls = append(a.toolCalls, tc)
+	a.dirty = true
+	a.mu.Unlock()
+}
+
+// GetToolCalls returns all tool calls
+func (a *AssistantMessage) GetToolCalls() []*ToolCall {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.toolCalls
+}
+
+// ToggleToolCallExpand toggles expand state of a tool call
+func (a *AssistantMessage) ToggleToolCallExpand(index int) {
+	a.mu.Lock()
+	if index >= 0 && index < len(a.toolCalls) {
+		a.toolCalls[index].ToggleExpand()
+		a.dirty = true
+	}
+	a.mu.Unlock()
+}
+
 // Render draws the assistant message with a blank spacer above.
 // Snapshots text under lock, wraps outside lock to avoid blocking AppendText.
 func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
@@ -71,6 +100,7 @@ func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
 		a.dirty = false
 	}
 	lines := a.cachedLines
+	toolCalls := a.toolCalls
 	a.mu.Unlock()
 
 	if needsWrap {
@@ -91,6 +121,15 @@ func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
 
 	if len(lines) > 0 {
 		out.WriteLines(lines)
+	}
+
+	// Render tool calls after text content
+	for _, tc := range toolCalls {
+		// Add some spacing before tool call
+		out.WriteLine("")
+		tc.Render(out, w)
+		// Add spacing after tool call
+		out.WriteLine("")
 	}
 }
 

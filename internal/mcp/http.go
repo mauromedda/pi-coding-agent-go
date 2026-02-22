@@ -241,8 +241,8 @@ func (t *HTTPTransport) readSSEResponse(body io.Reader, reqID int64) (*Response,
 		}
 
 		// Parse "data: <value>" lines.
-		if strings.HasPrefix(line, "data:") {
-			value := strings.TrimPrefix(line, "data:")
+		if after, ok := strings.CutPrefix(line, "data:"); ok {
+			value := after
 			if len(value) > 0 && value[0] == ' ' {
 				value = value[1:]
 			}
@@ -341,8 +341,8 @@ func (t *HTTPTransport) listenSSE(ctx context.Context) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "data:") {
-			value := strings.TrimPrefix(line, "data:")
+		if after, ok := strings.CutPrefix(line, "data:"); ok {
+			value := after
 			if len(value) > 0 && value[0] == ' ' {
 				value = value[1:]
 			}

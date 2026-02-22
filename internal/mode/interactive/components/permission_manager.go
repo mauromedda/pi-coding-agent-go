@@ -1,5 +1,6 @@
 // ABOUTME: Permission manager component for managing permission rules
 // ABOUTME: Allows users to view, add, and delete permission rules
+// ABOUTME: Updated with Claude-style minimal border styling
 
 package components
 
@@ -163,20 +164,37 @@ func (pm *PermissionManager) adjustScrollLocked() {
 	}
 }
 
-// Render writes the rule list into the buffer
+// Render writes the rule list into the buffer with Claude-style minimal borders.
 func (pm *PermissionManager) Render(out *tui.RenderBuffer, w int) {
-	if len(pm.rules) == 0 {
-		out.WriteLine("\x1b[2mNo permission rules configured\x1b[0m")
+	pm.mu.Lock()
+	rules := pm.rules
+	selected := pm.selected
+	scrollOff := pm.scrollOff
+	maxHeight := pm.maxHeight
+	pm.mu.Unlock()
+
+	if len(rules) == 0 {
+		out.WriteLine("")
+		out.WriteLine("┌ No permission rules configured ┐")
+		out.WriteLine("└────────────────────────────────┘")
 		return
 	}
 
-	end := min(pm.scrollOff+pm.maxHeight, len(pm.rules))
+	// Header
+	out.WriteLine("")
+	out.WriteLine("┌ Permission Rules ┐")
+	out.WriteLine("├──────────────────┤")
 
-	for i := pm.scrollOff; i < end; i++ {
-		rule := pm.rules[i]
-		line := pm.formatRule(rule, w, i == pm.selected)
+	end := min(scrollOff+maxHeight, len(rules))
+
+	for i := scrollOff; i < end; i++ {
+		rule := rules[i]
+		line := pm.formatRule(rule, w, i == selected)
 		out.WriteLine(line)
 	}
+
+	// Footer
+	out.WriteLine("└──────────────────┘")
 }
 
 func (pm *PermissionManager) formatRule(rule *RuleWrapper, w int, selected bool) string {

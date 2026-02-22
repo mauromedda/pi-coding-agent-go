@@ -1,5 +1,5 @@
 // ABOUTME: Tests for memory hierarchy loading, import expansion, and prompt formatting
-// ABOUTME: Table-driven tests covering 8-level resolution, cycles, depth limits, globs
+// ABOUTME: Table-driven tests covering 5-level resolution, cycles, depth limits, globs
 
 package memory
 
@@ -11,26 +11,17 @@ import (
 )
 
 func TestLevelOrdering(t *testing.T) {
-	if ProjectRules >= ProjectMemory {
-		t.Error("ProjectRules must be lower than ProjectMemory")
-	}
-	if ProjectMemory >= ClaudeCompat {
-		t.Error("ProjectMemory must be lower than ClaudeCompat")
+	if ProjectRules >= ClaudeCompat {
+		t.Error("ProjectRules must be lower than ClaudeCompat")
 	}
 	if ClaudeCompat >= ClaudeRules {
 		t.Error("ClaudeCompat must be lower than ClaudeRules")
 	}
-	if ClaudeRules >= UserMemory {
-		t.Error("ClaudeRules must be lower than UserMemory")
-	}
-	if UserMemory >= UserClaudeCompat {
-		t.Error("UserMemory must be lower than UserClaudeCompat")
+	if ClaudeRules >= UserClaudeCompat {
+		t.Error("ClaudeRules must be lower than UserClaudeCompat")
 	}
 	if UserClaudeCompat >= AutoMemory {
 		t.Error("UserClaudeCompat must be lower than AutoMemory")
-	}
-	if AutoMemory >= ProjectLocal {
-		t.Error("AutoMemory must be lower than ProjectLocal")
 	}
 }
 
@@ -47,72 +38,27 @@ func TestLoad_EmptyDirs(t *testing.T) {
 	}
 }
 
-func TestLoad_PIGOMDProject(t *testing.T) {
+func TestLoad_PIGOMDIgnored(t *testing.T) {
 	project := t.TempDir()
 	home := t.TempDir()
 
-	content := "# Project memory\nSome instructions"
-	writeFile(t, filepath.Join(project, "PIGOMD.md"), content)
+	// PIGOMD.md files should be ignored entirely
+	writeFile(t, filepath.Join(project, "PIGOMD.md"), "should be ignored")
+	mkdirAll(t, filepath.Join(project, ".pi-go"))
+	writeFile(t, filepath.Join(project, ".pi-go", "PIGOMD.md"), "also ignored")
+	mkdirAll(t, filepath.Join(home, ".pi-go"))
+	writeFile(t, filepath.Join(home, ".pi-go", "PIGOMD.md"), "user ignored")
+	writeFile(t, filepath.Join(project, "PIGOMD.local.md"), "local ignored")
 
 	entries, err := Load(project, home)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Level != ProjectMemory {
-		t.Errorf("expected level ProjectMemory, got %d", entries[0].Level)
-	}
-	if entries[0].Content != content {
-		t.Errorf("content mismatch: got %q", entries[0].Content)
-	}
-}
-
-func TestLoad_PIGOMDInDotDir(t *testing.T) {
-	project := t.TempDir()
-	home := t.TempDir()
-
-	// PIGOMD.md inside .pi-go/ dir
-	pigoDir := filepath.Join(project, ".pi-go")
-	mkdirAll(t, pigoDir)
-	writeFile(t, filepath.Join(pigoDir, "PIGOMD.md"), "dot-dir memory")
-
-	entries, err := Load(project, home)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Content != "dot-dir memory" {
-		t.Errorf("content mismatch: got %q", entries[0].Content)
-	}
-}
-
-func TestLoad_PIGOMDRootTakesPrecedenceOverDotDir(t *testing.T) {
-	project := t.TempDir()
-	home := t.TempDir()
-
-	// Both root and .pi-go/ have PIGOMD.md; root wins
-	writeFile(t, filepath.Join(project, "PIGOMD.md"), "root wins")
-	pigoDir := filepath.Join(project, ".pi-go")
-	mkdirAll(t, pigoDir)
-	writeFile(t, filepath.Join(pigoDir, "PIGOMD.md"), "dot-dir loses")
-
-	entries, err := Load(project, home)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	found := findLevel(entries, ProjectMemory)
-	if found == nil {
-		t.Fatal("no ProjectMemory entry")
-	}
-	if found.Content != "root wins" {
-		t.Errorf("expected root to win, got %q", found.Content)
+	for _, e := range entries {
+		if strings.Contains(e.Content, "ignored") {
+			t.Errorf("PIGOMD file should not be loaded, got entry from %s", e.Source)
+		}
 	}
 }
 
@@ -155,36 +101,26 @@ func TestLoad_FullHierarchy(t *testing.T) {
 	mkdirAll(t, rulesDir)
 	writeFile(t, filepath.Join(rulesDir, "rule1.md"), "project rule 1")
 
-	// Level 1: Project memory
-	writeFile(t, filepath.Join(project, "PIGOMD.md"), "project memory")
-
-	// Level 2: Claude compat (project)
+	// Level 1: Claude compat (project)
 	writeFile(t, filepath.Join(project, "CLAUDE.md"), "claude project")
 
-	// Level 3: Claude rules
+	// Level 2: Claude rules
 	claudeRulesDir := filepath.Join(project, ".claude", "rules")
 	mkdirAll(t, claudeRulesDir)
 	writeFile(t, filepath.Join(claudeRulesDir, "r1.md"), "claude rule 1")
 
-	// Level 4: User memory
-	mkdirAll(t, filepath.Join(home, ".pi-go"))
-	writeFile(t, filepath.Join(home, ".pi-go", "PIGOMD.md"), "user memory")
-
-	// Level 5: User Claude compat
+	// Level 3: User Claude compat
 	mkdirAll(t, filepath.Join(home, ".claude"))
 	writeFile(t, filepath.Join(home, ".claude", "CLAUDE.md"), "user claude")
-
-	// Level 7: Project local
-	writeFile(t, filepath.Join(project, "PIGOMD.local.md"), "local memory")
 
 	entries, err := Load(project, home)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 
-	// Should have 7 entries (no auto-memory yet)
-	if len(entries) < 7 {
-		t.Errorf("expected at least 7 entries, got %d", len(entries))
+	// Should have 4 entries (no auto-memory yet)
+	if len(entries) < 4 {
+		t.Errorf("expected at least 4 entries, got %d", len(entries))
 		for _, e := range entries {
 			t.Logf("  level=%d source=%s", e.Level, e.Source)
 		}
@@ -196,45 +132,6 @@ func TestLoad_FullHierarchy(t *testing.T) {
 			t.Errorf("entries not sorted: [%d].Level=%d < [%d].Level=%d",
 				i, entries[i].Level, i-1, entries[i-1].Level)
 		}
-	}
-}
-
-func TestLoad_ProjectLocal(t *testing.T) {
-	project := t.TempDir()
-	home := t.TempDir()
-
-	writeFile(t, filepath.Join(project, "PIGOMD.local.md"), "local only")
-
-	entries, err := Load(project, home)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Level != ProjectLocal {
-		t.Errorf("expected ProjectLocal, got %d", entries[0].Level)
-	}
-}
-
-func TestLoad_UserMemory(t *testing.T) {
-	project := t.TempDir()
-	home := t.TempDir()
-
-	mkdirAll(t, filepath.Join(home, ".pi-go"))
-	writeFile(t, filepath.Join(home, ".pi-go", "PIGOMD.md"), "user mem")
-
-	entries, err := Load(project, home)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Level != UserMemory {
-		t.Errorf("expected UserMemory, got %d", entries[0].Level)
 	}
 }
 
@@ -290,7 +187,7 @@ func TestExpandImports_MaxDepth(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create chain: d0.md -> d1.md -> ... -> d6.md (depth > 5)
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		var content string
 		if i < 6 {
 			content = strings.ReplaceAll("@dNEXT.md", "NEXT", strings.Repeat("x", i+1))
@@ -346,13 +243,13 @@ func TestExpandImports_NoImports(t *testing.T) {
 
 func TestFormatForPrompt_Basic(t *testing.T) {
 	entries := []Entry{
-		{Source: "PIGOMD.md", Content: "project instructions", Level: ProjectMemory},
+		{Source: "rule.md", Content: "project rule", Level: ProjectRules},
 		{Source: "CLAUDE.md", Content: "claude compat", Level: ClaudeCompat},
 	}
 
 	result := FormatForPrompt(entries, nil)
-	if !strings.Contains(result, "project instructions") {
-		t.Error("expected project instructions in output")
+	if !strings.Contains(result, "project rule") {
+		t.Error("expected project rule in output")
 	}
 	if !strings.Contains(result, "claude compat") {
 		t.Error("expected claude compat in output")

@@ -367,6 +367,57 @@ func TestHandleFileMentionInput_Tab_AcceptsSelection(t *testing.T) {
 	}
 }
 
+func TestHandleFileMentionInput_UpDown_NavigatesList(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	app.fileMentionSelector.SetItems([]component.FileInfo{
+		{Path: "/tmp/a.go", RelPath: "a.go"},
+		{Path: "/tmp/b.go", RelPath: "b.go"},
+		{Path: "/tmp/c.go", RelPath: "c.go"},
+	})
+	app.fileMentionVisible = true
+
+	// Initially selected: a.go (index 0)
+	if got := app.fileMentionSelector.SelectedRelPath(); got != "a.go" {
+		t.Fatalf("expected initial selection 'a.go', got %q", got)
+	}
+
+	// Down should move to b.go
+	handled := app.handleFileMentionInput(key.Key{Type: key.KeyDown})
+	if !handled {
+		t.Fatal("expected Down to be handled")
+	}
+	if got := app.fileMentionSelector.SelectedRelPath(); got != "b.go" {
+		t.Errorf("expected 'b.go' after Down, got %q", got)
+	}
+
+	// Down again should move to c.go
+	app.handleFileMentionInput(key.Key{Type: key.KeyDown})
+	if got := app.fileMentionSelector.SelectedRelPath(); got != "c.go" {
+		t.Errorf("expected 'c.go' after second Down, got %q", got)
+	}
+
+	// Up should move back to b.go
+	app.handleFileMentionInput(key.Key{Type: key.KeyUp})
+	if got := app.fileMentionSelector.SelectedRelPath(); got != "b.go" {
+		t.Errorf("expected 'b.go' after Up, got %q", got)
+	}
+}
+
 func TestHandleFileMentionInput_Backspace_TrimsFilter(t *testing.T) {
 	t.Parallel()
 

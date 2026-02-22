@@ -6,6 +6,7 @@ package hooks
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
@@ -71,9 +72,7 @@ func (e *Engine) Fire(ctx context.Context, input HookInput) (HookOutput, error) 
 			if merged.Env == nil {
 				merged.Env = make(map[string]string)
 			}
-			for k, v := range out.Env {
-				merged.Env[k] = v
-			}
+			maps.Copy(merged.Env, out.Env)
 		}
 
 		if out.Blocked {

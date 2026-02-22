@@ -4,8 +4,10 @@
 package components
 
 import (
+	"sort"
 	"testing"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
 )
@@ -156,6 +158,51 @@ func TestHookManager_HandleKey_EnterToggles(t *testing.T) {
 
 	if !hm.hooks[0].Enabled {
 		t.Error("Expected hook to be toggled on after HandleKey Enter")
+	}
+}
+
+func TestConvertFromConfig(t *testing.T) {
+	hooksByEvent := map[string][]config.HookDef{
+		"PreToolUse": {
+			{Matcher: "bash", Type: "command", Command: "echo pre-bash"},
+			{Matcher: "write", Type: "command", Command: "echo pre-write"},
+		},
+		"PostToolUse": {
+			{Matcher: "edit", Type: "command", Command: "echo post-edit"},
+		},
+	}
+
+	hooks := ConvertFromConfig(hooksByEvent)
+	if len(hooks) != 3 {
+		t.Fatalf("expected 3 hooks, got %d", len(hooks))
+	}
+
+	// Sort by Pattern for deterministic assertion (map iteration order is random).
+	sort.Slice(hooks, func(i, j int) bool {
+		return hooks[i].Pattern < hooks[j].Pattern
+	})
+
+	tests := []struct {
+		pattern string
+		event   string
+		enabled bool
+	}{
+		{"bash", "PreToolUse", true},
+		{"edit", "PostToolUse", true},
+		{"write", "PreToolUse", true},
+	}
+	for i, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			if hooks[i].Pattern != tt.pattern {
+				t.Errorf("hooks[%d].Pattern = %q; want %q", i, hooks[i].Pattern, tt.pattern)
+			}
+			if hooks[i].Event != tt.event {
+				t.Errorf("hooks[%d].Event = %q; want %q", i, hooks[i].Event, tt.event)
+			}
+			if hooks[i].Enabled != tt.enabled {
+				t.Errorf("hooks[%d].Enabled = %v; want %v", i, hooks[i].Enabled, tt.enabled)
+			}
+		})
 	}
 }
 

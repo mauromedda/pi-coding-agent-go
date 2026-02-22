@@ -10,14 +10,11 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gosimple
     - gocritic
     - revive
     - misspell
     - unconvert
     - unparam
-    - gofmt
-    - goimports
     - gosec
     - bodyclose
 
@@ -49,8 +46,6 @@ linters-settings:
       - performance
   misspell:
     locale: US
-  goimports:
-    local-prefixes: github.com/mauromedda/pi-coding-agent-go
 
 issues:
   exclude-rules:

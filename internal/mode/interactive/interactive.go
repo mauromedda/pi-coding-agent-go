@@ -823,13 +823,21 @@ func (a *App) handleCommandPaletteInput(k key.Key) bool {
 	return false
 }
 
-// showFileMentionSelector displays the file mention selector component.
+// showFileMentionSelector displays the file mention selector component above the editor.
 func (a *App) showFileMentionSelector() {
 	a.fileMentionVisible = true
 
-	// Add file mention selector to container
+	// Insert selector above the editor (same pattern as command palette)
 	container := a.tui.Container()
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
 	container.Add(a.fileMentionSelector)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
 }
 
 // handleFileMentionInput handles input for the file mention selector.
@@ -859,9 +867,13 @@ func (a *App) handleFileMentionInput(k key.Key) bool {
 		a.tui.RequestRender()
 		return true
 
-	case key.KeyUp, key.KeyDown:
-		// Navigation handled by selector
-		a.fileMentionSelector.HandleInput(k.String())
+	case key.KeyUp:
+		a.fileMentionSelector.MoveUp()
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyDown:
+		a.fileMentionSelector.MoveDown()
 		a.tui.RequestRender()
 		return true
 

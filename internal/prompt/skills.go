@@ -108,7 +108,7 @@ func parseSkillFile(path string) (Skill, error) {
 // parseFrontmatter extracts key-value pairs from YAML frontmatter.
 // Simplified parser: handles name, description, allowed-tools.
 func parseFrontmatter(fm string, skill *Skill) {
-	for _, line := range strings.Split(fm, "\n") {
+	for line := range strings.SplitSeq(fm, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

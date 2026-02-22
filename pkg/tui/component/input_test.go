@@ -97,8 +97,8 @@ func TestInput_Delete(t *testing.T) {
 	inp.HandleInput("a")
 	inp.HandleInput("b")
 	// Move cursor left
-	inp.HandleInput("\x1b[D") // left arrow
-	inp.HandleInput("\x1b[D") // left arrow
+	inp.HandleInput("\x1b[D")  // left arrow
+	inp.HandleInput("\x1b[D")  // left arrow
 	inp.HandleInput("\x1b[3~") // delete
 
 	if inp.Text() != "b" {
@@ -186,9 +186,9 @@ func TestInput_KillLine(t *testing.T) {
 	inp.HandleInput("l")
 	inp.HandleInput("l")
 	inp.HandleInput("o")
-	inp.HandleInput("\x01")  // Ctrl+A -> home
+	inp.HandleInput("\x01")   // Ctrl+A -> home
 	inp.HandleInput("\x1b[C") // right -> pos 1
-	inp.HandleInput("\x0b")  // Ctrl+K = kill to end
+	inp.HandleInput("\x0b")   // Ctrl+K = kill to end
 
 	if inp.Text() != "h" {
 		t.Errorf("expected 'h', got %q", inp.Text())
@@ -208,10 +208,10 @@ func TestInput_Yank(t *testing.T) {
 	inp.HandleInput("l")
 	inp.HandleInput("l")
 	inp.HandleInput("o")
-	inp.HandleInput("\x01")  // Ctrl+A
+	inp.HandleInput("\x01")   // Ctrl+A
 	inp.HandleInput("\x1b[C") // right -> pos 1
-	inp.HandleInput("\x0b")  // Ctrl+K -> kills "ello"
-	inp.HandleInput("\x19")  // Ctrl+Y -> yank "ello" back
+	inp.HandleInput("\x0b")   // Ctrl+K -> kills "ello"
+	inp.HandleInput("\x19")   // Ctrl+Y -> yank "ello" back
 
 	if inp.Text() != "hello" {
 		t.Errorf("expected 'hello', got %q", inp.Text())
@@ -320,7 +320,7 @@ func TestInput_HorizontalScroll(t *testing.T) {
 	inp.SetFocused(true)
 
 	// Type more characters than width allows
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		inp.HandleInput("x")
 	}
 

@@ -213,6 +213,20 @@ func (fm *FileMentionSelector) HandleInput(data string) {
 	fm.mu.Unlock()
 }
 
+// MoveUp moves selection up one item.
+func (fm *FileMentionSelector) MoveUp() {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	fm.moveUpLocked()
+}
+
+// MoveDown moves selection down one item.
+func (fm *FileMentionSelector) MoveDown() {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	fm.moveDownLocked()
+}
+
 func (fm *FileMentionSelector) moveUpLocked() {
 	if fm.selected > 0 {
 		fm.selected--

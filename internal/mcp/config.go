@@ -6,6 +6,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 )
@@ -45,17 +46,13 @@ func LoadConfig(projectDir, homeDir string) map[string]ServerConfig {
 	}
 	for _, path := range sources {
 		if servers := loadServersFromSettings(path); servers != nil {
-			for k, v := range servers {
-				merged[k] = v
-			}
+			maps.Copy(merged, servers)
 		}
 	}
 
 	// .mcp.json in project root
 	if servers := loadMCPJSON(filepath.Join(projectDir, ".mcp.json")); servers != nil {
-		for k, v := range servers {
-			merged[k] = v
-		}
+		maps.Copy(merged, servers)
 	}
 
 	// Project-local settings (override)
@@ -65,9 +62,7 @@ func LoadConfig(projectDir, homeDir string) map[string]ServerConfig {
 	}
 	for _, path := range localSources {
 		if servers := loadServersFromSettings(path); servers != nil {
-			for k, v := range servers {
-				merged[k] = v
-			}
+			maps.Copy(merged, servers)
 		}
 	}
 

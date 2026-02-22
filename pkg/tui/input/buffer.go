@@ -190,10 +190,7 @@ func (b *StdinBuffer) tryParse() (int, key.Key, bool) {
 // Must be called with b.mu held and len(b.buf) >= 2.
 func (b *StdinBuffer) parseEscapeFromBuf() (int, key.Key, bool) {
 	// Try progressively longer prefixes (max 6 bytes for sequences like \x1b[200~).
-	maxLen := len(b.buf)
-	if maxLen > 8 {
-		maxLen = 8
-	}
+	maxLen := min(len(b.buf), 8)
 
 	// Try longest match first, then shorter.
 	for end := maxLen; end >= 2; end-- {

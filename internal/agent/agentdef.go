@@ -129,7 +129,7 @@ func parseAgentFile(content, filename string) Definition {
 	fm := content[4 : 4+endIdx]
 	def.SystemPrompt = strings.TrimSpace(content[4+endIdx+4:])
 
-	for _, line := range strings.Split(fm, "\n") {
+	for line := range strings.SplitSeq(fm, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

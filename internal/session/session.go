@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
@@ -60,10 +61,10 @@ func (s *Session) AddUserMessage(content string) error {
 // AddAssistantMessage appends an assistant message and persists it.
 func (s *Session) AddAssistantMessage(msg *ai.AssistantMessage) error {
 	// Extract text content
-	var text string
+	var text strings.Builder
 	for _, c := range msg.Content {
 		if c.Type == ai.ContentText {
-			text += c.Text
+			text.WriteString(c.Text)
 		}
 	}
 
@@ -73,7 +74,7 @@ func (s *Session) AddAssistantMessage(msg *ai.AssistantMessage) error {
 	})
 
 	return s.Writer.WriteRecord(RecordAssistant, AssistantData{
-		Content:    text,
+		Content:    text.String(),
 		Model:      msg.Model,
 		Usage:      UsageData{Input: msg.Usage.InputTokens, Output: msg.Usage.OutputTokens},
 		StopReason: string(msg.StopReason),

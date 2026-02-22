@@ -68,14 +68,14 @@ func (md *Markdown) renderLines() []string {
 	inCodeBlock := false
 	var codeLang string
 
-	for i := 0; i < len(raw); i++ {
+	for i := range raw {
 		line := raw[i]
 
 		// Fenced code block toggle
-		if strings.HasPrefix(line, "```") {
+		if after, ok := strings.CutPrefix(line, "```"); ok {
 			if !inCodeBlock {
 				inCodeBlock = true
-				codeLang = strings.TrimPrefix(line, "```")
+				codeLang = after
 				codeLang = strings.TrimSpace(codeLang)
 				if codeLang != "" {
 					result = append(result, ansiDim+"    ["+codeLang+"]"+ansiReset)
@@ -99,7 +99,7 @@ func (md *Markdown) renderLines() []string {
 		}
 
 		// Unordered list (- or *)
-		if trimmed := strings.TrimSpace(line); (strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ")) {
+		if trimmed := strings.TrimSpace(line); strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
 			content := trimmed[2:]
 			styled := "  \u2022 " + md.renderInline(content)
 			result = append(result, styled)

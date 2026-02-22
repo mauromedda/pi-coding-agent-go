@@ -95,7 +95,7 @@ func TestKeybindings_LoadNonExistent(t *testing.T) {
 
 func TestKeybindings_CustomBindings(t *testing.T) {
 	kb := NewKeybindings()
-	
+
 	// Override some bindings
 	kb.Bindings[ActionCursorUp] = []string{"ctrl+k"}
 	kb.Bindings[ActionCursorDown] = []string{"ctrl+j"}

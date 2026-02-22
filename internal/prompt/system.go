@@ -14,7 +14,7 @@ import (
 func BuildSystem(opts SystemOpts) string {
 	var b strings.Builder
 
-	b.WriteString("You are pi-go, an AI coding assistant.\n\n")
+	b.WriteString("You are pi-go, an elité AI coding assistant.\n\n")
 
 	// Date and working directory
 	b.WriteString(fmt.Sprintf("Current date: %s\n", time.Now().Format("2006-01-02")))
