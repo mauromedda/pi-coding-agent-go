@@ -84,7 +84,7 @@ type App struct {
 	editorSep    *components.Separator // permanent separator above editor
 	editorSepBot *components.Separator // permanent separator below editor
 	footer       *components.Footer
-	current   *components.AssistantMessage // current streaming response
+	current      *components.AssistantMessage // current streaming response
 
 	// File mention selector (for @ file autocomplete)
 	fileMentionSelector *component.FileMentionSelector
@@ -119,6 +119,9 @@ type App struct {
 	tokPerSec         atomic.Int64 // tok/s × 10 (fixed-point)
 	gitBranch         string
 
+	// Current thinking level (cycled via alt+t)
+	thinkingLevel config.ThinkingLevel
+
 	// Saved permission mode for Plan/Edit toggle
 	editPermMode permission.Mode
 
@@ -133,17 +136,17 @@ type App struct {
 func NewFromDeps(deps AppDeps) *App {
 	ctx, cancel := context.WithCancel(context.Background())
 	app := &App{
-		tui:          tuipkg.New(deps.Terminal, 80, 24),
-		mode:         ModePlan,
-		checker:      deps.Checker,
-		ctx:          ctx,
-		cancelFn:     cancel,
-		term:         deps.Terminal,
-		provider:     deps.Provider,
-		model:        deps.Model,
-		tools:        deps.Tools,
-		systemPrompt: deps.SystemPrompt,
-		version:      deps.Version,
+		tui:                  tuipkg.New(deps.Terminal, 80, 24),
+		mode:                 ModePlan,
+		checker:              deps.Checker,
+		ctx:                  ctx,
+		cancelFn:             cancel,
+		term:                 deps.Terminal,
+		provider:             deps.Provider,
+		model:                deps.Model,
+		tools:                deps.Tools,
+		systemPrompt:         deps.SystemPrompt,
+		version:              deps.Version,
 		cmdRegistry:          commands.NewRegistry(),
 		msgQueue:             NewMessageQueue(),
 		statusEngine:         deps.StatusEngine,
@@ -321,10 +324,30 @@ func (a *App) onKey(k key.Key) {
 		return
 	}
 
+	// 3c. Ctrl+O: toggle tool call expand/collapse (if agent not running)
+	if k.Type == key.KeyCtrlO && !a.agentRunning.Load() && a.current != nil {
+		tcList := a.current.GetToolCalls()
+		if len(tcList) > 0 {
+			// Toggle expand on the last tool call
+			a.current.ToggleToolCallExpand(len(tcList) - 1)
+			a.tui.RequestRender()
+		}
+		return
+	}
+
 	// 4. BackTab (Shift+Tab): toggle Plan/Edit mode
 	if k.Type == key.KeyBackTab {
 		a.ToggleMode()
 		a.updateFooter()
+		a.tui.RequestRender()
+		return
+	}
+
+	// 4b. Alt+T: cycle thinking level
+	if k.Type == key.KeyRune && k.Alt && (k.Rune == 't' || k.Rune == 'T') {
+		nextIdx := (a.thinkingLevel.Index() + 1) % 6
+		a.thinkingLevel = config.ThinkingLevelFromIndex(nextIdx)
+		a.footer.SetThinkingLevel(a.thinkingLevel)
 		a.tui.RequestRender()
 		return
 	}
@@ -357,6 +380,29 @@ func (a *App) onKey(k key.Key) {
 			}
 			return
 		}
+	}
+
+	// 5c. Alt+Left: start editing current queued message
+	if k.Type == key.KeyLeft && k.Alt && !a.agentRunning.Load() {
+		if msg := a.msgQueue.StartEdit(); msg != "" {
+			a.editor.SetText(msg)
+			a.tui.RequestRender()
+		}
+		return
+	}
+
+	// 5d. Alt+Right: commit edit and move to next queued message
+	if k.Type == key.KeyRight && k.Alt && !a.agentRunning.Load() {
+		if a.msgQueue.EditMode() {
+			a.msgQueue.EditMessage(a.editor.Text())
+			a.msgQueue.CommitEdit()
+			// Move to next message
+			if msg := a.msgQueue.Next(); msg != "" {
+				a.editor.SetText(msg)
+			}
+			a.tui.RequestRender()
+		}
+		return
 	}
 
 	// 5c. Enter: submit prompt if agent not running and editor has text
@@ -743,8 +789,7 @@ func (a *App) runAgent() {
 
 	events := ag.Prompt(a.ctx, llmCtx, opts)
 
-	container := a.tui.Container()
-	toolExecs := make(map[string]*components.ToolExec)
+	toolCalls := make(map[string]*components.ToolCall)
 
 	for evt := range events {
 		switch evt.Type {
@@ -761,38 +806,31 @@ func (a *App) runAgent() {
 			a.current.SetThinking(evt.Text)
 
 		case agent.EventToolStart:
-			a.current = nil // close current text segment; next text creates a new one
 			argsStr := ""
 			if evt.ToolArgs != nil {
 				if data, err := json.Marshal(evt.ToolArgs); err == nil {
 					argsStr = string(data)
 				}
 			}
-			te := components.NewToolExec(evt.ToolName, argsStr)
-			toolExecs[evt.ToolID] = te
-			// Insert before editor separator
-			container.Remove(a.editorSep)
-			container.Remove(a.editor)
-			container.Remove(a.editorSepBot)
-			container.Remove(a.footer)
-			container.Add(te)
-			container.Add(a.editorSep)
-			container.Add(a.editor)
-			container.Add(a.editorSepBot)
-			container.Add(a.footer)
+			tc := components.NewToolCall(evt.ToolName, argsStr)
+			toolCalls[evt.ToolID] = tc
 
 		case agent.EventToolUpdate:
-			if te, ok := toolExecs[evt.ToolID]; ok {
-				te.AppendOutput(evt.Text)
+			if tc, ok := toolCalls[evt.ToolID]; ok {
+				tc.SetDone(evt.Text, "")
 			}
 
 		case agent.EventToolEnd:
-			if te, ok := toolExecs[evt.ToolID]; ok {
+			if tc, ok := toolCalls[evt.ToolID]; ok {
 				errMsg := ""
+				output := evt.Text
 				if evt.ToolResult != nil && evt.ToolResult.IsError {
 					errMsg = evt.ToolResult.Content
 				}
-				te.SetDone(errMsg)
+				tc.SetDone(output, errMsg)
+				if a.current != nil {
+					a.current.AddToolCall(tc)
+				}
 			}
 
 		case agent.EventUsageUpdate:
@@ -831,7 +869,7 @@ func (a *App) runAgent() {
 		// The agent already appended messages to llmCtx.Messages inside its loop;
 		// we sync our local messages slice with the final state.
 		a.messages = llmCtx.Messages
-	_ = assistantContent // history is tracked via llmCtx
+		_ = assistantContent // history is tracked via llmCtx
 	}
 
 	a.activeAgent = nil
@@ -1078,7 +1116,7 @@ func (a *App) openExternalEditor() {
 	}
 
 	// Write current text to a temp file
-	tmpFile, err := os.CreateTemp("", "pi-go-*.md")
+	tmpFile, err := os.CreateTemp("", ".pi-*.md")
 	if err != nil {
 		return
 	}

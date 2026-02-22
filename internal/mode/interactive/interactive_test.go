@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -451,7 +452,7 @@ func TestNewAssistantSegment_InsertsBeforeEditor(t *testing.T) {
 	}
 }
 
-func TestNewAssistantSegment_InterleavesWithToolExecs(t *testing.T) {
+func TestNewAssistantSegment_AddsToolCallsInline(t *testing.T) {
 	t.Parallel()
 
 	vt := terminal.NewVirtualTerminal(80, 24)
@@ -468,48 +469,42 @@ func TestNewAssistantSegment_InterleavesWithToolExecs(t *testing.T) {
 	app.tui.Start()
 	defer app.tui.Stop()
 
-	container := app.tui.Container()
-	container.Add(app.editorSep)
-	container.Add(app.editor)
-	container.Add(app.editorSepBot)
-	container.Add(app.footer)
-
 	// Simulate: text → tool → text interleaving
 	msg1 := app.newAssistantSegment()
 	msg1.AppendText("Let me check...")
 
-	// Simulate tool start: insert a ToolExec before editor
-	te := components.NewToolExec("read", `{"path":"foo.go"}`)
-	container.Remove(app.editorSep)
-	container.Remove(app.editor)
-	container.Remove(app.editorSepBot)
-	container.Remove(app.footer)
-	container.Add(te)
-	container.Add(app.editorSep)
-	container.Add(app.editor)
-	container.Add(app.editorSepBot)
-	container.Add(app.footer)
+	// Simulate tool call: tool calls are now added inline to assistant messages
+	tc := components.NewToolCall("read", `{"path":"foo.go"}`)
+	msg1.AddToolCall(tc)
 
 	// Second text segment after tool
 	msg2 := app.newAssistantSegment()
 	msg2.AppendText("Found it.")
 
-	// Expected order: msg1, te, msg2, editorSep, editor, editorSepBot, footer
+	// Tool calls are now inline in AssistantMessage, not as separate container children
+	// So we expect: msg1 (with inline tool call), msg2, editorSep, editor, editorSepBot, footer
+	container := app.tui.Container()
 	children := container.Children()
-	if len(children) != 7 {
-		t.Fatalf("expected 7 children, got %d", len(children))
+	if len(children) != 6 {
+		t.Fatalf("expected 6 children (msg1, msg2, editorSep, editor, editorSepBot, footer), got %d", len(children))
 	}
 	if children[0] != msg1 {
 		t.Error("expected msg1 at index 0")
 	}
-	if children[1] != te {
-		t.Error("expected ToolExec at index 1")
+	if children[1] != msg2 {
+		t.Error("expected msg2 at index 1")
 	}
-	if children[2] != msg2 {
-		t.Error("expected msg2 at index 2")
+	if children[2] != app.editorSep {
+		t.Error("expected editorSep at index 2")
 	}
-	if children[3] != app.editorSep {
-		t.Error("expected editorSep at index 3")
+
+	// Verify the tool call is inline in msg1
+	tcList := msg1.GetToolCalls()
+	if len(tcList) != 1 {
+		t.Fatalf("expected 1 tool call in msg1, got %d", len(tcList))
+	}
+	if tcList[0] != tc {
+		t.Error("expected tool call to be in msg1")
 	}
 }
 
@@ -856,5 +851,88 @@ func TestHandleFileMentionInput_Backspace_EmptyFilter_Hides(t *testing.T) {
 
 	if app.fileMentionVisible {
 		t.Error("expected file mention to be hidden after backspace on empty filter")
+	}
+}
+
+func TestOnKey_AltT_CyclesThinkingLevel(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Initial thinking level should be Off (0)
+	if app.thinkingLevel != config.ThinkingOff {
+		t.Fatalf("expected initial thinking level Off, got %v", app.thinkingLevel)
+	}
+
+	// Press alt+t 5 times: Off -> Minimal -> Low -> Medium -> High -> XHigh
+	expected := []config.ThinkingLevel{
+		config.ThinkingMinimal,
+		config.ThinkingLow,
+		config.ThinkingMedium,
+		config.ThinkingHigh,
+		config.ThinkingXHigh,
+	}
+
+	altT := key.Key{Type: key.KeyRune, Rune: 't', Alt: true}
+
+	for i, want := range expected {
+		app.onKey(altT)
+		if app.thinkingLevel != want {
+			t.Errorf("after press %d: expected thinking level %v, got %v", i+1, want, app.thinkingLevel)
+		}
+	}
+
+	// Press alt+t once more: XHigh -> Off (wrap)
+	app.onKey(altT)
+	if app.thinkingLevel != config.ThinkingOff {
+		t.Errorf("expected thinking level to wrap to Off, got %v", app.thinkingLevel)
+	}
+}
+
+func TestOnKey_AltT_UpdatesFooter(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	altT := key.Key{Type: key.KeyRune, Rune: 't', Alt: true}
+
+	// Press alt+t to cycle to Minimal
+	app.onKey(altT)
+
+	// Render footer and check it shows the thinking level
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	app.footer.Render(buf, 80)
+
+	if buf.Len() < 2 {
+		t.Fatalf("expected 2 footer lines, got %d", buf.Len())
+	}
+	line2 := buf.Lines[1]
+	if !strings.Contains(line2, "minimal") {
+		t.Errorf("footer line2 should contain thinking level 'minimal', got %q", line2)
 	}
 }
