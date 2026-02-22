@@ -90,7 +90,7 @@ type App struct {
 	// State
 	agentRunning atomic.Bool
 	activeAgent  *agent.Agent
-	activeDialog *components.PermissionDialog
+	activeDialog atomic.Pointer[components.PermissionDialog]
 	messages     []ai.Message // conversation history
 	cmdRegistry  *commands.Registry
 
@@ -254,27 +254,27 @@ func (a *App) printWelcome(container *tuipkg.Container) {
 // onKey handles a single key event from the StdinBuffer goroutine.
 func (a *App) onKey(k key.Key) {
 	// 1. Active overlay (permission dialog): route y/a/n/Esc
-	if a.activeDialog != nil {
+	if dialog := a.activeDialog.Load(); dialog != nil {
 		switch k.Type {
 		case key.KeyRune:
 			switch k.Rune {
 			case 'y', 'Y':
-				a.activeDialog.Allow()
+				dialog.Allow()
 				a.tui.PopOverlay()
-				a.activeDialog = nil
+				a.activeDialog.Store(nil)
 			case 'a', 'A':
-				a.activeDialog.AllowAlways()
+				dialog.AllowAlways()
 				a.tui.PopOverlay()
-				a.activeDialog = nil
+				a.activeDialog.Store(nil)
 			case 'n', 'N':
-				a.activeDialog.Deny()
+				dialog.Deny()
 				a.tui.PopOverlay()
-				a.activeDialog = nil
+				a.activeDialog.Store(nil)
 			}
 		case key.KeyEscape:
-			a.activeDialog.Deny()
+			dialog.Deny()
 			a.tui.PopOverlay()
-			a.activeDialog = nil
+			a.activeDialog.Store(nil)
 		}
 		a.tui.RequestRender()
 		return
@@ -751,7 +751,7 @@ func (a *App) askPermission(tool string, args map[string]any) (bool, error) {
 	}
 
 	dialog := components.NewPermissionDialog(tool, argsStr)
-	a.activeDialog = dialog
+	a.activeDialog.Store(dialog)
 
 	a.tui.PushOverlay(tuipkg.Overlay{
 		Component: dialog,
