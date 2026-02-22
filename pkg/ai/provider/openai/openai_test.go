@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
@@ -349,6 +350,69 @@ data: {"id":"chatcmpl-test","object":"chat.completion.chunk","choices":[{"index"
 data: [DONE]
 
 `, callID, funcName, escapeJSON(args))
+}
+
+func TestProviderStreamFinishReasonTerminatesEarly(t *testing.T) {
+	t.Parallel()
+
+	// Server sends finish_reason + usage but never sends [DONE] and keeps
+	// the connection open. Without the fix, processSSE blocks forever.
+	handlerDone := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("ResponseWriter does not implement http.Flusher")
+		}
+
+		chunks := []string{
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`,
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}`,
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}`,
+		}
+
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, "%s\n\n", chunk)
+			flusher.Flush()
+		}
+
+		// Keep the connection open until the test signals completion.
+		// The provider must terminate on finish_reason, not hang here.
+		<-handlerDone
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	provider := New("test-key", srv.URL)
+	stream := provider.Stream(ctx, &ai.ModelGPT4o, &ai.Context{
+		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
+	}, nil)
+
+	for range stream.Events() {
+	}
+	close(handlerDone)
+
+	if ctx.Err() != nil {
+		t.Fatal("stream hung: context deadline exceeded waiting for finish_reason termination")
+	}
+
+	result := stream.Result()
+	if result == nil {
+		t.Fatal("Result() returned nil")
+	}
+	if result.StopReason != ai.StopEndTurn {
+		t.Errorf("StopReason = %q, want %q", result.StopReason, ai.StopEndTurn)
+	}
+	if result.Usage.InputTokens != 8 {
+		t.Errorf("InputTokens = %d, want 8", result.Usage.InputTokens)
+	}
+	if result.Usage.OutputTokens != 2 {
+		t.Errorf("OutputTokens = %d, want 2", result.Usage.OutputTokens)
+	}
 }
 
 func escapeJSON(s string) string {

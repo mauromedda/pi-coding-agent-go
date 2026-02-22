@@ -96,6 +96,7 @@ func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Con
 func (p *Provider) processSSE(reader *sse.Reader, stream *ai.EventStream) error {
 	var result ai.AssistantMessage
 	var toolCalls []toolCallAccumulator
+	var gotFinish bool
 
 	for {
 		event, err := reader.Next()
@@ -135,14 +136,21 @@ func (p *Provider) processSSE(reader *sse.Reader, stream *ai.EventStream) error 
 			// Finish reason
 			if choice.FinishReason != "" {
 				result.StopReason = mapFinishReason(choice.FinishReason)
+				gotFinish = true
 			}
 		}
 
+		// Extract usage from the same chunk before checking gotFinish,
+		// because usage data often arrives in the same chunk as finish_reason.
 		if chunk.Usage != nil {
 			result.Usage = ai.Usage{
 				InputTokens:  chunk.Usage.PromptTokens,
 				OutputTokens: chunk.Usage.CompletionTokens,
 			}
+		}
+
+		if gotFinish {
+			break
 		}
 	}
 
