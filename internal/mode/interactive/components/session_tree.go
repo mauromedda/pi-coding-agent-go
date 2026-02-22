@@ -133,12 +133,6 @@ func (st *SessionTree) moveDownLocked() {
 	}
 }
 
-func (st *SessionTree) adjustScroll() {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.adjustScrollLocked()
-}
-
 func (st *SessionTree) adjustScrollLocked() {
 	if st.selected < st.scrollOff {
 		st.scrollOff = st.selected
@@ -146,13 +140,6 @@ func (st *SessionTree) adjustScrollLocked() {
 	if st.selected >= st.scrollOff+st.maxHeight {
 		st.scrollOff = st.selected - st.maxHeight + 1
 	}
-}
-
-// visibleNodes returns all visible nodes (flattened tree)
-func (st *SessionTree) visibleNodes() []*SessionNode {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.visibleNodesLocked()
 }
 
 func (st *SessionTree) visibleNodesLocked() []*SessionNode {
@@ -246,12 +233,19 @@ func LoadSessionsFromDir(dir string) ([]*SessionNode, error) {
 	return nodes, nil
 }
 
-// Render writes the session tree into the buffer
+// Render writes the session tree into the buffer.
+// Snapshots all state under lock to avoid data races with SetFilter/HandleKey.
 func (st *SessionTree) Render(out *tui.RenderBuffer, w int) {
-	nodes := st.visibleNodes()
+	st.mu.Lock()
+	nodes := st.visibleNodesLocked()
+	filter := st.filter
+	scrollOff := st.scrollOff
+	maxHeight := st.maxHeight
+	selected := st.selected
+	st.mu.Unlock()
 
 	if len(nodes) == 0 {
-		if st.filter == "" {
+		if filter == "" {
 			out.WriteLine("\x1b[2mNo sessions found\x1b[0m")
 		} else {
 			out.WriteLine("\x1b[2mNo matching sessions\x1b[0m")
@@ -259,11 +253,11 @@ func (st *SessionTree) Render(out *tui.RenderBuffer, w int) {
 		return
 	}
 
-	end := min(st.scrollOff+st.maxHeight, len(nodes))
+	end := min(scrollOff+maxHeight, len(nodes))
 
-	for i := st.scrollOff; i < end; i++ {
+	for i := scrollOff; i < end; i++ {
 		node := nodes[i]
-		line := st.formatNode(node, w, i == st.selected)
+		line := st.formatNode(node, w, i == selected)
 		out.WriteLine(line)
 	}
 }
