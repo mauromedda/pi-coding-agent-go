@@ -23,4 +23,5 @@ type AppDeps struct {
 	AutoCompactThreshold int
 	Hooks                map[string][]config.HookDef
 	ScopedModels         *config.ScopedModelsConfig
+	PermissionMode       permission.Mode
 }

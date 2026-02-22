@@ -13,7 +13,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
-	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive"
+	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/btea"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/internal/pkgmanager"
@@ -25,7 +25,6 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/google"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/openai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/vertex"
-	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/terminal"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
@@ -322,34 +321,19 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 	return permission.ModeNormal
 }
 
-// runInteractive sets up the real terminal, defers crash recovery, and runs the TUI.
+// runInteractive starts the Bubble Tea interactive TUI.
 func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int) error {
-	term := terminal.NewProcessTerminal()
-	defer terminal.RestoreOnPanic(term)
-
-	deps := interactive.AppDeps{
-		Terminal:             term,
+	return btea.Run(btea.AppDeps{
 		Provider:             provider,
 		Model:                model,
 		Tools:                toolReg.All(),
 		Checker:              checker,
 		SystemPrompt:         systemPrompt,
 		Version:              version,
+		StatusEngine:         statusEngine,
 		AutoCompactThreshold: autoCompactThreshold,
-	}
-	if statusEngine != nil {
-		deps.StatusEngine = statusEngine
-	}
-	app := interactive.NewFromDeps(deps)
-
-	switch checker.Mode() {
-	case permission.ModeYolo:
-		app.SetYoloMode()
-	case permission.ModeAcceptEdits:
-		app.SetAcceptEditsMode()
-	}
-
-	return app.Run()
+		PermissionMode:       checker.Mode(),
+	})
 }
 
 // resolveTheme loads the theme from config. It checks:

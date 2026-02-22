@@ -15,6 +15,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -106,17 +107,33 @@ func NewAppModel(deps AppDeps) AppModel {
 	cwd := detectGitCWD()
 	toolCount := len(deps.Tools)
 
+	// Determine initial mode and permission label from PermissionMode.
+	initialMode := ModeEdit
+	permLabel := deps.PermissionMode.String()
+
+	switch deps.PermissionMode {
+	case permission.ModeYolo:
+		initialMode = ModeEdit
+	case permission.ModeAcceptEdits:
+		initialMode = ModeEdit
+	case permission.ModePlan:
+		initialMode = ModePlan
+	default:
+		// ModeNormal, ModeDontAsk, etc.: default to Edit with their label.
+		initialMode = ModeEdit
+	}
+
 	footer := NewFooterModel().
 		WithPath(cwd).
 		WithModel(modelName).
-		WithModeLabel("Edit").
-		WithPermissionMode("normal")
+		WithModeLabel(initialMode.String()).
+		WithPermissionMode(permLabel)
 
 	welcome := NewWelcomeModel(deps.Version, modelName, cwd, toolCount)
 
 	return AppModel{
 		sh:          &shared{ctx: ctx, cancel: cancel},
-		mode:        ModeEdit,
+		mode:        initialMode,
 		editor:      editor,
 		footer:      footer,
 		content:     []tea.Model{welcome},
