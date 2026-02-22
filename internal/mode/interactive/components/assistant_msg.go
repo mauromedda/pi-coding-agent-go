@@ -60,18 +60,27 @@ func (a *AssistantMessage) SetThinking(text string) {
 }
 
 // Render draws the assistant message with a blank spacer above.
+// Snapshots text under lock, wraps outside lock to avoid blocking AppendText.
 func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
-	// Snapshot state under lock, then write unlocked to avoid
-	// holding the mutex during buffer writes.
 	a.mu.Lock()
 	thinking := a.thinking
-	if a.buf.Len() > 0 && (a.dirty || w != a.cachedWidth) {
-		a.cachedLines = width.WrapTextWithAnsi(a.buf.String(), w)
-		a.cachedWidth = w
+	needsWrap := a.buf.Len() > 0 && (a.dirty || w != a.cachedWidth)
+	var rawText string
+	if needsWrap {
+		rawText = a.buf.String()
 		a.dirty = false
 	}
 	lines := a.cachedLines
 	a.mu.Unlock()
+
+	if needsWrap {
+		wrapped := width.WrapTextWithAnsi(rawText, w)
+		a.mu.Lock()
+		a.cachedLines = wrapped
+		a.cachedWidth = w
+		lines = wrapped
+		a.mu.Unlock()
+	}
 
 	out.WriteLine("")
 

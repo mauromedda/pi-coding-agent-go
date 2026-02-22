@@ -6,6 +6,7 @@ package components
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
@@ -138,6 +139,76 @@ func TestAssistantMessage(t *testing.T) {
 			msg.Render(buf, 80)
 			tt.check(t, buf.Lines)
 		})
+	}
+}
+
+func TestAssistantMessage_RenderDoesNotBlockAppendText(t *testing.T) {
+	t.Parallel()
+
+	msg := NewAssistantMessage()
+
+	// Pre-load ~100KB of text to make WrapTextWithAnsi expensive.
+	bigChunk := strings.Repeat("word ", 20000)
+	msg.AppendText(bigChunk)
+
+	// Force an initial render so cache is primed, then dirty it.
+	buf := tui.AcquireBuffer()
+	msg.Render(buf, 80)
+	tui.ReleaseBuffer(buf)
+	msg.Invalidate()
+
+	// Launch Render in a goroutine (it will re-wrap ~100KB).
+	renderDone := make(chan struct{})
+	go func() {
+		defer close(renderDone)
+		b := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(b)
+		msg.Render(b, 80)
+	}()
+
+	// Measure AppendText latency while Render is running.
+	start := time.Now()
+	msg.AppendText("extra")
+	elapsed := time.Since(start)
+
+	<-renderDone
+
+	// AppendText must not be blocked by the expensive wrap; 1ms is generous.
+	if elapsed > time.Millisecond {
+		t.Errorf("AppendText took %v while Render was running; want < 1ms", elapsed)
+	}
+}
+
+func TestAssistantMessage_EventualConsistency(t *testing.T) {
+	t.Parallel()
+
+	msg := NewAssistantMessage()
+	msg.AppendText("initial")
+
+	// First render: caches "initial".
+	buf := tui.AcquireBuffer()
+	msg.Render(buf, 80)
+	tui.ReleaseBuffer(buf)
+
+	// Append more text while no render is in progress.
+	msg.AppendText(" extra")
+
+	// Second render: must pick up the new text.
+	buf2 := tui.AcquireBuffer()
+	msg.Render(buf2, 80)
+
+	found := false
+	for _, line := range buf2.Lines {
+		stripped := width.StripANSI(line)
+		if strings.Contains(stripped, "extra") {
+			found = true
+			break
+		}
+	}
+	tui.ReleaseBuffer(buf2)
+
+	if !found {
+		t.Error("second Render should include text appended after first Render")
 	}
 }
 
