@@ -101,13 +101,13 @@ func TestFooter(t *testing.T) {
 			width: 10,
 			check: func(t *testing.T, lines []string) {
 				t.Helper()
-				// Must not panic; at least 1 space between left and right
+				// Must not panic; on narrow terminals the right portion is dropped
 				if len(lines) < 2 {
 					t.Fatalf("expected 2 lines, got %d", len(lines))
 				}
 				stripped := width.StripANSI(lines[1])
-				if !strings.Contains(stripped, " ") {
-					t.Error("line2 should have at least 1 space between left and right")
+				if len(stripped) == 0 {
+					t.Error("line2 should not be empty even on narrow terminals")
 				}
 			},
 		},
@@ -146,9 +146,12 @@ func TestFooter(t *testing.T) {
 				if len(lines) < 2 {
 					t.Fatalf("expected 2 lines, got %d", len(lines))
 				}
+				// Line 1 uses combined dim+color SGR (e.g. \x1b[2;36m)
+				// Line 2 uses dim for the right-aligned portion
 				for i, line := range lines {
-					if !strings.Contains(line, "\x1b[2m") {
-						t.Errorf("line %d should contain dim ANSI code \\x1b[2m", i)
+					hasDim := strings.Contains(line, "\x1b[2m") || strings.Contains(line, "\x1b[2;")
+					if !hasDim {
+						t.Errorf("line %d should contain dim ANSI code, got %q", i, line)
 					}
 					if !strings.Contains(line, "\x1b[0m") {
 						t.Errorf("line %d should contain reset ANSI code \\x1b[0m", i)
@@ -334,6 +337,85 @@ func TestFooter(t *testing.T) {
 		stripped := width.StripANSI(buf.Lines[1])
 		if strings.Contains(stripped, "[]") {
 			t.Errorf("empty mode label should not add brackets, got %q", stripped)
+		}
+	})
+
+	t.Run("git_branch_with_icon", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetGitBranch("main")
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		if len(buf.Lines) < 1 {
+			t.Fatal("expected at least 1 line")
+		}
+		stripped := width.StripANSI(buf.Lines[0])
+		if !strings.Contains(stripped, "main") {
+			t.Errorf("line1 should contain branch name 'main', got %q", stripped)
+		}
+	})
+
+	t.Run("cost_displayed_when_set", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetCost(12.50)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		found := false
+		for _, line := range buf.Lines {
+			stripped := width.StripANSI(line)
+			if strings.Contains(stripped, "$12.50") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("footer should display cost when set")
+		}
+	})
+
+	t.Run("cost_zero_not_displayed", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetCost(0)
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		for _, line := range buf.Lines {
+			stripped := width.StripANSI(line)
+			if strings.Contains(stripped, "$0.00") || strings.Contains(stripped, "$0") {
+				t.Error("footer should not display cost when zero")
+			}
+		}
+	})
+
+	t.Run("permission_mode_shown", func(t *testing.T) {
+		t.Parallel()
+		f := NewFooter()
+		f.SetPermissionMode("bypass")
+
+		buf := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(buf)
+		f.Render(buf, 80)
+
+		found := false
+		for _, line := range buf.Lines {
+			stripped := width.StripANSI(line)
+			if strings.Contains(stripped, "bypass") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("footer should display permission mode")
 		}
 	})
 }

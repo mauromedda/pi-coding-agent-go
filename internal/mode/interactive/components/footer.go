@@ -1,5 +1,5 @@
-// ABOUTME: Two-line status bar component showing context info and right-aligned metadata
-// ABOUTME: Line 1: project/branch info; Line 2: left content + padded right content
+// ABOUTME: Information-dense two-line status bar with project, git, model, cost, permissions
+// ABOUTME: Line 1: path + branch + model + cost; Line 2: mode + context% + stats
 
 package components
 
@@ -14,16 +14,19 @@ import (
 )
 
 // Footer displays status information at the bottom of the screen.
-// It renders two lines: line1 for context, line2 with left/right alignment.
+// It renders two lines with rich context about the current session.
 type Footer struct {
-	line1      string
-	line2Left  string
-	line2Right string
-	modeLabel  string
-	contextPct int
-	thinking   config.ThinkingLevel
-	model      string
-	mu         sync.Mutex
+	line1          string
+	line2Left      string
+	line2Right     string
+	modeLabel      string
+	contextPct     int
+	thinking       config.ThinkingLevel
+	model          string
+	gitBranch      string
+	cost           float64
+	permissionMode string
+	mu             sync.Mutex
 }
 
 // NewFooter creates a Footer component.
@@ -65,14 +68,14 @@ func (f *Footer) Content() string {
 	return f.line1
 }
 
-// SetThinkingLevel sets the thinking level for display
+// SetThinkingLevel sets the thinking level for display.
 func (f *Footer) SetThinkingLevel(level config.ThinkingLevel) {
 	f.mu.Lock()
 	f.thinking = level
 	f.mu.Unlock()
 }
 
-// SetModel sets the model name for display
+// SetModel sets the model name for display.
 func (f *Footer) SetModel(name string) {
 	f.mu.Lock()
 	f.model = name
@@ -93,7 +96,28 @@ func (f *Footer) SetModeLabel(label string) {
 	f.mu.Unlock()
 }
 
-// Render writes the two footer lines with dim styling.
+// SetGitBranch sets the git branch name for display.
+func (f *Footer) SetGitBranch(branch string) {
+	f.mu.Lock()
+	f.gitBranch = branch
+	f.mu.Unlock()
+}
+
+// SetCost sets the running API cost for display.
+func (f *Footer) SetCost(cost float64) {
+	f.mu.Lock()
+	f.cost = cost
+	f.mu.Unlock()
+}
+
+// SetPermissionMode sets the permission mode label for display.
+func (f *Footer) SetPermissionMode(mode string) {
+	f.mu.Lock()
+	f.permissionMode = mode
+	f.mu.Unlock()
+}
+
+// Render writes the two footer lines with rich status information.
 func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	f.mu.Lock()
 	line1 := f.line1
@@ -103,16 +127,56 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	contextPct := f.contextPct
 	thinking := f.thinking
 	model := f.model
+	gitBranch := f.gitBranch
+	cost := f.cost
+	permMode := f.permissionMode
 	f.mu.Unlock()
 
-	// Line 1
-	out.WriteLine("\x1b[2m" + line1 + "\x1b[0m")
+	// === Line 1: project path + git branch + model + cost ===
+	var parts []string
 
-	// Build line 2 with optional mode label and thinking level
-	line2 := line2Left
-	if modeLabel != "" {
-		line2 += fmt.Sprintf(" \x1b[33m%s\x1b[0m", modeLabel) // yellow for mode
+	// Project path (from line1 or fallback)
+	if line1 != "" {
+		parts = append(parts, fmt.Sprintf("\x1b[2;36m%s\x1b[0m", line1))
 	}
+
+	// Git branch with icon
+	if gitBranch != "" {
+		parts = append(parts, fmt.Sprintf("\x1b[2;32m\ue0a0 %s\x1b[0m", gitBranch))
+	}
+
+	// Model name
+	if model != "" {
+		parts = append(parts, fmt.Sprintf("\x1b[2;35m%s\x1b[0m", model))
+	}
+
+	// Cost (only if > 0)
+	if cost > 0 {
+		parts = append(parts, fmt.Sprintf("\x1b[2;33m$%.2f\x1b[0m", cost))
+	}
+
+	line1Str := strings.Join(parts, "\x1b[2m  \x1b[0m")
+	out.WriteLine(line1Str)
+
+	// === Line 2: mode + permissions + stats + context ===
+	line2 := line2Left
+
+	// Permission mode indicator
+	if permMode != "" {
+		permColor := "\x1b[33m" // yellow default
+		switch strings.ToLower(permMode) {
+		case "bypass", "yolo":
+			permColor = "\x1b[31m" // red for bypass
+		case "normal", "plan":
+			permColor = "\x1b[32m" // green for safe modes
+		}
+		line2 += fmt.Sprintf(" %s▸▸ %s\x1b[0m", permColor, permMode)
+	}
+
+	if modeLabel != "" {
+		line2 += fmt.Sprintf(" \x1b[33m%s\x1b[0m", modeLabel)
+	}
+
 	if contextPct > 0 {
 		ctxColor := "\x1b[90m" // dim for < 60%
 		if contextPct >= 80 {
@@ -122,19 +186,22 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 		}
 		line2 += fmt.Sprintf(" %sctx %d%%\x1b[0m", ctxColor, contextPct)
 	}
+
 	if thinking != config.ThinkingOff {
-		thinkingColor := "\x1b[36m" // cyan for thinking levels
-		thinkingStr := thinking.String()
-		line2 += fmt.Sprintf(" \x1b[90m[%s]\x1b[0m", fmt.Sprintf("%s\x1b[36m%s\x1b[0m", thinkingColor, thinkingStr))
-	}
-	if model != "" {
-		line2 += fmt.Sprintf(" \x1b[90m(%s)\x1b[0m", model)
+		line2 += fmt.Sprintf(" \x1b[36m[%s]\x1b[0m", thinking.String())
 	}
 
 	leftW := width.VisibleWidth(line2)
 	rightW := width.VisibleWidth(line2Right)
-	pad := max(w-leftW-rightW, 1)
-	fullLine2 := "\x1b[2m" + line2 + strings.Repeat(" ", pad) + line2Right + "\x1b[0m"
+	totalUsed := leftW + rightW
+	var fullLine2 string
+	if totalUsed >= w {
+		// Narrow terminal: truncate left side, drop right
+		fullLine2 = width.TruncateToWidth(line2, w)
+	} else {
+		pad := w - leftW - rightW
+		fullLine2 = line2 + strings.Repeat(" ", pad) + "\x1b[2m" + line2Right + "\x1b[0m"
+	}
 	out.WriteLine(fullLine2)
 }
 

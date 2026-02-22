@@ -76,3 +76,28 @@ func TestUserMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestUserMessage_has_background_highlight(t *testing.T) {
+	t.Parallel()
+
+	msg := NewUserMessage("test prompt")
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+
+	msg.Render(buf, 80)
+
+	// The user message should have a background color ANSI code
+	// to visually distinguish it from assistant messages.
+	// Look for \x1b[48;5; (256-color bg) or \x1b[7m (reverse) or \x1b[100m (bright black bg)
+	found := false
+	for _, line := range buf.Lines {
+		if strings.Contains(line, "\x1b[48;5;") || strings.Contains(line, "\x1b[7m") ||
+			strings.Contains(line, "\x1b[100m") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("user message should have a background highlight ANSI code for visual distinction")
+	}
+}

@@ -100,7 +100,7 @@ func TestAssistantMessage(t *testing.T) {
 					t.Fatalf("expected at least 2 lines, got %d", len(lines))
 				}
 				visible := width.StripANSI(lines[1])
-				if !strings.Contains(visible, "thinking") {
+				if !strings.Contains(strings.ToLower(visible), "thinking") {
 					t.Errorf("should show thinking indicator, got %q", visible)
 				}
 			},
@@ -138,5 +138,41 @@ func TestAssistantMessage(t *testing.T) {
 			msg.Render(buf, 80)
 			tt.check(t, buf.Lines)
 		})
+	}
+}
+
+func TestAssistantMessage_thinking_has_spinner_char(t *testing.T) {
+	t.Parallel()
+
+	msg := NewAssistantMessage()
+	msg.SetThinking("reasoning about code")
+
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	msg.Render(buf, 80)
+
+	// The thinking indicator should contain a braille spinner character
+	// instead of plain "thinking..."
+	thinkingLine := ""
+	for _, line := range buf.Lines {
+		stripped := width.StripANSI(line)
+		if strings.Contains(stripped, "hinking") || strings.Contains(stripped, "ndulating") {
+			thinkingLine = stripped
+			break
+		}
+	}
+	if thinkingLine == "" {
+		t.Fatal("expected a thinking indicator line")
+	}
+	// Should contain a spinner character (braille dots or similar)
+	hasSpinner := false
+	for _, r := range thinkingLine {
+		if r >= '⠋' && r <= '⣿' { // braille range
+			hasSpinner = true
+			break
+		}
+	}
+	if !hasSpinner {
+		t.Errorf("thinking indicator should contain a braille spinner character, got %q", thinkingLine)
 	}
 }

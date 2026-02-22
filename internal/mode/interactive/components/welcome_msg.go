@@ -1,5 +1,5 @@
-// ABOUTME: Welcome banner component showing version, model, cwd, shortcuts, and tool count
-// ABOUTME: Implements tui.Component; renders styled intro screen at session start
+// ABOUTME: Welcome banner component with ASCII π logo, version, model, shortcuts
+// ABOUTME: Implements tui.Component; renders branded startup screen at session start
 
 package components
 
@@ -35,33 +35,40 @@ func (w *WelcomeMessage) Render(out *tui.RenderBuffer, _ int) {
 		ver = "dev"
 	}
 
-	// Banner
-	out.WriteLine("\x1b[1m    \u03c0\x1b[0m")
+	// ASCII π logo (orange/warm accent)
+	out.WriteLine("\x1b[38;5;208m  ╭───────╮\x1b[0m")
+	out.WriteLine("\x1b[38;5;208m  │  \x1b[1mπ\x1b[0m\x1b[38;5;208m    │\x1b[0m")
+	out.WriteLine("\x1b[38;5;208m  ╰───────╯\x1b[0m")
 
-	// Version, model, cwd (dim)
-	out.WriteLine("\x1b[2m  pi-go v" + ver + "\x1b[0m")
-	out.WriteLine("\x1b[2m  " + w.modelName + "\x1b[0m")
-	out.WriteLine("\x1b[2m  " + w.cwd + "\x1b[0m")
+	// Version, model, cwd
+	out.WriteLine(fmt.Sprintf("  \x1b[1mpi-go\x1b[0m \x1b[2mv%s\x1b[0m", ver))
+	out.WriteLine(fmt.Sprintf("  \x1b[2m%s\x1b[0m", w.modelName))
+	out.WriteLine(fmt.Sprintf("  \x1b[36m%s\x1b[0m", w.cwd))
 
 	// Blank separator
 	out.WriteLine("")
 
-	// Keyboard shortcuts: bold key + dim description
+	// Keyboard shortcuts: two-column layout with padded keys
 	shortcuts := []struct {
 		key  string
 		desc string
 	}{
-		{"escape", "to interrupt"},
-		{"ctrl+c", "to clear"},
-		{"ctrl+c twice", "to exit"},
-		{"ctrl+d", "to exit (empty)"},
-		{"shift+tab", "to cycle mode"},
-		{"/", "for commands"},
-		{"!", "to run bash"},
+		{"escape", "interrupt"},
+		{"ctrl+c", "clear"},
+		{"ctrl+c twice", "exit"},
+		{"ctrl+d", "exit (empty)"},
+		{"shift+tab", "cycle mode"},
+		{"/", "commands"},
+		{"!", "run bash"},
 	}
 
+	const keyPad = 16 // pad key column to 16 chars
 	for _, s := range shortcuts {
-		out.WriteLine("  \x1b[1m" + s.key + "\x1b[0m\x1b[2m " + s.desc + "\x1b[0m")
+		padded := s.key
+		for len(padded) < keyPad {
+			padded += " "
+		}
+		out.WriteLine(fmt.Sprintf("  \x1b[1m%s\x1b[0m\x1b[2m%s\x1b[0m", padded, s.desc))
 	}
 
 	// Blank separator

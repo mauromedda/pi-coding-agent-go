@@ -150,3 +150,62 @@ func TestToolExec(t *testing.T) {
 		})
 	}
 }
+
+func TestToolExec_read_tool_uses_green_header(t *testing.T) {
+	t.Parallel()
+
+	te := NewToolExec("read", `/tmp/file.go`)
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	te.Render(buf, 80)
+
+	if len(buf.Lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(buf.Lines))
+	}
+	// The tool header line should use green for read operations
+	if !strings.Contains(buf.Lines[1], "\x1b[32m") {
+		t.Error("read tool header should use green ANSI color")
+	}
+}
+
+func TestToolExec_bash_tool_uses_amber_header(t *testing.T) {
+	t.Parallel()
+
+	te := NewToolExec("bash", `{"command":"ls"}`)
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	te.Render(buf, 80)
+
+	if len(buf.Lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(buf.Lines))
+	}
+	// The tool header line should use yellow/amber for bash operations
+	if !strings.Contains(buf.Lines[1], "\x1b[33m") {
+		t.Error("bash tool header should use yellow/amber ANSI color")
+	}
+}
+
+func TestToolExec_running_shows_braille_spinner(t *testing.T) {
+	t.Parallel()
+
+	te := NewToolExec("bash", `{"command":"sleep 5"}`)
+	buf := tui.AcquireBuffer()
+	defer tui.ReleaseBuffer(buf)
+	te.Render(buf, 80)
+
+	if len(buf.Lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(buf.Lines))
+	}
+	// Running tool should show a braille spinner character instead of ⟳
+	stripped := width.StripANSI(buf.Lines[1])
+	hasSpinner := false
+	for _, r := range stripped {
+		if r >= '⠋' && r <= '⣿' { // braille range
+			hasSpinner = true
+			break
+		}
+	}
+	if !hasSpinner {
+		t.Errorf("running tool should show braille spinner, got %q", stripped)
+	}
+}

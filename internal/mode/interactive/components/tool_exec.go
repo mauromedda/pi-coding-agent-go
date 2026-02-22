@@ -1,5 +1,5 @@
-// ABOUTME: Tool execution progress display component
-// ABOUTME: Shows tool name, arguments, and completion status
+// ABOUTME: Tool execution progress display with colored headers per tool type
+// ABOUTME: Shows braille spinner while running, green/red status when done
 
 package components
 
@@ -10,6 +10,22 @@ import (
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 )
+
+// toolColor returns the ANSI color code for a tool name header.
+// Read-like tools use green; bash/exec use amber; others use cyan.
+func toolColor(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "read") || strings.Contains(lower, "glob") || strings.Contains(lower, "grep"):
+		return "\x1b[32m" // green
+	case strings.Contains(lower, "bash") || strings.Contains(lower, "exec") || strings.Contains(lower, "shell"):
+		return "\x1b[33m" // yellow/amber
+	case strings.Contains(lower, "write") || strings.Contains(lower, "edit"):
+		return "\x1b[35m" // magenta
+	default:
+		return "\x1b[36m" // cyan
+	}
+}
 
 // ToolExec renders tool execution progress.
 type ToolExec struct {
@@ -48,17 +64,22 @@ func (t *ToolExec) Render(out *tui.RenderBuffer, _ int) {
 	t.mu.Lock()
 	out.WriteLine("")
 
-	// Tool name with status indicator
-	status := "\x1b[33m⟳\x1b[0m" // Yellow spinner
+	nameColor := toolColor(t.name)
+
+	// Status indicator: braille spinner while running, check/cross when done
+	var status string
 	if t.done {
 		if t.err != "" {
 			status = "\x1b[31m✗\x1b[0m" // Red cross
 		} else {
 			status = "\x1b[32m✓\x1b[0m" // Green check
 		}
+	} else {
+		spinner := SpinnerFrame()
+		status = fmt.Sprintf("\x1b[33m%c\x1b[0m", spinner) // Animated braille spinner
 	}
 
-	out.WriteLine(fmt.Sprintf("%s \x1b[1m%s\x1b[0m \x1b[2m%s\x1b[0m", status, t.name, t.args))
+	out.WriteLine(fmt.Sprintf("%s %s\x1b[1m%s\x1b[0m \x1b[2m%s\x1b[0m", status, nameColor, t.name, t.args))
 
 	if t.err != "" {
 		out.WriteLine("\x1b[31m  " + t.err + "\x1b[0m")

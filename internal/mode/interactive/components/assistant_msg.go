@@ -1,15 +1,30 @@
 // ABOUTME: Assistant message display component with streaming text and wrap caching
-// ABOUTME: Uses strings.Builder for O(1) amortized appends; caches wrapped lines
+// ABOUTME: Uses strings.Builder for O(1) amortized appends; braille spinner for thinking
 
 package components
 
 import (
+	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
+
+// brailleSpinnerFrames are the animation frames for the thinking indicator.
+var brailleSpinnerFrames = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+
+// spinnerIntervalMs controls the spinner frame rate (80ms per frame).
+const spinnerIntervalMs = 80
+
+// SpinnerFrame returns the current braille spinner character.
+// Uses wall-clock time; no background goroutine needed.
+func SpinnerFrame() rune {
+	idx := int(time.Now().UnixMilli()/spinnerIntervalMs) % len(brailleSpinnerFrames)
+	return brailleSpinnerFrames[idx]
+}
 
 // AssistantMessage renders an assistant's response.
 type AssistantMessage struct {
@@ -46,23 +61,28 @@ func (a *AssistantMessage) SetThinking(text string) {
 
 // Render draws the assistant message with a blank spacer above.
 func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
+	// Snapshot state under lock, then write unlocked to avoid
+	// holding the mutex during buffer writes.
 	a.mu.Lock()
+	thinking := a.thinking
+	if a.buf.Len() > 0 && (a.dirty || w != a.cachedWidth) {
+		a.cachedLines = width.WrapTextWithAnsi(a.buf.String(), w)
+		a.cachedWidth = w
+		a.dirty = false
+	}
+	lines := a.cachedLines
+	a.mu.Unlock()
+
 	out.WriteLine("")
 
-	if a.thinking != "" {
-		out.WriteLine("\x1b[2m" + "thinking..." + "\x1b[0m")
+	if thinking != "" {
+		spinner := SpinnerFrame()
+		out.WriteLine(fmt.Sprintf("\x1b[36m%c\x1b[0m \x1b[2mThinking...\x1b[0m", spinner))
 	}
 
-	if a.buf.Len() > 0 {
-		// Re-wrap only when content or width changed
-		if a.dirty || w != a.cachedWidth {
-			a.cachedLines = width.WrapTextWithAnsi(a.buf.String(), w)
-			a.cachedWidth = w
-			a.dirty = false
-		}
-		out.WriteLines(a.cachedLines)
+	if len(lines) > 0 {
+		out.WriteLines(lines)
 	}
-	a.mu.Unlock()
 }
 
 // Invalidate marks for re-render.

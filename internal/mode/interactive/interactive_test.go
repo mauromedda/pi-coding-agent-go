@@ -282,11 +282,13 @@ func TestUpdateFooter_WithTokenStats(t *testing.T) {
 		t.Errorf("footer line1 should contain git branch, got %q", line1)
 	}
 
-	// Line 2: token stats (left) + model (right)
-	line2 := buf.Lines[1]
-	if !strings.Contains(line2, "gpt-4o") {
-		t.Errorf("footer line2 should contain model, got %q", line2)
+	// Line 1 now also contains model name
+	if !strings.Contains(line1, "gpt-4o") {
+		t.Errorf("footer line1 should contain model, got %q", line1)
 	}
+
+	// Line 2: token stats (left) + permission mode
+	line2 := buf.Lines[1]
 	if !strings.Contains(line2, "\u219112k") {
 		t.Errorf("footer line2 should contain input tokens, got %q", line2)
 	}

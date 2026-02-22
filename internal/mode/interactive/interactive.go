@@ -779,41 +779,48 @@ func (a *App) askPermission(tool string, args map[string]any) (bool, error) {
 	}
 }
 
-// updateFooter refreshes the two-line footer: line1=cwd+branch, line2=stats+model.
+// updateFooter refreshes the rich two-line footer with all session info.
 func (a *App) updateFooter() {
 	if a.footer == nil {
 		return
 	}
 
-	// Line 1: CWD (shortened to ~) + (branch)
+	// Line 1: CWD (shortened to ~)
 	cwd, _ := os.Getwd()
 	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(cwd, home) {
 		cwd = "~" + cwd[len(home):]
 	}
-	line1 := cwd
-	if a.gitBranch != "" {
-		line1 = fmt.Sprintf("%s (%s)", cwd, a.gitBranch)
+	a.footer.SetLine1(cwd)
+
+	// Git branch (displayed with icon in footer)
+	a.footer.SetGitBranch(a.gitBranch)
+
+	// Model name
+	modelName := "none"
+	if a.model != nil {
+		modelName = a.model.Name
 	}
-	a.footer.SetLine1(line1)
+	a.footer.SetModel(modelName)
+
+	// Permission mode
+	if a.checker != nil {
+		a.footer.SetPermissionMode(a.checker.Mode().String())
+	}
 
 	// Line 2: token stats (left) + model (right)
 	inTok := int(a.totalInputTokens.Load())
 	outTok := int(a.totalOutputTokens.Load())
-	stats := fmt.Sprintf("\u2191%s \u2193%s",
+	stats := fmt.Sprintf("↑%s ↓%s",
 		formatTokenCount(inTok),
 		formatTokenCount(outTok))
 	tps := float64(a.tokPerSec.Load()) / 10.0
 	if tps > 0 {
-		stats = fmt.Sprintf("\u2191%s \u2193%s %.1f tok/s",
+		stats = fmt.Sprintf("↑%s ↓%s %.1f tok/s",
 			formatTokenCount(inTok),
 			formatTokenCount(outTok),
 			tps)
 	}
 
-	modelName := "none"
-	if a.model != nil {
-		modelName = a.model.Name
-	}
 	// Context occupation percentage
 	ctxTokens := int(a.lastContextTokens.Load())
 	if a.model != nil && a.model.MaxTokens > 0 && ctxTokens > 0 {
@@ -823,7 +830,7 @@ func (a *App) updateFooter() {
 		a.footer.SetContextPct(0)
 	}
 
-	a.footer.SetLine2(stats, modelName)
+	a.footer.SetLine2(stats, "")
 	a.footer.SetModeLabel(a.ModeLabel())
 }
 
