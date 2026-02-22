@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"golang.org/x/sync/errgroup"
 )
@@ -94,6 +95,7 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 	}()
 	// Terminal events (start, end, errors that break the loop) use emitFinal
 	// so they are delivered even after context cancellation.
+	pilog.Debug("agent: loop start model=%s tools=%d", a.model.Name, len(a.tools))
 	a.emitFinal(AgentEvent{Type: EventAgentStart})
 
 	for {
@@ -151,6 +153,7 @@ func (a *Agent) drainSteeringMessages(llmCtx *ai.Context) {
 
 // streamResponse streams a single LLM response, emitting text/thinking events.
 func (a *Agent) streamResponse(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOptions) (*ai.AssistantMessage, error) {
+	pilog.Debug("agent: streaming model=%s messages=%d", a.model.Name, len(llmCtx.Messages))
 	stream := a.provider.Stream(ctx, a.model, llmCtx, opts)
 
 	for evt := range stream.Events() {
@@ -324,6 +327,7 @@ func (a *Agent) executeSingleTool(ctx context.Context, tc toolCall) (toolExecRes
 		}
 	}
 
+	pilog.Debug("agent: tool %s (id=%s)", tc.Name, tc.ID)
 	a.emit(ctx, AgentEvent{
 		Type: EventToolStart, ToolID: tc.ID, ToolName: tc.Name, ToolArgs: tc.Args,
 	})

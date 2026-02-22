@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/httputil"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/sse"
@@ -67,6 +68,7 @@ func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Con
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
+	pilog.Debug("http: POST %s/v1/chat/completions model=%s", p.baseURL, model.Name)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		p.baseURL+"/v1/chat/completions", bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -81,6 +83,7 @@ func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Con
 		return fmt.Errorf("sending request: %w", err)
 	}
 	defer resp.Body.Close()
+	pilog.Debug("http: POST %s/v1/chat/completions → %d", p.baseURL, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))

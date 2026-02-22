@@ -56,6 +56,11 @@ func NewClient(baseURL string, headers map[string]string) *Client {
 	}
 }
 
+// BaseURL returns the base URL configured on this client.
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
 // Do sends an HTTP request with retry on 429 and 5xx status codes.
 // It returns the response from the last attempt, even if retries were exhausted.
 // If body implements io.Seeker, it is rewound before each retry attempt.

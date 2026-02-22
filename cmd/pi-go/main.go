@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
@@ -55,6 +56,10 @@ func main() {
 
 // run performs the full initialization sequence and dispatches to the selected mode.
 func run(args cliArgs) error {
+	if args.verbose {
+		pilog.SetLevel(pilog.LevelDebug)
+	}
+
 	registerProviders()
 
 	cwd, err := os.Getwd()

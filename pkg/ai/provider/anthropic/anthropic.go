@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/httputil"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/sse"
@@ -82,12 +83,14 @@ func (p *Provider) runStream(
 		return
 	}
 
+	pilog.Debug("http: POST %s%s model=%s", p.client.BaseURL(), messagesPath, model.Name)
 	reader, resp, err := p.client.StreamSSE(ctx, http.MethodPost, messagesPath, bytes.NewReader(bodyJSON))
 	if err != nil {
 		stream.FinishWithError(fmt.Errorf("failed to start SSE stream: %w", err))
 		return
 	}
 	defer resp.Body.Close()
+	pilog.Debug("http: POST %s%s → %d", p.client.BaseURL(), messagesPath, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		handleErrorResponse(stream, resp)
