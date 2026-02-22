@@ -92,6 +92,11 @@ type App struct {
 	fileMentionSelector *component.FileMentionSelector
 	fileMentionVisible  bool
 
+	// Command palette (slash command auto-completion)
+	cmdPalette        *components.CommandPalette
+	cmdPaletteVisible bool
+	cmdPaletteFilter  string
+
 	// Interactive panel components
 	sessionTree    *components.SessionTree
 	sessionTreeVis bool
@@ -426,6 +431,23 @@ func (a *App) onKey(k key.Key) {
 		}
 	}
 
+	// 6b. / key: show command palette (if agent not running, editor empty)
+	if k.Type == key.KeyRune && k.Rune == '/' && !a.agentRunning.Load() && !a.cmdPaletteVisible {
+		// Only show palette when editor is empty (start of input)
+		if a.editor.Text() == "" {
+			a.showCommandPalette()
+			a.tui.RequestRender()
+			return
+		}
+	}
+
+	// 6c. Handle command palette input if visible
+	if a.cmdPaletteVisible {
+		if handled := a.handleCommandPaletteInput(k); handled {
+			return
+		}
+	}
+
 	// 7. @ key: show file mention selector (if agent not running)
 	if k.Type == key.KeyRune && k.Rune == '@' && !a.agentRunning.Load() && !a.fileMentionVisible {
 		a.showFileMentionSelector()
@@ -670,6 +692,98 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 
 	a.updateFooter()
 	a.tui.RequestRender()
+}
+
+// --- Command palette ---
+
+// showCommandPalette displays the command palette for slash-command autocomplete.
+func (a *App) showCommandPalette() {
+	// Build command entries from the registry
+	cmds := a.cmdRegistry.List()
+	entries := make([]components.CommandEntry, len(cmds))
+	for i, cmd := range cmds {
+		entries[i] = components.CommandEntry{
+			Name:        cmd.Name,
+			Description: cmd.Description,
+		}
+	}
+
+	a.cmdPalette = components.NewCommandPalette(entries)
+	a.cmdPaletteVisible = true
+	a.cmdPaletteFilter = ""
+
+	container := a.tui.Container()
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
+	container.Add(a.cmdPalette)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
+}
+
+// hideCommandPalette removes the command palette from the container.
+func (a *App) hideCommandPalette() {
+	if a.cmdPalette != nil {
+		a.tui.Container().Remove(a.cmdPalette)
+	}
+	a.cmdPaletteVisible = false
+	a.cmdPalette = nil
+	a.cmdPaletteFilter = ""
+	a.tui.RequestRender()
+}
+
+// handleCommandPaletteInput routes input while the command palette is visible.
+func (a *App) handleCommandPaletteInput(k key.Key) bool {
+	if !a.cmdPaletteVisible || a.cmdPalette == nil {
+		return false
+	}
+
+	switch k.Type {
+	case key.KeyEscape:
+		a.hideCommandPalette()
+		return true
+
+	case key.KeyEnter, key.KeyTab:
+		// Accept selected command
+		selected := a.cmdPalette.Selected()
+		a.hideCommandPalette()
+		if selected != "" {
+			a.editor.SetText("/" + selected)
+		}
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyUp:
+		a.cmdPalette.MoveUp()
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyDown:
+		a.cmdPalette.MoveDown()
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyBackspace:
+		if len(a.cmdPaletteFilter) > 0 {
+			a.cmdPaletteFilter = a.cmdPaletteFilter[:len(a.cmdPaletteFilter)-1]
+			a.cmdPalette.SetFilter(a.cmdPaletteFilter)
+		} else {
+			a.hideCommandPalette()
+		}
+		a.tui.RequestRender()
+		return true
+
+	case key.KeyRune:
+		a.cmdPaletteFilter += string(k.Rune)
+		a.cmdPalette.SetFilter(a.cmdPaletteFilter)
+		a.tui.RequestRender()
+		return true
+	}
+
+	return false
 }
 
 // showFileMentionSelector displays the file mention selector component.

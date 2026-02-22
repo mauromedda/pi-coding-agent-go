@@ -901,6 +901,148 @@ func TestOnKey_AltT_CyclesThinkingLevel(t *testing.T) {
 	}
 }
 
+func TestOnKey_Slash_ShowsCommandPalette(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Type '/' to trigger command palette
+	app.onKey(key.Key{Type: key.KeyRune, Rune: '/'})
+
+	if !app.cmdPaletteVisible {
+		t.Error("expected command palette to be visible after typing '/'")
+	}
+}
+
+func TestCommandPalette_FilterAndAccept(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Show palette
+	app.onKey(key.Key{Type: key.KeyRune, Rune: '/'})
+	if !app.cmdPaletteVisible {
+		t.Fatal("expected palette visible")
+	}
+
+	// Type 'h' 'e' 'l' to filter to "help"
+	app.onKey(key.Key{Type: key.KeyRune, Rune: 'h'})
+	app.onKey(key.Key{Type: key.KeyRune, Rune: 'e'})
+	app.onKey(key.Key{Type: key.KeyRune, Rune: 'l'})
+
+	// Accept with Enter — should put "/help" in editor
+	app.onKey(key.Key{Type: key.KeyEnter})
+
+	if app.cmdPaletteVisible {
+		t.Error("expected palette hidden after Enter")
+	}
+
+	text := app.editor.Text()
+	if text != "/help" {
+		t.Errorf("expected editor text '/help', got %q", text)
+	}
+}
+
+func TestCommandPalette_EscapeCancels(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Show palette
+	app.onKey(key.Key{Type: key.KeyRune, Rune: '/'})
+	if !app.cmdPaletteVisible {
+		t.Fatal("expected palette visible")
+	}
+
+	// Escape should close without inserting
+	app.onKey(key.Key{Type: key.KeyEscape})
+
+	if app.cmdPaletteVisible {
+		t.Error("expected palette hidden after Escape")
+	}
+
+	text := app.editor.Text()
+	if text != "" {
+		t.Errorf("expected empty editor after Escape, got %q", text)
+	}
+}
+
+func TestCommandPalette_BackspaceTrimsFilter(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	// Show palette and type "he"
+	app.onKey(key.Key{Type: key.KeyRune, Rune: '/'})
+	app.onKey(key.Key{Type: key.KeyRune, Rune: 'h'})
+	app.onKey(key.Key{Type: key.KeyRune, Rune: 'e'})
+
+	// Backspace should trim to "h"
+	app.onKey(key.Key{Type: key.KeyBackspace})
+
+	if !app.cmdPaletteVisible {
+		t.Error("expected palette still visible after backspace")
+	}
+
+	// Backspace again to empty filter
+	app.onKey(key.Key{Type: key.KeyBackspace})
+
+	// Backspace on empty filter should close palette
+	app.onKey(key.Key{Type: key.KeyBackspace})
+
+	if app.cmdPaletteVisible {
+		t.Error("expected palette hidden after backspace on empty filter")
+	}
+}
+
 func TestCopyLastAssistantMessage_NoMessages(t *testing.T) {
 	t.Parallel()
 
