@@ -1003,6 +1003,52 @@ func TestCommandPalette_EscapeCancels(t *testing.T) {
 	}
 }
 
+func TestSubmitPrompt_BangEscape(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	container := app.tui.Container()
+	container.Add(app.editorSep)
+	container.Add(app.editor)
+	container.Add(app.editorSepBot)
+	container.Add(app.footer)
+
+	// Submit "!echo hello" — should be handled as bash escape
+	app.submitPrompt("!echo hello")
+
+	// Wait for any goroutine to finish
+	for app.agentRunning.Load() {
+	}
+
+	// The command should have been dispatched as a shell command, not sent to agent.
+	// Messages should include the user message but not trigger agent
+	// (since there's no provider, agent would error anyway).
+	// Check that the user message "!echo hello" was displayed
+	children := container.Children()
+	foundUserMsg := false
+	for _, c := range children {
+		if _, ok := c.(*components.UserMessage); ok {
+			foundUserMsg = true
+		}
+	}
+	if !foundUserMsg {
+		t.Error("expected UserMessage in container for bang command")
+	}
+}
+
 func TestCommandPalette_BackspaceTrimsFilter(t *testing.T) {
 	t.Parallel()
 

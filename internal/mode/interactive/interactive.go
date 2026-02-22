@@ -497,6 +497,12 @@ func (a *App) submitPrompt(text string) {
 		return
 	}
 
+	// Check for bang escape (! prefix): run shell command
+	if len(text) > 1 && text[0] == '!' {
+		a.handleBangCommand(container, text)
+		return
+	}
+
 	// Remove editor+footer temporarily
 	container.Remove(a.editorSep)
 	container.Remove(a.editor)
@@ -691,6 +697,37 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 	container.Add(a.footer)
 
 	a.updateFooter()
+	a.tui.RequestRender()
+}
+
+// handleBangCommand runs a shell command and displays its output.
+func (a *App) handleBangCommand(container *tuipkg.Container, text string) {
+	shellCmd := strings.TrimSpace(text[1:]) // strip leading '!'
+
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
+
+	container.Add(components.NewUserMessage(text))
+
+	msg := components.NewAssistantMessage()
+
+	// Run the shell command
+	cmd := exec.Command("sh", "-c", shellCmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		msg.AppendText(fmt.Sprintf("$ %s\n%s\n[exit: %v]", shellCmd, string(output), err))
+	} else {
+		msg.AppendText(fmt.Sprintf("$ %s\n%s", shellCmd, string(output)))
+	}
+
+	container.Add(msg)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
+
 	a.tui.RequestRender()
 }
 
