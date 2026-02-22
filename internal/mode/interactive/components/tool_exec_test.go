@@ -6,6 +6,7 @@ package components
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
@@ -38,6 +39,61 @@ func TestToolExec_ConcurrentAccess(t *testing.T) {
 			buf.Lines = buf.Lines[:0]
 			te.Render(buf, 80)
 		}
+	}
+}
+
+func TestToolExec_RenderDoesNotBlockAppendOutput(t *testing.T) {
+	t.Parallel()
+
+	te := NewToolExec("bash", `{"command":"long-running"}`)
+
+	// Pre-load output so Render has work to do.
+	bigChunk := strings.Repeat("output line\n", 5000)
+	te.AppendOutput(bigChunk)
+
+	// Launch Render in a goroutine.
+	renderDone := make(chan struct{})
+	go func() {
+		defer close(renderDone)
+		b := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(b)
+		te.Render(b, 80)
+	}()
+
+	// Measure AppendOutput latency while Render is running.
+	start := time.Now()
+	te.AppendOutput("extra")
+	elapsed := time.Since(start)
+
+	<-renderDone
+
+	if elapsed > time.Millisecond {
+		t.Errorf("AppendOutput took %v while Render was running; want < 1ms", elapsed)
+	}
+}
+
+func TestToolExec_SetDoneDoesNotBlockDuringRender(t *testing.T) {
+	t.Parallel()
+
+	te := NewToolExec("bash", `{"command":"slow"}`)
+	te.AppendOutput(strings.Repeat("data\n", 5000))
+
+	renderDone := make(chan struct{})
+	go func() {
+		defer close(renderDone)
+		b := tui.AcquireBuffer()
+		defer tui.ReleaseBuffer(b)
+		te.Render(b, 80)
+	}()
+
+	start := time.Now()
+	te.SetDone("")
+	elapsed := time.Since(start)
+
+	<-renderDone
+
+	if elapsed > time.Millisecond {
+		t.Errorf("SetDone took %v while Render was running; want < 1ms", elapsed)
 	}
 }
 

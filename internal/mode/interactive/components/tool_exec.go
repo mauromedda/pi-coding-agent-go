@@ -60,16 +60,23 @@ func (t *ToolExec) SetDone(errMsg string) {
 }
 
 // Render draws the tool execution status with a blank spacer above.
+// Snapshots state under lock; renders without holding it.
 func (t *ToolExec) Render(out *tui.RenderBuffer, _ int) {
 	t.mu.Lock()
+	name := t.name
+	args := t.args
+	done := t.done
+	errMsg := t.err
+	t.mu.Unlock()
+
 	out.WriteLine("")
 
-	nameColor := toolColor(t.name)
+	nameColor := toolColor(name)
 
 	// Status indicator: braille spinner while running, check/cross when done
 	var status string
-	if t.done {
-		if t.err != "" {
+	if done {
+		if errMsg != "" {
 			status = "\x1b[31m✗\x1b[0m" // Red cross
 		} else {
 			status = "\x1b[32m✓\x1b[0m" // Green check
@@ -79,12 +86,11 @@ func (t *ToolExec) Render(out *tui.RenderBuffer, _ int) {
 		status = fmt.Sprintf("\x1b[33m%c\x1b[0m", spinner) // Animated braille spinner
 	}
 
-	out.WriteLine(fmt.Sprintf("%s %s\x1b[1m%s\x1b[0m \x1b[2m%s\x1b[0m", status, nameColor, t.name, t.args))
+	out.WriteLine(fmt.Sprintf("%s %s\x1b[1m%s\x1b[0m \x1b[2m%s\x1b[0m", status, nameColor, name, args))
 
-	if t.err != "" {
-		out.WriteLine("\x1b[31m  " + t.err + "\x1b[0m")
+	if errMsg != "" {
+		out.WriteLine("\x1b[31m  " + errMsg + "\x1b[0m")
 	}
-	t.mu.Unlock()
 }
 
 // Invalidate is a no-op for ToolExec.
