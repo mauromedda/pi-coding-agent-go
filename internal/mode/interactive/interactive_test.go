@@ -901,6 +901,80 @@ func TestOnKey_AltT_CyclesThinkingLevel(t *testing.T) {
 	}
 }
 
+func TestOnKey_ShiftCtrlP_CyclesModel(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	scopedModels := &config.ScopedModelsConfig{
+		Models: []config.ScopedModel{
+			{Name: "model-a"},
+			{Name: "model-b"},
+			{Name: "model-c"},
+		},
+		Default: "model-a",
+	}
+	app := NewFromDeps(AppDeps{
+		Terminal:     vt,
+		Model:        &ai.Model{Name: "model-a"},
+		Checker:      checker,
+		ScopedModels: scopedModels,
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	shiftCtrlP := key.Key{Type: key.KeyRune, Rune: 'p', Ctrl: true, Shift: true}
+
+	// Cycle: model-a -> model-b
+	app.onKey(shiftCtrlP)
+	if app.model.Name != "model-b" {
+		t.Errorf("expected model-b after first cycle, got %q", app.model.Name)
+	}
+
+	// Cycle: model-b -> model-c
+	app.onKey(shiftCtrlP)
+	if app.model.Name != "model-c" {
+		t.Errorf("expected model-c after second cycle, got %q", app.model.Name)
+	}
+
+	// Cycle: model-c -> model-a (wrap)
+	app.onKey(shiftCtrlP)
+	if app.model.Name != "model-a" {
+		t.Errorf("expected model-a after wrap, got %q", app.model.Name)
+	}
+}
+
+func TestOnKey_ShiftCtrlP_NoopWithoutScopedModels(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test-model"},
+		Checker:  checker,
+		// No ScopedModels
+	})
+	app.editor = component.NewEditor()
+	app.footer = components.NewFooter()
+	app.editorSep = components.NewSeparator()
+	app.editorSepBot = components.NewSeparator()
+	app.tui.Start()
+	defer app.tui.Stop()
+
+	shiftCtrlP := key.Key{Type: key.KeyRune, Rune: 'p', Ctrl: true, Shift: true}
+
+	// Should not panic; model unchanged
+	app.onKey(shiftCtrlP)
+	if app.model.Name != "test-model" {
+		t.Errorf("expected model unchanged, got %q", app.model.Name)
+	}
+}
+
 func TestOnKey_AltT_UpdatesFooter(t *testing.T) {
 	t.Parallel()
 

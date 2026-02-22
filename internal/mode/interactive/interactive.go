@@ -343,7 +343,13 @@ func (a *App) onKey(k key.Key) {
 		return
 	}
 
-	// 4b. Alt+T: cycle thinking level
+	// 4b. Shift+Ctrl+P: cycle through scoped models
+	if k.Type == key.KeyRune && k.Ctrl && k.Shift && (k.Rune == 'p' || k.Rune == 'P') {
+		a.cycleModelForward()
+		return
+	}
+
+	// 4c. Alt+T: cycle thinking level
 	if k.Type == key.KeyRune && k.Alt && (k.Rune == 't' || k.Rune == 'T') {
 		nextIdx := (a.thinkingLevel.Index() + 1) % 6
 		a.thinkingLevel = config.ThinkingLevelFromIndex(nextIdx)
@@ -1040,6 +1046,20 @@ func (a *App) ToggleMode() {
 		a.editPermMode = a.checker.Mode()
 		a.checker.SetMode(permission.ModePlan)
 	}
+}
+
+// cycleModelForward advances to the next scoped model (wrap-around).
+func (a *App) cycleModelForward() {
+	if a.scopedModels == nil || a.model == nil {
+		return
+	}
+	next := a.scopedModels.CycleModels(a.model.Name, 1)
+	if next == a.model.Name {
+		return
+	}
+	a.model.Name = next
+	a.footer.SetModel(next)
+	a.tui.RequestRender()
 }
 
 // Mode returns the current mode.
