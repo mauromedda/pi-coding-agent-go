@@ -93,6 +93,7 @@ type App struct {
 	activeDialog atomic.Pointer[components.PermissionDialog]
 	messages     []ai.Message // conversation history
 	cmdRegistry  *commands.Registry
+	msgQueue     *MessageQueue // follow-up message queue
 
 	// Token stats + context info
 	totalInputTokens  atomic.Int64
@@ -129,6 +130,7 @@ func NewFromDeps(deps AppDeps) *App {
 		systemPrompt: deps.SystemPrompt,
 		version:      deps.Version,
 		cmdRegistry:          commands.NewRegistry(),
+		msgQueue:             NewMessageQueue(),
 		statusEngine:         deps.StatusEngine,
 		autoCompactThreshold: deps.AutoCompactThreshold,
 	}
@@ -304,7 +306,37 @@ func (a *App) onKey(k key.Key) {
 		return
 	}
 
-	// 5. Enter: submit prompt if agent not running and editor has text
+	// 5a. Alt+Enter: queue follow-up message while agent runs
+	if k.Type == key.KeyEnter && k.Alt {
+		text := a.editor.Text()
+		if text != "" {
+			a.msgQueue.Push(text)
+			a.editor.SetText("")
+			a.footer.SetQueuedCount(a.msgQueue.Count())
+			a.tui.RequestRender()
+		}
+		return
+	}
+
+	// 5b. Alt+Up/Down: cycle through message history when agent not running
+	if k.Alt && !a.agentRunning.Load() {
+		switch k.Type {
+		case key.KeyUp:
+			if msg := a.msgQueue.Prev(); msg != "" {
+				a.editor.SetText(msg)
+				a.tui.RequestRender()
+			}
+			return
+		case key.KeyDown:
+			if msg := a.msgQueue.Next(); msg != "" {
+				a.editor.SetText(msg)
+				a.tui.RequestRender()
+			}
+			return
+		}
+	}
+
+	// 5c. Enter: submit prompt if agent not running and editor has text
 	if k.Type == key.KeyEnter && !a.agentRunning.Load() {
 		text := a.editor.Text()
 		if text != "" {
@@ -710,8 +742,16 @@ func (a *App) runAgent() {
 
 	a.activeAgent = nil
 	a.autoCompactIfNeeded()
+	a.footer.SetQueuedCount(a.msgQueue.Count())
 	a.updateFooter()
 	a.tui.RequestRender()
+
+	// Auto-submit queued follow-up messages
+	if a.msgQueue.HasMessages() {
+		msg := a.msgQueue.Pop()
+		a.footer.SetQueuedCount(a.msgQueue.Count())
+		a.submitPrompt(msg)
+	}
 }
 
 // compactionThreshold returns the effective auto-compact threshold percentage.

@@ -63,6 +63,21 @@ func TestParseKey(t *testing.T) {
 		{name: "SS3 home", data: "\x1bOH", want: Key{Type: KeyHome}},
 		{name: "SS3 end", data: "\x1bOF", want: Key{Type: KeyEnd}},
 
+		// Alt key sequences (CSI modifier format: \x1b[1;3X)
+		{name: "alt+up CSI", data: "\x1b[1;3A", want: Key{Type: KeyUp, Alt: true}},
+		{name: "alt+down CSI", data: "\x1b[1;3B", want: Key{Type: KeyDown, Alt: true}},
+
+		// Alt key sequences (double-ESC format: \x1b\x1b[X)
+		{name: "alt+up double-ESC", data: "\x1b\x1b[A", want: Key{Type: KeyUp, Alt: true}},
+		{name: "alt+down double-ESC", data: "\x1b\x1b[B", want: Key{Type: KeyDown, Alt: true}},
+
+		// Alt+Enter (ESC+CR)
+		{name: "alt+enter", data: "\x1b\x0d", want: Key{Type: KeyEnter, Alt: true}},
+
+		// Alt+letter (ESC + printable byte)
+		{name: "alt+m", data: "\x1bm", want: Key{Type: KeyRune, Rune: 'm', Alt: true}},
+		{name: "alt+h", data: "\x1bh", want: Key{Type: KeyRune, Rune: 'h', Alt: true}},
+
 		// Unknown escape sequence
 		{name: "unknown escape", data: "\x1b[99Z", want: Key{Type: KeyUnknown}},
 	}
@@ -82,6 +97,9 @@ func TestParseKey(t *testing.T) {
 			}
 			if got.Shift != tt.want.Shift {
 				t.Errorf("ParseKey(%q).Shift = %v, want %v", tt.data, got.Shift, tt.want.Shift)
+			}
+			if got.Alt != tt.want.Alt {
+				t.Errorf("ParseKey(%q).Alt = %v, want %v", tt.data, got.Alt, tt.want.Alt)
 			}
 		})
 	}

@@ -25,4 +25,13 @@ var legacySequences = map[string]Key{
 	"\x1bOD": {Type: KeyLeft},
 	"\x1bOH": {Type: KeyHome},
 	"\x1bOF": {Type: KeyEnd},
+
+	// Alt+Enter (ESC + CR)
+	"\x1b\x0d": {Type: KeyEnter, Alt: true},
+
+	// Alt+arrows: double-ESC format (some terminals send ESC ESC [ X)
+	"\x1b\x1b[A": {Type: KeyUp, Alt: true},
+	"\x1b\x1b[B": {Type: KeyDown, Alt: true},
+	"\x1b\x1b[C": {Type: KeyRight, Alt: true},
+	"\x1b\x1b[D": {Type: KeyLeft, Alt: true},
 }

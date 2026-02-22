@@ -118,6 +118,11 @@ func parseEscapeSequence(data string) Key {
 		return Key{Type: KeyEscape}
 	}
 
+	// Alt+letter: ESC followed by a single printable byte (0x20..0x7e)
+	if len(data) == 2 && data[1] >= 0x20 && data[1] <= 0x7e {
+		return Key{Type: KeyRune, Rune: rune(data[1]), Alt: true}
+	}
+
 	return Key{Type: KeyUnknown}
 }
 

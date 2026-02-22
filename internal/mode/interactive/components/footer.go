@@ -26,6 +26,7 @@ type Footer struct {
 	gitBranch      string
 	cost           float64
 	permissionMode string
+	queuedCount    int
 	mu             sync.Mutex
 }
 
@@ -117,6 +118,13 @@ func (f *Footer) SetPermissionMode(mode string) {
 	f.mu.Unlock()
 }
 
+// SetQueuedCount sets the number of queued follow-up messages for display.
+func (f *Footer) SetQueuedCount(n int) {
+	f.mu.Lock()
+	f.queuedCount = n
+	f.mu.Unlock()
+}
+
 // Render writes the two footer lines with rich status information.
 func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	f.mu.Lock()
@@ -130,6 +138,7 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	gitBranch := f.gitBranch
 	cost := f.cost
 	permMode := f.permissionMode
+	queued := f.queuedCount
 	f.mu.Unlock()
 
 	// === Line 1: project path + git branch + model + cost ===
@@ -185,6 +194,10 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 			ctxColor = "\x1b[33m" // yellow
 		}
 		line2 += fmt.Sprintf(" %sctx %d%%\x1b[0m", ctxColor, contextPct)
+	}
+
+	if queued > 0 {
+		line2 += fmt.Sprintf(" \x1b[33m[%d queued]\x1b[0m", queued)
 	}
 
 	if thinking != config.ThinkingOff {
