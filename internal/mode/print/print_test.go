@@ -357,6 +357,71 @@ func TestRunWithConfig_MaxBudget(t *testing.T) {
 	}
 }
 
+func TestTextFormatter_OnlyOutputsFinalMessage(t *testing.T) {
+	// When tool calls interleave assistant text, only the LAST text segment
+	// (after the final tool call) should appear on stdout.
+	toolInput := json.RawMessage(`{"path":"/tmp/test.txt"}`)
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content: []ai.Content{
+					{Type: ai.ContentText, Text: "Let me read that file."},
+					{Type: ai.ContentToolUse, ID: "t1", Name: "read", Input: toolInput},
+				},
+				StopReason: ai.StopToolUse,
+			},
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "The file contains hello world."}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	readTool := &agent.AgentTool{
+		Name:     "read",
+		ReadOnly: true,
+		Execute: func(_ context.Context, _ string, _ map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
+			return agent.ToolResult{Content: "hello world"}, nil
+		},
+	}
+
+	cfg := Config{
+		OutputFormat: "text",
+		SystemPrompt: "test",
+	}
+	deps := Deps{
+		Provider: provider,
+		Model:    newTestModel(),
+		Tools:    []*agent.AgentTool{readTool},
+	}
+
+	var stderr string
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			err := RunWithConfig(context.Background(), cfg, deps, "read the file")
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	})
+
+	// Final message only
+	if !strings.Contains(stdout, "The file contains hello world.") {
+		t.Errorf("expected final message on stdout, got %q", stdout)
+	}
+
+	// Intermediate text must NOT appear
+	if strings.Contains(stdout, "Let me read that file") {
+		t.Errorf("intermediate text should not appear on stdout, got %q", stdout)
+	}
+
+	// Tool call info must NOT appear on stderr
+	if strings.Contains(stderr, "[tool:") {
+		t.Errorf("tool call info should not appear on stderr, got %q", stderr)
+	}
+}
+
 func TestEstimateTurnCost(t *testing.T) {
 	t.Parallel()
 

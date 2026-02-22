@@ -208,15 +208,18 @@ func newFormatter(format string) formatter {
 	}
 }
 
-// textFormatter outputs plain text to stdout.
-type textFormatter struct{}
+// textFormatter buffers assistant text and outputs only the final segment
+// (after the last tool call) so that -p produces clean, final-answer output.
+type textFormatter struct {
+	buf strings.Builder
+}
 
-func (f *textFormatter) start()                                         {}
-func (f *textFormatter) text(s string)                                  { fmt.Print(s) }
-func (f *textFormatter) toolStart(name string, _ map[string]any)        { fmt.Fprintf(os.Stderr, "[tool: %s]\n", name) }
-func (f *textFormatter) toolEnd(_ string, _ *agent.ToolResult)          {}
-func (f *textFormatter) err(e error)                                    { fmt.Fprintf(os.Stderr, "error: %v\n", e) }
-func (f *textFormatter) end()                                           { fmt.Println() }
+func (f *textFormatter) start()                                    {}
+func (f *textFormatter) text(s string)                             { f.buf.WriteString(s) }
+func (f *textFormatter) toolStart(_ string, _ map[string]any)      { f.buf.Reset() }
+func (f *textFormatter) toolEnd(_ string, _ *agent.ToolResult)     {}
+func (f *textFormatter) err(e error)                               { fmt.Fprintf(os.Stderr, "error: %v\n", e) }
+func (f *textFormatter) end()                                      { fmt.Println(f.buf.String()) }
 
 // jsonFormatter collects all output and writes a single JSON object at the end.
 type jsonFormatter struct {
