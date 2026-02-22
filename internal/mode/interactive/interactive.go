@@ -315,6 +315,12 @@ func (a *App) onKey(k key.Key) {
 		return
 	}
 
+	// 3b. Ctrl+G: open external editor
+	if k.Type == key.KeyCtrlG && !a.agentRunning.Load() {
+		a.openExternalEditor()
+		return
+	}
+
 	// 4. BackTab (Shift+Tab): toggle Plan/Edit mode
 	if k.Type == key.KeyBackTab {
 		a.ToggleMode()
@@ -1058,6 +1064,50 @@ func (a *App) SetAcceptEditsMode() {
 // StatusLine returns the status information for the footer.
 func (a *App) StatusLine(model string, totalCost float64) string {
 	return fmt.Sprintf("%s | %s | $%.4f", a.ModeLabel(), model, totalCost)
+}
+
+// openExternalEditor opens $VISUAL/$EDITOR/vi with the current editor text.
+func (a *App) openExternalEditor() {
+	// Resolve editor command
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	// Write current text to a temp file
+	tmpFile, err := os.CreateTemp("", "pi-go-*.md")
+	if err != nil {
+		return
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	_, _ = tmpFile.WriteString(a.editor.Text())
+	_ = tmpFile.Close()
+
+	// Exit raw mode so the editor can control the terminal
+	_ = a.term.ExitRawMode()
+
+	// Launch editor
+	cmd := exec.Command(editor, tmpPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Run()
+
+	// Read back the edited content
+	data, err := os.ReadFile(tmpPath)
+	if err == nil {
+		a.editor.SetText(strings.TrimRight(string(data), "\n"))
+	}
+
+	// Re-enter raw mode and refresh TUI
+	_ = a.term.EnterRawMode()
+	a.tui.FullClear()
+	a.tui.RequestRender()
 }
 
 // --- SessionTree panel ---
