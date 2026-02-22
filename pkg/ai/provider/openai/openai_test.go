@@ -416,6 +416,56 @@ func TestProviderStreamFinishReasonTerminatesEarly(t *testing.T) {
 	}
 }
 
+func TestProviderStreamNoExplicitDone(t *testing.T) {
+	t.Parallel()
+
+	// Server sends finish_reason then closes the connection normally (no [DONE]).
+	// Both the finish_reason flag and EOF path must produce a valid result.
+	sseBody := `data: {"id":"chatcmpl-2","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Done"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}}
+
+`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(sseBody))
+		// Connection closes normally after writing — no [DONE] marker.
+	}))
+	t.Cleanup(srv.Close)
+
+	provider := New("test-key", srv.URL)
+	stream := provider.Stream(context.Background(), &ai.ModelGPT4o, &ai.Context{
+		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
+	}, nil)
+
+	var texts []string
+	for ev := range stream.Events() {
+		if ev.Type == ai.EventContentDelta {
+			texts = append(texts, ev.Text)
+		}
+	}
+
+	result := stream.Result()
+	if result == nil {
+		t.Fatal("Result() returned nil")
+	}
+	if result.StopReason != ai.StopEndTurn {
+		t.Errorf("StopReason = %q, want %q", result.StopReason, ai.StopEndTurn)
+	}
+	if len(texts) == 0 {
+		t.Error("expected at least one text delta")
+	}
+	if result.Usage.InputTokens != 5 {
+		t.Errorf("InputTokens = %d, want 5", result.Usage.InputTokens)
+	}
+	if result.Usage.OutputTokens != 1 {
+		t.Errorf("OutputTokens = %d, want 1", result.Usage.OutputTokens)
+	}
+}
+
 func TestProviderRetryOn429(t *testing.T) {
 	t.Parallel()
 
