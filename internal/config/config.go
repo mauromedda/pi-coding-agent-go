@@ -169,6 +169,9 @@ func LoadAllWithHome(projectRoot, homeDir string, cliOverrides *Settings) (*Sett
 		result = merge(result, s)
 	}
 
+	// Expand ${VAR} patterns in string fields
+	ResolveEnvVars(result)
+
 	return result, nil
 }
 

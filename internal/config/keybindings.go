@@ -41,6 +41,13 @@ const (
 	ActionCycleModel     KeyAction = "cycleModel"
 	ActionToggleVim      KeyAction = "toggleVim"
 	ActionReload         KeyAction = "reload"
+	ActionOpenEditor     KeyAction = "openEditor"
+	ActionFileMention    KeyAction = "fileMention"
+	ActionAbort          KeyAction = "abort"
+	ActionExit           KeyAction = "exit"
+	ActionQueueFollowUp  KeyAction = "queueFollowUp"
+	ActionHistoryPrev    KeyAction = "historyPrev"
+	ActionHistoryNext    KeyAction = "historyNext"
 )
 
 // Keybindings represents the keybindings configuration
@@ -77,7 +84,7 @@ func (kb *Keybindings) setDefaultBindings() {
 	kb.Bindings[ActionHistoryDown] = []string{"alt+n"}
 	kb.Bindings[ActionToggleMode] = []string{"shift+tab"}
 	kb.Bindings[ActionSendMessage] = []string{"enter"}
-	kb.Bindings[ActionSendMessageAlt] = []string{"alt+enter"}
+	kb.Bindings[ActionSendMessageAlt] = []string{"shift+enter"}
 	kb.Bindings[ActionScrollUp] = []string{"pgup"}
 	kb.Bindings[ActionScrollDown] = []string{"pgdown"}
 	kb.Bindings[ActionPageUp] = []string{"shift+pgup"}
@@ -88,6 +95,13 @@ func (kb *Keybindings) setDefaultBindings() {
 	kb.Bindings[ActionCycleModel] = []string{"shift+ctrl+p"}
 	kb.Bindings[ActionToggleVim] = []string{"ctrl+@"}
 	kb.Bindings[ActionReload] = []string{"ctrl+r"}
+	kb.Bindings[ActionOpenEditor] = []string{"ctrl+g"}
+	kb.Bindings[ActionFileMention] = []string{"@"}
+	kb.Bindings[ActionAbort] = []string{"ctrl+c"}
+	kb.Bindings[ActionExit] = []string{"ctrl+d"}
+	kb.Bindings[ActionQueueFollowUp] = []string{"alt+enter"}
+	kb.Bindings[ActionHistoryPrev] = []string{"alt+up"}
+	kb.Bindings[ActionHistoryNext] = []string{"alt+down"}
 }
 
 // LoadKeybindings loads keybindings from a file

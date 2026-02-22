@@ -5,8 +5,11 @@ package commands
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mauromedda/pi-coding-agent-go/internal/changelog"
 )
 
 // Command represents a slash command.
@@ -56,6 +59,11 @@ type CommandContext struct {
 	ScopedModelsFn      func() string // /scoped-models: show model config
 	KeybindingsFn       func() string // /hotkeys: show keybindings
 	ListSessionsFn      func() string // /resume with no args: list sessions
+
+	// Phase 4 integration callbacks
+	GetSettings  func() string       // /settings: show current settings
+	ShareFn      func() string       // /share: share current session
+	ExportHTMLFn func(string) error  // /export <path>.html: HTML export handler
 }
 
 // Registry holds all registered slash commands.
@@ -377,13 +385,23 @@ func (r *Registry) registerCoreCommands() {
 		{
 			Name:        "export",
 			Category:    "Session",
-			Description: "Export conversation to file",
+			Description: "Export conversation to file (.md or .html)",
 			Execute: func(ctx *CommandContext, args string) (string, error) {
 				if ctx.ExportConversation == nil {
 					return "Export not available.", nil
 				}
 				if args == "" {
 					return "Usage: /export <path>", nil
+				}
+				ext := strings.ToLower(filepath.Ext(args))
+				if ext == ".html" || ext == ".htm" {
+					if ctx.ExportHTMLFn != nil {
+						if err := ctx.ExportHTMLFn(args); err != nil {
+							return "", fmt.Errorf("export HTML: %w", err)
+						}
+						return fmt.Sprintf("Exported HTML to %s.", args), nil
+					}
+					return "HTML export not available.", nil
 				}
 				if err := ctx.ExportConversation(args); err != nil {
 					return "", fmt.Errorf("export conversation: %w", err)
@@ -455,6 +473,36 @@ func (r *Registry) registerCoreCommands() {
 					return ctx.KeybindingsFn(), nil
 				}
 				return defaultHotkeysTable(), nil
+			},
+		},
+		{
+			Name:        "changelog",
+			Category:    "Info",
+			Description: "Show version history",
+			Execute: func(_ *CommandContext, _ string) (string, error) {
+				return changelog.Get(), nil
+			},
+		},
+		{
+			Name:        "settings",
+			Category:    "Config",
+			Description: "Show current settings",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.GetSettings != nil {
+					return ctx.GetSettings(), nil
+				}
+				return "Settings not available.", nil
+			},
+		},
+		{
+			Name:        "share",
+			Category:    "Session",
+			Description: "Share current session",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ShareFn != nil {
+					return ctx.ShareFn(), nil
+				}
+				return "Share not available.", nil
 			},
 		},
 	}

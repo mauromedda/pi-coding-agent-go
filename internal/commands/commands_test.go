@@ -1,5 +1,5 @@
 // ABOUTME: Tests for the slash command registry and dispatch
-// ABOUTME: Covers all 17 slash commands, unknown command error, nil callback safety, and IsCommand detection
+// ABOUTME: Covers all slash commands, unknown command error, nil callback safety, and IsCommand detection
 
 package commands
 
@@ -93,10 +93,10 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 	reg := NewRegistry()
 
 	expected := []string{
-		"clear", "compact", "config", "context", "cost",
+		"changelog", "clear", "compact", "config", "context", "cost",
 		"exit", "export", "help", "hooks", "hotkeys", "init", "mcp", "memory",
 		"model", "permissions", "plan", "reload", "rename", "resume", "sandbox",
-		"scoped-models", "status", "tree", "vim",
+		"scoped-models", "settings", "share", "status", "tree", "vim",
 	}
 	for _, name := range expected {
 		cmd, ok := reg.Get(name)
@@ -743,6 +743,326 @@ func TestDispatch_Exit_NilCallback(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(result), "not available") {
 		t.Errorf("expected 'not available' for nil callback, got %q", result)
+	}
+}
+
+func TestDispatch_Hooks_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.HookManagerFn = nil
+
+	result, err := reg.Dispatch(ctx, "/hooks")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil HookManagerFn, got %q", result)
+	}
+}
+
+func TestDispatch_Permissions_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.PermissionManagerFn = nil
+
+	result, err := reg.Dispatch(ctx, "/permissions")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil PermissionManagerFn, got %q", result)
+	}
+}
+
+func TestDispatch_Hotkeys_Default(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.KeybindingsFn = nil
+
+	result, err := reg.Dispatch(ctx, "/hotkeys")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should return the default hotkeys table.
+	for _, want := range []string{"Ctrl+C", "Ctrl+D", "Shift+Tab", "Enter"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("expected default hotkeys to contain %q, got:\n%s", want, result)
+		}
+	}
+}
+
+func TestDispatch_Tree_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.SessionTreeFn = nil
+
+	result, err := reg.Dispatch(ctx, "/tree")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil SessionTreeFn, got %q", result)
+	}
+}
+
+func TestDispatch_ScopedModels_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ScopedModelsFn = nil
+
+	result, err := reg.Dispatch(ctx, "/scoped-models")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil ScopedModelsFn, got %q", result)
+	}
+}
+
+func TestDispatch_Resume_NoArgsWithListFn(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	listCalled := false
+	ctx.ListSessionsFn = func() string {
+		listCalled = true
+		return "session-1\nsession-2\nsession-3"
+	}
+
+	result, err := reg.Dispatch(ctx, "/resume")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !listCalled {
+		t.Error("ListSessionsFn was not called")
+	}
+	if !strings.Contains(result, "session-1") {
+		t.Errorf("expected result to contain session list, got %q", result)
+	}
+}
+
+func TestHelp_HasCategories(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+
+	result, err := reg.Dispatch(ctx, "/help")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, header := range []string{"## Session", "## Config"} {
+		if !strings.Contains(result, header) {
+			t.Errorf("expected help output to contain category header %q, got:\n%s", header, result)
+		}
+	}
+}
+
+func TestDispatch_Settings(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	settingsCalled := false
+	ctx.GetSettings = func() string {
+		settingsCalled = true
+		return "theme: dark\neditor: vim"
+	}
+
+	result, err := reg.Dispatch(ctx, "/settings")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !settingsCalled {
+		t.Error("GetSettings was not called")
+	}
+	if !strings.Contains(result, "theme: dark") {
+		t.Errorf("expected settings output, got %q", result)
+	}
+}
+
+func TestDispatch_Settings_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.GetSettings = nil
+
+	result, err := reg.Dispatch(ctx, "/settings")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil GetSettings, got %q", result)
+	}
+}
+
+func TestDispatch_Changelog(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+
+	result, err := reg.Dispatch(ctx, "/changelog")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Changelog") {
+		t.Errorf("expected changelog content, got %q", result)
+	}
+}
+
+func TestDispatch_Share(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	shareCalled := false
+	ctx.ShareFn = func() string {
+		shareCalled = true
+		return "Share link: https://example.com/share/abc"
+	}
+
+	result, err := reg.Dispatch(ctx, "/share")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !shareCalled {
+		t.Error("ShareFn was not called")
+	}
+	if !strings.Contains(result, "https://example.com/share/abc") {
+		t.Errorf("expected share link in output, got %q", result)
+	}
+}
+
+func TestDispatch_Share_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ShareFn = nil
+
+	result, err := reg.Dispatch(ctx, "/share")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil ShareFn, got %q", result)
+	}
+}
+
+func TestDispatch_Export_HTMLDetection(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	var exportedPath string
+	ctx.ExportConversation = func(path string) error {
+		exportedPath = path
+		return nil
+	}
+
+	// Regular markdown export should still work.
+	result, err := reg.Dispatch(ctx, "/export /tmp/chat.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exportedPath != "/tmp/chat.md" {
+		t.Errorf("expected export path '/tmp/chat.md', got %q", exportedPath)
+	}
+	if !strings.Contains(result, "/tmp/chat.md") {
+		t.Errorf("expected path in result, got %q", result)
+	}
+}
+
+func TestDispatch_Export_HTMLWithCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	var htmlExportedPath string
+	ctx.ExportHTMLFn = func(path string) error {
+		htmlExportedPath = path
+		return nil
+	}
+
+	result, err := reg.Dispatch(ctx, "/export /tmp/chat.html")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if htmlExportedPath != "/tmp/chat.html" {
+		t.Errorf("expected ExportHTMLFn called with '/tmp/chat.html', got %q", htmlExportedPath)
+	}
+	if !strings.Contains(result, "HTML") {
+		t.Errorf("expected result to mention HTML, got %q", result)
+	}
+}
+
+func TestDispatch_Export_HTMLNilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ExportHTMLFn = nil
+
+	result, err := reg.Dispatch(ctx, "/export /tmp/chat.html")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil ExportHTMLFn, got %q", result)
+	}
+}
+
+func TestDispatch_Export_HTMExtension(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	var htmlExportedPath string
+	ctx.ExportHTMLFn = func(path string) error {
+		htmlExportedPath = path
+		return nil
+	}
+
+	result, err := reg.Dispatch(ctx, "/export /tmp/chat.htm")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if htmlExportedPath != "/tmp/chat.htm" {
+		t.Errorf("expected ExportHTMLFn called with '/tmp/chat.htm', got %q", htmlExportedPath)
+	}
+	if !strings.Contains(result, "HTML") {
+		t.Errorf("expected result to mention HTML, got %q", result)
+	}
+}
+
+func TestDispatch_Export_HTMLError(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ExportHTMLFn = func(_ string) error {
+		return fmt.Errorf("html render failed")
+	}
+
+	_, err := reg.Dispatch(ctx, "/export /tmp/chat.html")
+	if err == nil {
+		t.Fatal("expected error from ExportHTMLFn")
+	}
+	if !strings.Contains(err.Error(), "html render failed") {
+		t.Errorf("expected error to contain 'html render failed', got %q", err.Error())
 	}
 }
 
