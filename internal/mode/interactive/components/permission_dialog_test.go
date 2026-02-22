@@ -4,6 +4,7 @@
 package components
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -55,6 +56,33 @@ func TestPermissionDialog_ToolName(t *testing.T) {
 	d := NewPermissionDialog("write", "")
 	if d.ToolName() != "write" {
 		t.Errorf("ToolName() = %q, want %q", d.ToolName(), "write")
+	}
+}
+
+func TestPermissionDialog_WaitContext_Allow(t *testing.T) {
+	t.Parallel()
+
+	d := NewPermissionDialog("bash", `{"command":"ls"}`)
+
+	go d.Allow()
+
+	resp := d.WaitContext(context.Background())
+	if resp != PermAllow {
+		t.Errorf("WaitContext() = %v, want PermAllow", resp)
+	}
+}
+
+func TestPermissionDialog_WaitContext_CancelledContext(t *testing.T) {
+	t.Parallel()
+
+	d := NewPermissionDialog("bash", `{"command":"rm -rf /"}`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately before any response
+
+	resp := d.WaitContext(ctx)
+	if resp != PermDeny {
+		t.Errorf("WaitContext() with cancelled context = %v, want PermDeny", resp)
 	}
 }
 

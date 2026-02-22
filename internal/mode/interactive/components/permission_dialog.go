@@ -4,6 +4,7 @@
 package components
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
@@ -83,4 +84,15 @@ func (d *PermissionDialog) Deny() {
 // Wait blocks until the user responds.
 func (d *PermissionDialog) Wait() PermissionResponse {
 	return <-d.result
+}
+
+// WaitContext blocks until the user responds or the context is cancelled.
+// Returns PermDeny if the context is cancelled before a response arrives.
+func (d *PermissionDialog) WaitContext(ctx context.Context) PermissionResponse {
+	select {
+	case resp := <-d.result:
+		return resp
+	case <-ctx.Done():
+		return PermDeny
+	}
 }

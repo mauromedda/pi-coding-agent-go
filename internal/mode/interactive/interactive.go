@@ -759,8 +759,8 @@ func (a *App) askPermission(tool string, args map[string]any) (bool, error) {
 	})
 	a.tui.RequestRender()
 
-	// Blocks until user responds (y/a/n/Esc in onKey)
-	resp := dialog.Wait()
+	// Blocks until user responds (y/a/n/Esc in onKey) or context is cancelled.
+	resp := dialog.WaitContext(a.ctx)
 
 	switch resp {
 	case components.PermAllowAlways:
