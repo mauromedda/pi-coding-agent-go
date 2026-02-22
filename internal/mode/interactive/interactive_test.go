@@ -901,6 +901,57 @@ func TestOnKey_AltT_CyclesThinkingLevel(t *testing.T) {
 	}
 }
 
+func TestCopyLastAssistantMessage_NoMessages(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+
+	result, err := app.copyLastAssistantMessage()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "No assistant messages") {
+		t.Errorf("expected 'No assistant messages', got %q", result)
+	}
+}
+
+func TestCopyLastAssistantMessage_FindsLastAssistant(t *testing.T) {
+	t.Parallel()
+
+	vt := terminal.NewVirtualTerminal(80, 24)
+	checker := permission.NewChecker(permission.ModeNormal, nil)
+	app := NewFromDeps(AppDeps{
+		Terminal: vt,
+		Model:    &ai.Model{Name: "test"},
+		Checker:  checker,
+	})
+
+	// Add mixed messages
+	app.messages = []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "first reply"),
+		ai.NewTextMessage(ai.RoleUser, "more"),
+		ai.NewTextMessage(ai.RoleAssistant, "second reply"),
+	}
+
+	// Should find "second reply" (the last assistant message)
+	// We can't test clipboard write without the actual binary, but we can
+	// verify it doesn't error on macOS where pbcopy exists
+	result, err := app.copyLastAssistantMessage()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Copied") {
+		t.Errorf("expected 'Copied' result, got %q", result)
+	}
+}
+
 func TestOnKey_ShiftCtrlP_CyclesModel(t *testing.T) {
 	t.Parallel()
 

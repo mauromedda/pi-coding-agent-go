@@ -68,6 +68,17 @@ func testContext() (*CommandContext, *testCallbacks) {
 		ExitFn: func() {
 			cb.exitCalled = true
 		},
+		CopyLastMessageFn: func() (string, error) {
+			cb.copyCalled = true
+			return "Copied to clipboard.", nil
+		},
+		NewSessionFn: func() {
+			cb.newSessionCalled = true
+		},
+		ForkSessionFn: func() (string, error) {
+			cb.forkSessionCalled = true
+			return "fork-id-123", nil
+		},
 	}
 	return ctx, cb
 }
@@ -85,6 +96,9 @@ type testCallbacks struct {
 	mcpCalled          bool
 	exportArg          string
 	exitCalled         bool
+	copyCalled         bool
+	newSessionCalled   bool
+	forkSessionCalled  bool
 }
 
 func TestRegistry_AllCommandsRegistered(t *testing.T) {
@@ -93,9 +107,9 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 	reg := NewRegistry()
 
 	expected := []string{
-		"changelog", "clear", "compact", "config", "context", "cost",
-		"exit", "export", "help", "hooks", "hotkeys", "init", "mcp", "memory",
-		"model", "permissions", "plan", "reload", "rename", "resume", "sandbox",
+		"changelog", "clear", "compact", "config", "context", "copy", "cost",
+		"exit", "export", "fork", "help", "hooks", "hotkeys", "init", "mcp", "memory",
+		"model", "new", "permissions", "plan", "quit", "reload", "rename", "resume", "sandbox",
 		"scoped-models", "settings", "share", "status", "tree", "vim",
 	}
 	for _, name := range expected {
@@ -1063,6 +1077,160 @@ func TestDispatch_Export_HTMLError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "html render failed") {
 		t.Errorf("expected error to contain 'html render failed', got %q", err.Error())
+	}
+}
+
+func TestDispatch_Copy(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+
+	result, err := reg.Dispatch(ctx, "/copy")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.copyCalled {
+		t.Error("CopyLastMessageFn was not called")
+	}
+	if !strings.Contains(strings.ToLower(result), "copied") {
+		t.Errorf("expected result to contain 'copied', got %q", result)
+	}
+}
+
+func TestDispatch_Copy_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.CopyLastMessageFn = nil
+
+	result, err := reg.Dispatch(ctx, "/copy")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil callback, got %q", result)
+	}
+}
+
+func TestDispatch_New(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+
+	result, err := reg.Dispatch(ctx, "/new")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.newSessionCalled {
+		t.Error("NewSessionFn was not called")
+	}
+	if !strings.Contains(strings.ToLower(result), "new session") {
+		t.Errorf("expected result to contain 'new session', got %q", result)
+	}
+}
+
+func TestDispatch_New_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.NewSessionFn = nil
+
+	result, err := reg.Dispatch(ctx, "/new")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil callback, got %q", result)
+	}
+}
+
+func TestDispatch_Fork(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+
+	result, err := reg.Dispatch(ctx, "/fork")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.forkSessionCalled {
+		t.Error("ForkSessionFn was not called")
+	}
+	if !strings.Contains(result, "fork-id-123") {
+		t.Errorf("expected result to contain fork ID, got %q", result)
+	}
+}
+
+func TestDispatch_Fork_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ForkSessionFn = nil
+
+	result, err := reg.Dispatch(ctx, "/fork")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil callback, got %q", result)
+	}
+}
+
+func TestDispatch_Fork_Error(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ForkSessionFn = func() (string, error) {
+		return "", fmt.Errorf("session not saved")
+	}
+
+	_, err := reg.Dispatch(ctx, "/fork")
+	if err == nil {
+		t.Fatal("expected error from ForkSessionFn")
+	}
+	if !strings.Contains(err.Error(), "session not saved") {
+		t.Errorf("expected error to contain 'session not saved', got %q", err.Error())
+	}
+}
+
+func TestDispatch_Quit(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+
+	result, err := reg.Dispatch(ctx, "/quit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.exitCalled {
+		t.Error("ExitFn was not called (quit should alias exit)")
+	}
+	if !strings.Contains(strings.ToLower(result), "goodbye") {
+		t.Errorf("expected goodbye message, got %q", result)
+	}
+}
+
+func TestDispatch_Quit_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.ExitFn = nil
+
+	result, err := reg.Dispatch(ctx, "/quit")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil callback, got %q", result)
 	}
 }
 

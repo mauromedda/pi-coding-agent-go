@@ -60,6 +60,11 @@ type CommandContext struct {
 	KeybindingsFn       func() string // /hotkeys: show keybindings
 	ListSessionsFn      func() string // /resume with no args: list sessions
 
+	// Session management callbacks
+	CopyLastMessageFn func() (string, error) // /copy: copy last assistant message to clipboard
+	NewSessionFn      func()                 // /new: start new session
+	ForkSessionFn     func() (string, error) // /fork: fork current session
+
 	// Phase 4 integration callbacks
 	GetSettings  func() string       // /settings: show current settings
 	ShareFn      func() string       // /share: share current session
@@ -503,6 +508,56 @@ func (r *Registry) registerCoreCommands() {
 					return ctx.ShareFn(), nil
 				}
 				return "Share not available.", nil
+			},
+		},
+		{
+			Name:        "copy",
+			Category:    "Session",
+			Description: "Copy last assistant message to clipboard",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.CopyLastMessageFn == nil {
+					return "Copy not available.", nil
+				}
+				return ctx.CopyLastMessageFn()
+			},
+		},
+		{
+			Name:        "new",
+			Category:    "Session",
+			Description: "Start a new session",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.NewSessionFn == nil {
+					return "New session not available.", nil
+				}
+				ctx.NewSessionFn()
+				return "Started new session.", nil
+			},
+		},
+		{
+			Name:        "fork",
+			Category:    "Session",
+			Description: "Fork current session",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ForkSessionFn == nil {
+					return "Fork not available.", nil
+				}
+				newID, err := ctx.ForkSessionFn()
+				if err != nil {
+					return "", fmt.Errorf("fork session: %w", err)
+				}
+				return fmt.Sprintf("Forked session: %s", newID), nil
+			},
+		},
+		{
+			Name:        "quit",
+			Category:    "Info",
+			Description: "Exit the application (alias for /exit)",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.ExitFn == nil {
+					return "Exit not available.", nil
+				}
+				ctx.ExitFn()
+				return "Goodbye.", nil
 			},
 		},
 	}

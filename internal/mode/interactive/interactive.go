@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/clipboard"
+
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
@@ -103,6 +105,7 @@ type App struct {
 	scopedModels *config.ScopedModelsConfig
 
 	// State
+	sessionID    string // persisted session ID (empty if not yet saved)
 	agentRunning atomic.Bool
 	activeAgent  *agent.Agent
 	activeDialog atomic.Pointer[components.PermissionDialog]
@@ -585,6 +588,33 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 			}
 			return b.String()
 		},
+		CopyLastMessageFn: func() (string, error) {
+			return a.copyLastAssistantMessage()
+		},
+		NewSessionFn: func() {
+			a.messages = nil
+			a.current = nil
+			a.totalInputTokens.Store(0)
+			a.totalOutputTokens.Store(0)
+			a.lastContextTokens.Store(0)
+			a.tokPerSec.Store(0)
+			container.Clear()
+			a.printWelcome(container)
+			a.updateFooter()
+			a.tui.FullClear()
+			a.tui.RequestRender()
+		},
+		ForkSessionFn: func() (string, error) {
+			if a.sessionID == "" {
+				return "", fmt.Errorf("no active session to fork (session not persisted)")
+			}
+			sessDir := config.SessionsDir()
+			result, err := session.Fork(sessDir, a.sessionID)
+			if err != nil {
+				return "", err
+			}
+			return result.NewID, nil
+		},
 		ListSessionsFn: func() string {
 			sessions, err := session.ListSessions()
 			if err != nil {
@@ -1046,6 +1076,31 @@ func (a *App) ToggleMode() {
 		a.editPermMode = a.checker.Mode()
 		a.checker.SetMode(permission.ModePlan)
 	}
+}
+
+// copyLastAssistantMessage finds the last assistant message and copies its text to clipboard.
+func (a *App) copyLastAssistantMessage() (string, error) {
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == ai.RoleAssistant {
+			var text strings.Builder
+			for _, c := range a.messages[i].Content {
+				if c.Type == ai.ContentText && c.Text != "" {
+					if text.Len() > 0 {
+						text.WriteString("\n")
+					}
+					text.WriteString(c.Text)
+				}
+			}
+			if text.Len() == 0 {
+				return "No text in last assistant message.", nil
+			}
+			if err := clipboard.Write(text.String()); err != nil {
+				return "", fmt.Errorf("clipboard write: %w", err)
+			}
+			return "Copied to clipboard.", nil
+		}
+	}
+	return "No assistant messages to copy.", nil
 }
 
 // cycleModelForward advances to the next scoped model (wrap-around).
