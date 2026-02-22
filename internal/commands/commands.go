@@ -1,5 +1,5 @@
 // ABOUTME: Slash command registry and dispatch for interactive mode
-// ABOUTME: Provides 18 slash commands: clear, compact, config, context, cost, exit, export, help, init, mcp, memory, model, plan, rename, resume, sandbox, status, vim
+// ABOUTME: Provides categorized slash commands with nilable callback pattern for extensibility
 
 package commands
 
@@ -12,6 +12,7 @@ import (
 // Command represents a slash command.
 type Command struct {
 	Name        string
+	Category    string
 	Description string
 	Execute     func(ctx *CommandContext, args string) (string, error)
 }
@@ -47,6 +48,14 @@ type CommandContext struct {
 	MCPServers         func() []string
 	ExportConversation func(string) error
 	ReloadFn           func() (string, error)
+
+	// Phase 1 integration callbacks
+	SessionTreeFn       func() string // /tree: show interactive session tree
+	HookManagerFn       func() string // /hooks: show hook manager
+	PermissionManagerFn func() string // /permissions: show permission manager
+	ScopedModelsFn      func() string // /scoped-models: show model config
+	KeybindingsFn       func() string // /hotkeys: show keybindings
+	ListSessionsFn      func() string // /resume with no args: list sessions
 }
 
 // Registry holds all registered slash commands.
@@ -109,11 +118,26 @@ func IsCommand(input string) bool {
 	return len(input) > 0 && input[0] == '/'
 }
 
+// defaultHotkeysTable returns a formatted table of default keybindings.
+func defaultHotkeysTable() string {
+	return `Keyboard shortcuts:
+
+  Ctrl+C        Abort / Exit
+  Ctrl+D        Exit
+  Ctrl+G        Open external editor
+  Shift+Tab     Toggle Plan/Edit mode
+  Enter         Send message
+  @             File mention autocomplete
+  Alt+Enter     Queue follow-up message
+  Alt+Up/Down   Cycle message history`
+}
+
 // registerCoreCommands adds all built-in slash commands to the registry.
 func (r *Registry) registerCoreCommands() {
 	core := []*Command{
 		{
 			Name:        "clear",
+			Category:    "Session",
 			Description: "Clear conversation history",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				ctx.ClearHistory()
@@ -125,6 +149,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "compact",
+			Category:    "Session",
 			Description: "Compact conversation into a summary",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				return ctx.CompactFn(), nil
@@ -132,6 +157,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "config",
+			Category:    "Config",
 			Description: "Show current configuration",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				return fmt.Sprintf(
@@ -142,18 +168,37 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "help",
+			Category:    "Info",
 			Description: "Show available commands",
-			Execute: func(ctx *CommandContext, _ string) (string, error) {
+			Execute: func(_ *CommandContext, _ string) (string, error) {
+				// Group commands by category
+				categories := map[string][]*Command{}
+				categoryOrder := []string{"Session", "Mode", "Config", "Info"}
+				for _, cmd := range r.List() {
+					cat := cmd.Category
+					if cat == "" {
+						cat = "Info"
+					}
+					categories[cat] = append(categories[cat], cmd)
+				}
 				var b strings.Builder
 				b.WriteString("Available commands:\n")
-				for _, cmd := range r.List() {
-					fmt.Fprintf(&b, "  /%s — %s\n", cmd.Name, cmd.Description)
+				for _, cat := range categoryOrder {
+					cmds := categories[cat]
+					if len(cmds) == 0 {
+						continue
+					}
+					fmt.Fprintf(&b, "\n## %s\n", cat)
+					for _, cmd := range cmds {
+						fmt.Fprintf(&b, "  /%s — %s\n", cmd.Name, cmd.Description)
+					}
 				}
 				return b.String(), nil
 			},
 		},
 		{
 			Name:        "model",
+			Category:    "Mode",
 			Description: "Show or change the current model",
 			Execute: func(ctx *CommandContext, args string) (string, error) {
 				if args == "" {
@@ -168,6 +213,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "status",
+			Category:    "Info",
 			Description: "Show session status",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				return fmt.Sprintf(
@@ -178,6 +224,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "init",
+			Category:    "Info",
 			Description: "Initialize project configuration",
 			Execute: func(_ *CommandContext, _ string) (string, error) {
 				return "Project initialized.", nil
@@ -185,6 +232,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "memory",
+			Category:    "Info",
 			Description: "Show memory entries",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if len(ctx.MemoryEntries) == 0 {
@@ -200,6 +248,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "context",
+			Category:    "Info",
 			Description: "Show current context info",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				return fmt.Sprintf(
@@ -210,6 +259,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "cost",
+			Category:    "Info",
 			Description: "Show session cost breakdown",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				return fmt.Sprintf(
@@ -220,6 +270,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "exit",
+			Category:    "Info",
 			Description: "Exit the application",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if ctx.ExitFn == nil {
@@ -231,6 +282,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "plan",
+			Category:    "Mode",
 			Description: "Toggle plan mode",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if ctx.ToggleMode == nil || ctx.GetMode == nil {
@@ -242,6 +294,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "rename",
+			Category:    "Session",
 			Description: "Rename current session",
 			Execute: func(ctx *CommandContext, args string) (string, error) {
 				if ctx.RenameSession == nil {
@@ -256,13 +309,17 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "resume",
+			Category:    "Session",
 			Description: "Resume a previous session",
 			Execute: func(ctx *CommandContext, args string) (string, error) {
+				if args == "" {
+					if ctx.ListSessionsFn != nil {
+						return ctx.ListSessionsFn(), nil
+					}
+					return "Usage: /resume <id>", nil
+				}
 				if ctx.ResumeSession == nil {
 					return "Resume not available.", nil
-				}
-				if args == "" {
-					return "Usage: /resume <id>", nil
 				}
 				if err := ctx.ResumeSession(args); err != nil {
 					return "", fmt.Errorf("resume session: %w", err)
@@ -272,6 +329,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "sandbox",
+			Category:    "Config",
 			Description: "Show sandbox status",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if ctx.SandboxStatus == nil {
@@ -282,6 +340,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "vim",
+			Category:    "Mode",
 			Description: "Toggle vim mode",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if ctx.ToggleVim == nil || ctx.VimEnabled == nil {
@@ -297,6 +356,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "mcp",
+			Category:    "Config",
 			Description: "List MCP servers",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if ctx.MCPServers == nil {
@@ -316,6 +376,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "export",
+			Category:    "Session",
 			Description: "Export conversation to file",
 			Execute: func(ctx *CommandContext, args string) (string, error) {
 				if ctx.ExportConversation == nil {
@@ -332,26 +393,68 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "tree",
+			Category:    "Session",
 			Description: "Show session tree (branch structure)",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
-				return "Session tree: " + ctx.Model, nil
+				if ctx.SessionTreeFn != nil {
+					return ctx.SessionTreeFn(), nil
+				}
+				return "Session tree not available.", nil
 			},
 		},
 		{
 			Name:        "scoped-models",
+			Category:    "Mode",
 			Description: "Manage scoped models configuration",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
-				return "Scoped models: " + ctx.Model, nil
+				if ctx.ScopedModelsFn != nil {
+					return ctx.ScopedModelsFn(), nil
+				}
+				return "Scoped models not available.", nil
 			},
 		},
 		{
 			Name:        "reload",
+			Category:    "Config",
 			Description: "Reload configuration files",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
 				if ctx.ReloadFn == nil {
 					return "Reload not available.", nil
 				}
 				return ctx.ReloadFn()
+			},
+		},
+		{
+			Name:        "hooks",
+			Category:    "Config",
+			Description: "Show and manage hooks",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.HookManagerFn != nil {
+					return ctx.HookManagerFn(), nil
+				}
+				return "Hook manager not available.", nil
+			},
+		},
+		{
+			Name:        "permissions",
+			Category:    "Config",
+			Description: "Show and manage permission rules",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.PermissionManagerFn != nil {
+					return ctx.PermissionManagerFn(), nil
+				}
+				return "Permission manager not available.", nil
+			},
+		},
+		{
+			Name:        "hotkeys",
+			Category:    "Info",
+			Description: "Show keyboard shortcuts",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.KeybindingsFn != nil {
+					return ctx.KeybindingsFn(), nil
+				}
+				return defaultHotkeysTable(), nil
 			},
 		},
 	}

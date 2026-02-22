@@ -94,8 +94,8 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 
 	expected := []string{
 		"clear", "compact", "config", "context", "cost",
-		"exit", "export", "help", "init", "mcp", "memory",
-		"model", "plan", "reload", "rename", "resume", "sandbox",
+		"exit", "export", "help", "hooks", "hotkeys", "init", "mcp", "memory",
+		"model", "permissions", "plan", "reload", "rename", "resume", "sandbox",
 		"scoped-models", "status", "tree", "vim",
 	}
 	for _, name := range expected {
@@ -115,7 +115,7 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 		}
 	}
 
-	// Verify List returns exactly 17 commands, sorted.
+	// Verify List returns all commands, sorted.
 	all := reg.List()
 	if len(all) != len(expected) {
 		t.Fatalf("expected %d commands, got %d", len(expected), len(all))
@@ -123,6 +123,9 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 	for i, cmd := range all {
 		if cmd.Name != expected[i] {
 			t.Errorf("List()[%d]: expected %q, got %q", i, expected[i], cmd.Name)
+		}
+		if cmd.Category == "" {
+			t.Errorf("command %q has empty Category", cmd.Name)
 		}
 	}
 }

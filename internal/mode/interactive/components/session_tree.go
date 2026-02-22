@@ -49,6 +49,13 @@ func NewSessionTree(roots []*SessionNode) *SessionTree {
 	}
 }
 
+// Filter returns the current search filter string.
+func (st *SessionTree) Filter() string {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.filter
+}
+
 // SetFilter sets the search filter string
 func (st *SessionTree) SetFilter(f string) {
 	st.mu.Lock()

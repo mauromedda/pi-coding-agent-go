@@ -8,9 +8,25 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
 )
+
+// ConvertFromConfig maps config.HookDef entries to Hook structs.
+func ConvertFromConfig(hooksByEvent map[string][]config.HookDef) []*Hook {
+	var hooks []*Hook
+	for event, defs := range hooksByEvent {
+		for _, def := range defs {
+			hooks = append(hooks, &Hook{
+				Pattern: def.Matcher,
+				Enabled: true,
+				Event:   event,
+			})
+		}
+	}
+	return hooks
+}
 
 // Hook represents a hook configuration
 type Hook struct {

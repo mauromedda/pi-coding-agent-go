@@ -15,6 +15,7 @@ import (
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
+	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/components"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/internal/session"
@@ -58,6 +59,8 @@ type AppDeps struct {
 	Version              string
 	StatusEngine         *statusline.Engine
 	AutoCompactThreshold int
+	Hooks                map[string][]config.HookDef
+	ScopedModels         *config.ScopedModelsConfig
 }
 
 // App is the main interactive application.
@@ -86,6 +89,18 @@ type App struct {
 	// File mention selector (for @ file autocomplete)
 	fileMentionSelector *component.FileMentionSelector
 	fileMentionVisible  bool
+
+	// Interactive panel components
+	sessionTree    *components.SessionTree
+	sessionTreeVis bool
+	hookManager    *components.HookManager
+	hookManagerVis bool
+	permManager    *components.PermissionManager
+	permManagerVis bool
+
+	// Config-provided data
+	hookDefs     map[string][]config.HookDef
+	scopedModels *config.ScopedModelsConfig
 
 	// State
 	agentRunning atomic.Bool
@@ -133,6 +148,8 @@ func NewFromDeps(deps AppDeps) *App {
 		msgQueue:             NewMessageQueue(),
 		statusEngine:         deps.StatusEngine,
 		autoCompactThreshold: deps.AutoCompactThreshold,
+		hookDefs:             deps.Hooks,
+		scopedModels:         deps.ScopedModels,
 	}
 	// Initialize file mention selector
 	app.initFileMentionSelector()
@@ -359,6 +376,23 @@ func (a *App) onKey(k key.Key) {
 		}
 	}
 
+	// 8a. Handle interactive panel input if visible
+	if a.sessionTreeVis {
+		if handled := a.handleSessionTreeInput(k); handled {
+			return
+		}
+	}
+	if a.hookManagerVis {
+		if handled := a.handleHookManagerInput(k); handled {
+			return
+		}
+	}
+	if a.permManagerVis {
+		if handled := a.handlePermManagerInput(k); handled {
+			return
+		}
+	}
+
 	// 9. Default: route to editor
 	a.editor.HandleKey(k)
 	a.tui.RequestRender()
@@ -457,6 +491,60 @@ func (a *App) handleSlashCommand(container *tuipkg.Container, text string) {
 		},
 		ReloadFn: func() (string, error) {
 			return "Configuration reloaded.", nil
+		},
+		SessionTreeFn: func() string {
+			a.showSessionTree()
+			return "Session tree opened."
+		},
+		HookManagerFn: func() string {
+			a.showHookManager()
+			return "Hook manager opened."
+		},
+		PermissionManagerFn: func() string {
+			a.showPermissionManager()
+			return "Permission manager opened."
+		},
+		ScopedModelsFn: func() string {
+			if a.scopedModels == nil {
+				return "No scoped models configured."
+			}
+			var b strings.Builder
+			b.WriteString("Scoped models:\n")
+			current := ""
+			if a.model != nil {
+				current = a.model.Name
+			}
+			for _, m := range a.scopedModels.Models {
+				marker := "  "
+				if m.Name == current {
+					marker = "* "
+				}
+				line := fmt.Sprintf("%s%s", marker, m.Name)
+				if m.Thinking != config.ThinkingOff {
+					line += fmt.Sprintf(" [thinking: %s]", m.Thinking.String())
+				}
+				b.WriteString(line + "\n")
+			}
+			return b.String()
+		},
+		ListSessionsFn: func() string {
+			sessions, err := session.ListSessions()
+			if err != nil {
+				return fmt.Sprintf("Error listing sessions: %v", err)
+			}
+			if len(sessions) == 0 {
+				return "No sessions found."
+			}
+			var b strings.Builder
+			b.WriteString("Sessions:\n")
+			for i, s := range sessions {
+				if i >= 20 {
+					fmt.Fprintf(&b, "  ... and %d more\n", len(sessions)-20)
+					break
+				}
+				fmt.Fprintf(&b, "  %s  %s  %s\n", s.ID[:8], s.Model, s.CWD)
+			}
+			return b.String()
 		},
 	}
 
@@ -970,4 +1058,175 @@ func (a *App) SetAcceptEditsMode() {
 // StatusLine returns the status information for the footer.
 func (a *App) StatusLine(model string, totalCost float64) string {
 	return fmt.Sprintf("%s | %s | $%.4f", a.ModeLabel(), model, totalCost)
+}
+
+// --- SessionTree panel ---
+
+func (a *App) showSessionTree() {
+	sessDir := config.SessionsDir()
+	roots, err := components.LoadSessionsFromDir(sessDir)
+	if err != nil {
+		roots = nil
+	}
+	a.sessionTree = components.NewSessionTree(roots)
+	a.sessionTreeVis = true
+
+	container := a.tui.Container()
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
+	container.Add(a.sessionTree)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
+	a.tui.RequestRender()
+}
+
+func (a *App) hideSessionTree() {
+	if a.sessionTree != nil {
+		a.tui.Container().Remove(a.sessionTree)
+	}
+	a.sessionTreeVis = false
+	a.sessionTree = nil
+	a.tui.RequestRender()
+}
+
+func (a *App) handleSessionTreeInput(k key.Key) bool {
+	switch k.Type {
+	case key.KeyEscape:
+		a.hideSessionTree()
+		return true
+	case key.KeyEnter:
+		if node := a.sessionTree.SelectedNode(); node != nil {
+			a.hideSessionTree()
+			// Resume the selected session (best effort)
+			_ = a.resumeSessionByID(node.ID)
+		}
+		return true
+	case key.KeyUp, key.KeyDown:
+		a.sessionTree.HandleKey(k)
+		a.tui.RequestRender()
+		return true
+	case key.KeyRune:
+		// Filter by typing
+		a.sessionTree.SetFilter(a.sessionTree.Filter() + string(k.Rune))
+		a.tui.RequestRender()
+		return true
+	case key.KeyBackspace:
+		f := a.sessionTree.Filter()
+		if len(f) > 0 {
+			a.sessionTree.SetFilter(f[:len(f)-1])
+		}
+		a.tui.RequestRender()
+		return true
+	}
+	return false
+}
+
+func (a *App) resumeSessionByID(id string) error {
+	// Verify the session exists by reading its records
+	_, err := session.ReadRecords(id)
+	return err
+}
+
+// --- HookManager panel ---
+
+func (a *App) showHookManager() {
+	hooks := components.ConvertFromConfig(a.hookDefs)
+	a.hookManager = components.NewHookManager()
+	a.hookManager.SetHooks(hooks)
+	a.hookManagerVis = true
+
+	container := a.tui.Container()
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
+	container.Add(a.hookManager)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
+	a.tui.RequestRender()
+}
+
+func (a *App) hideHookManager() {
+	if a.hookManager != nil {
+		a.tui.Container().Remove(a.hookManager)
+	}
+	a.hookManagerVis = false
+	a.hookManager = nil
+	a.tui.RequestRender()
+}
+
+func (a *App) handleHookManagerInput(k key.Key) bool {
+	switch k.Type {
+	case key.KeyEscape:
+		a.hideHookManager()
+		return true
+	case key.KeyEnter, key.KeyUp, key.KeyDown:
+		a.hookManager.HandleKey(k)
+		a.tui.RequestRender()
+		return true
+	}
+	return false
+}
+
+// --- PermissionManager panel ---
+
+func (a *App) showPermissionManager() {
+	rules := a.checker.Rules()
+	rulesPtrs := make([]*permission.Rule, len(rules))
+	for i := range rules {
+		rulesPtrs[i] = &rules[i]
+	}
+	a.permManager = components.NewPermissionManager()
+	a.permManager.SetRules(rulesPtrs)
+	a.permManagerVis = true
+
+	container := a.tui.Container()
+	container.Remove(a.editorSep)
+	container.Remove(a.editor)
+	container.Remove(a.editorSepBot)
+	container.Remove(a.footer)
+	container.Add(a.permManager)
+	container.Add(a.editorSep)
+	container.Add(a.editor)
+	container.Add(a.editorSepBot)
+	container.Add(a.footer)
+	a.tui.RequestRender()
+}
+
+func (a *App) hidePermissionManager() {
+	if a.permManager != nil {
+		a.tui.Container().Remove(a.permManager)
+	}
+	a.permManagerVis = false
+	a.permManager = nil
+	a.tui.RequestRender()
+}
+
+func (a *App) handlePermManagerInput(k key.Key) bool {
+	switch k.Type {
+	case key.KeyEscape:
+		a.hidePermissionManager()
+		return true
+	case key.KeyUp, key.KeyDown:
+		a.permManager.HandleKey(k)
+		a.tui.RequestRender()
+		return true
+	case key.KeyRune:
+		// 'd' key deletes selected rule
+		if k.Rune == 'd' {
+			if rw := a.permManager.SelectedRule(); rw != nil {
+				a.checker.RemoveRule(rw.Tool)
+				a.permManager.RemoveRule()
+				a.tui.RequestRender()
+			}
+			return true
+		}
+	}
+	return false
 }

@@ -210,6 +210,32 @@ func (c *Checker) Check(tool string, args map[string]any) error {
 	return nil
 }
 
+// Rules returns a combined slice of allow and deny rules.
+func (c *Checker) Rules() []Rule {
+	rules := make([]Rule, 0, len(c.allowRules)+len(c.denyRules))
+	rules = append(rules, c.allowRules...)
+	rules = append(rules, c.denyRules...)
+	return rules
+}
+
+// RemoveRule removes the first rule matching the given tool name from
+// either the allow or deny lists. Returns true if a rule was removed.
+func (c *Checker) RemoveRule(tool string) bool {
+	for i, r := range c.allowRules {
+		if r.Tool == tool {
+			c.allowRules = append(c.allowRules[:i], c.allowRules[i+1:]...)
+			return true
+		}
+	}
+	for i, r := range c.denyRules {
+		if r.Tool == tool {
+			c.denyRules = append(c.denyRules[:i], c.denyRules[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // matchTool checks if a pattern matches a tool name.
 // Supports * as wildcard.
 func matchTool(pattern, tool string) bool {
