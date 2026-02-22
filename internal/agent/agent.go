@@ -56,7 +56,7 @@ func NewWithPermissions(provider ai.ApiProvider, model *ai.Model, tools []*Agent
 func (a *Agent) Prompt(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOptions) <-chan AgentEvent {
 	ctx, cancel := context.WithCancel(ctx)
 	a.cancelFn = cancel
-	a.events = make(chan AgentEvent, 64)
+	a.events = make(chan AgentEvent, 1024)
 	a.state.Store(int32(StateRunning))
 
 	go a.loop(ctx, llmCtx, opts)
