@@ -15,6 +15,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/fuzzy"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // SessionNode represents a session entry in the tree
@@ -251,11 +252,13 @@ func (st *SessionTree) Render(out *tui.RenderBuffer, w int) {
 	selected := st.selected
 	st.mu.Unlock()
 
+	p := theme.Current().Palette
+
 	if len(nodes) == 0 {
 		if filter == "" {
-			out.WriteLine("\x1b[2mNo sessions found\x1b[0m")
+			out.WriteLine(p.Dim.Apply("No sessions found"))
 		} else {
-			out.WriteLine("\x1b[2mNo matching sessions\x1b[0m")
+			out.WriteLine(p.Dim.Apply("No matching sessions"))
 		}
 		return
 	}
@@ -270,6 +273,8 @@ func (st *SessionTree) Render(out *tui.RenderBuffer, w int) {
 }
 
 func (st *SessionTree) formatNode(node *SessionNode, w int, selected bool) string {
+	p := theme.Current().Palette
+
 	var line string
 
 	// Build tree structure with indentation
@@ -283,12 +288,12 @@ func (st *SessionTree) formatNode(node *SessionNode, w int, selected bool) strin
 
 	// Add model
 	if node.Model != "" {
-		line += fmt.Sprintf(" \x1b[36m%s\x1b[0m", node.Model)
+		line += " " + p.Info.Apply(node.Model)
 	}
 
 	// Add message count
 	if node.Count > 0 {
-		line += fmt.Sprintf(" \x1b[90m(%d)\x1b[0m", node.Count)
+		line += " " + p.Secondary.Apply(fmt.Sprintf("(%d)", node.Count))
 	}
 
 	// Truncate to width
@@ -298,7 +303,7 @@ func (st *SessionTree) formatNode(node *SessionNode, w int, selected bool) strin
 	}
 
 	if selected {
-		line = "\x1b[1m\x1b[7m" + line + "\x1b[0m"
+		line = p.Bold.Code() + p.Selection.Code() + line + "\x1b[0m"
 	}
 
 	return line

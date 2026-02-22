@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // Separator is a thin horizontal rule rendered as dim box-drawing characters.
@@ -21,7 +22,8 @@ func (s *Separator) Render(out *tui.RenderBuffer, w int) {
 		out.WriteLine("")
 		return
 	}
-	out.WriteLine("\x1b[2m" + strings.Repeat("─", w) + "\x1b[0m")
+	p := theme.Current().Palette
+	out.WriteLine(p.Border.Apply(strings.Repeat("─", w)))
 }
 
 // Invalidate is a no-op; Separator has no cached state.

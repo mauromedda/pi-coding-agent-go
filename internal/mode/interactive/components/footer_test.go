@@ -135,7 +135,7 @@ func TestFooter(t *testing.T) {
 			},
 		},
 		{
-			name: "dim_ansi_present",
+			name: "theme_ansi_present",
 			setup: func(f *Footer) {
 				f.SetLine1("test")
 				f.SetLine2("a", "b")
@@ -146,12 +146,10 @@ func TestFooter(t *testing.T) {
 				if len(lines) < 2 {
 					t.Fatalf("expected 2 lines, got %d", len(lines))
 				}
-				// Line 1 uses combined dim+color SGR (e.g. \x1b[2;36m)
-				// Line 2 uses dim for the right-aligned portion
+				// Both lines should contain ANSI codes (from theme palette) and resets
 				for i, line := range lines {
-					hasDim := strings.Contains(line, "\x1b[2m") || strings.Contains(line, "\x1b[2;")
-					if !hasDim {
-						t.Errorf("line %d should contain dim ANSI code, got %q", i, line)
+					if !strings.Contains(line, "\x1b[") {
+						t.Errorf("line %d should contain ANSI escape codes from theme, got %q", i, line)
 					}
 					if !strings.Contains(line, "\x1b[0m") {
 						t.Errorf("line %d should contain reset ANSI code \\x1b[0m", i)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -115,8 +116,9 @@ func (a *AssistantMessage) Render(out *tui.RenderBuffer, w int) {
 	out.WriteLine("")
 
 	if thinking != "" {
+		p := theme.Current().Palette
 		spinner := SpinnerFrame()
-		out.WriteLine(fmt.Sprintf("\x1b[36m%c\x1b[0m \x1b[2mThinking...\x1b[0m", spinner))
+		out.WriteLine(fmt.Sprintf("%s%c\x1b[0m %s", p.Info.Code(), spinner, p.Dim.Apply("Thinking...")))
 	}
 
 	if len(lines) > 0 {

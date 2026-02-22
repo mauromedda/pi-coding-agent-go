@@ -3,7 +3,10 @@
 
 package components
 
-import "github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+import (
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
+)
 
 // UserMessage renders a user's message.
 type UserMessage struct {
@@ -20,7 +23,8 @@ func NewUserMessage(text string) *UserMessage {
 func (u *UserMessage) Render(out *tui.RenderBuffer, _ int) {
 	out.WriteLine("")
 	// \x1b[100m = bright black background (basic 8-color), compatible with all terminals
-	out.WriteLine("\x1b[100m\x1b[1m > " + u.text + " \x1b[0m")
+	p := theme.Current().Palette
+	out.WriteLine(p.UserBg.Code() + p.Prompt.Code() + " > " + u.text + " \x1b[0m")
 }
 
 // Invalidate is a no-op for UserMessage.

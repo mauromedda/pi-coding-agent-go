@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // WelcomeMessage renders the startup banner with version info, keyboard
@@ -35,15 +36,17 @@ func (w *WelcomeMessage) Render(out *tui.RenderBuffer, _ int) {
 		ver = "dev"
 	}
 
+	p := theme.Current().Palette
+
 	// ASCII π logo (orange/warm accent)
-	out.WriteLine("\x1b[38;5;208m  ╭───────╮\x1b[0m")
-	out.WriteLine("\x1b[38;5;208m  │  \x1b[1mπ\x1b[0m\x1b[38;5;208m    │\x1b[0m")
-	out.WriteLine("\x1b[38;5;208m  ╰───────╯\x1b[0m")
+	out.WriteLine(p.Accent.Code() + "  ╭───────╮\x1b[0m")
+	out.WriteLine(p.Accent.Code() + "  │  " + p.Bold.Code() + "π\x1b[0m" + p.Accent.Code() + "    │\x1b[0m")
+	out.WriteLine(p.Accent.Code() + "  ╰───────╯\x1b[0m")
 
 	// Version, model, cwd
-	out.WriteLine(fmt.Sprintf("  \x1b[1mpi-go\x1b[0m \x1b[2mv%s\x1b[0m", ver))
-	out.WriteLine(fmt.Sprintf("  \x1b[2m%s\x1b[0m", w.modelName))
-	out.WriteLine(fmt.Sprintf("  \x1b[36m%s\x1b[0m", w.cwd))
+	out.WriteLine(fmt.Sprintf("  %spi-go\x1b[0m %sv%s\x1b[0m", p.Bold.Code(), p.Dim.Code(), ver))
+	out.WriteLine(fmt.Sprintf("  %s%s\x1b[0m", p.Dim.Code(), w.modelName))
+	out.WriteLine(fmt.Sprintf("  %s%s\x1b[0m", p.Info.Code(), w.cwd))
 
 	// Blank separator
 	out.WriteLine("")
@@ -68,14 +71,14 @@ func (w *WelcomeMessage) Render(out *tui.RenderBuffer, _ int) {
 		for len(padded) < keyPad {
 			padded += " "
 		}
-		out.WriteLine(fmt.Sprintf("  \x1b[1m%s\x1b[0m\x1b[2m%s\x1b[0m", padded, s.desc))
+		out.WriteLine(fmt.Sprintf("  %s%s\x1b[0m%s%s\x1b[0m", p.Bold.Code(), padded, p.Dim.Code(), s.desc))
 	}
 
 	// Blank separator
 	out.WriteLine("")
 
 	// Tool count (dim)
-	out.WriteLine(fmt.Sprintf("\x1b[2m  [Tools: %d registered]\x1b[0m", w.toolCount))
+	out.WriteLine(fmt.Sprintf("%s  [Tools: %d registered]\x1b[0m", p.Dim.Code(), w.toolCount))
 }
 
 // Invalidate is a no-op for WelcomeMessage.

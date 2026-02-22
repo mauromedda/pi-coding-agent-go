@@ -6,6 +6,7 @@ package components
 import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // ModelSelector displays a list of models to choose from.
@@ -25,13 +26,14 @@ func NewModelSelector(models []ai.Model, onSelect func(ai.Model)) *ModelSelector
 
 // Render draws the model list.
 func (s *ModelSelector) Render(out *tui.RenderBuffer, _ int) {
-	out.WriteLine("\x1b[1m  Select Model  \x1b[0m")
+	p := theme.Current().Palette
+	out.WriteLine(p.Bold.Apply("  Select Model  "))
 	out.WriteLine("")
 
 	for i, m := range s.models {
 		prefix := "  "
 		if i == s.selected {
-			prefix = "\x1b[7m> " // Inverted for selection
+			prefix = p.Selection.Code() + "> " // Inverted for selection
 		}
 		line := prefix + m.Name + " (" + m.ID + ")"
 		if i == s.selected {

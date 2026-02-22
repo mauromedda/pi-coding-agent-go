@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
@@ -25,6 +26,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/openai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/vertex"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/terminal"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 var (
@@ -97,6 +99,9 @@ func run(args cliArgs) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+
+	// Resolve and activate theme from config
+	resolveTheme(cfg, cwd)
 
 	model, err := resolveModel(args, cfg)
 	if err != nil {
@@ -345,4 +350,33 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 	}
 
 	return app.Run()
+}
+
+// resolveTheme loads the theme from config. It checks:
+// 1. Built-in theme names (default, dark, light, monochrome)
+// 2. JSON file in theme directories
+// Falls back to "default" if not set or not found.
+func resolveTheme(cfg *config.Settings, cwd string) {
+	name := cfg.Theme
+	if name == "" {
+		return // already initialized to default
+	}
+
+	// Try built-in first
+	if th := theme.Builtin(name); th != nil {
+		theme.Set(th)
+		return
+	}
+
+	// Try loading from theme directories
+	for _, dir := range config.ThemesDirs(cwd) {
+		path := filepath.Join(dir, name+".json")
+		if th, err := theme.LoadFile(path); err == nil {
+			theme.Set(th)
+			return
+		}
+	}
+
+	// Unknown theme; keep default
+	fmt.Fprintf(os.Stderr, "warning: unknown theme %q, using default\n", name)
 }

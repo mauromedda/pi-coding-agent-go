@@ -11,6 +11,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // ConvertFromConfig maps config.HookDef entries to Hook structs.
@@ -186,7 +187,8 @@ func (hm *HookManager) ToggleHookLocked() {
 // Render writes the hook list into the buffer
 func (hm *HookManager) Render(out *tui.RenderBuffer, w int) {
 	if len(hm.hooks) == 0 {
-		out.WriteLine("\x1b[2mNo hooks configured\x1b[0m")
+		p := theme.Current().Palette
+		out.WriteLine(p.Dim.Apply("No hooks configured"))
 		return
 	}
 
@@ -200,9 +202,11 @@ func (hm *HookManager) Render(out *tui.RenderBuffer, w int) {
 }
 
 func (hm *HookManager) formatHook(hook *Hook, w int, selected bool) string {
-	status := "\x1b[2mdisabled\x1b[0m"
+	p := theme.Current().Palette
+
+	status := p.Dim.Apply("disabled")
 	if hook.Enabled {
-		status = "\x1b[32menabled\x1b[0m"
+		status = p.Success.Apply("enabled")
 	}
 
 	line := fmt.Sprintf("  %s  %s", status, hook.Pattern)
@@ -210,7 +214,7 @@ func (hm *HookManager) formatHook(hook *Hook, w int, selected bool) string {
 	// Add tools if present
 	if len(hook.Tools) > 0 {
 		tools := strings.Join(hook.Tools, ", ")
-		line += fmt.Sprintf(" \x1b[90m[%s]\x1b[0m", tools)
+		line += " " + p.Secondary.Apply(fmt.Sprintf("[%s]", tools))
 	}
 
 	// Truncate to width
@@ -220,7 +224,7 @@ func (hm *HookManager) formatHook(hook *Hook, w int, selected bool) string {
 	}
 
 	if selected {
-		line = "\x1b[1m\x1b[7m" + line + "\x1b[0m"
+		line = p.Bold.Code() + p.Selection.Code() + line + "\x1b[0m"
 	}
 
 	return line

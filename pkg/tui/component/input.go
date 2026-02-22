@@ -10,6 +10,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/killring"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/undo"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -269,7 +270,8 @@ func (inp *Input) saveUndo() {
 // Render writes the input line into the buffer with optional cursor marker.
 func (inp *Input) Render(out *tui.RenderBuffer, w int) {
 	if len(inp.text) == 0 && inp.placeholder != "" && inp.focused {
-		line := "\x1b[2m" + inp.placeholder + "\x1b[0m"
+		p := theme.Current().Palette
+		line := p.Muted.Code() + inp.placeholder + "\x1b[0m"
 		if inp.focused {
 			line = tui.CursorMarker + line
 		}

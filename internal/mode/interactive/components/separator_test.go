@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -78,7 +79,7 @@ func TestSeparator(t *testing.T) {
 			},
 		},
 		{
-			name:  "dim_ansi_present",
+			name:  "border_ansi_present",
 			width: 10,
 			check: func(t *testing.T, lines []string) {
 				t.Helper()
@@ -86,8 +87,9 @@ func TestSeparator(t *testing.T) {
 					t.Fatalf("expected 1 line, got %d", len(lines))
 				}
 				line := lines[0]
-				if !strings.Contains(line, "\x1b[2m") {
-					t.Error("output should contain dim ANSI code \\x1b[2m")
+				borderCode := theme.Current().Palette.Border.Code()
+				if !strings.Contains(line, borderCode) {
+					t.Errorf("output should contain border ANSI code %q", borderCode)
 				}
 				if !strings.Contains(line, "\x1b[0m") {
 					t.Error("output should contain reset ANSI code \\x1b[0m")

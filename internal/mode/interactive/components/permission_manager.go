@@ -12,6 +12,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // RuleWrapper wraps a permission.Rule for display
@@ -198,9 +199,11 @@ func (pm *PermissionManager) Render(out *tui.RenderBuffer, w int) {
 }
 
 func (pm *PermissionManager) formatRule(rule *RuleWrapper, w int, selected bool) string {
-	mode := "\x1b[31mdeny\x1b[0m"
+	p := theme.Current().Palette
+
+	mode := p.Error.Apply("deny")
 	if rule.Rule.Allow {
-		mode = "\x1b[32mallow\x1b[0m"
+		mode = p.Success.Apply("allow")
 	}
 
 	line := fmt.Sprintf("  %s  %s", mode, rule.Tool)
@@ -212,7 +215,7 @@ func (pm *PermissionManager) formatRule(rule *RuleWrapper, w int, selected bool)
 	}
 
 	if selected {
-		line = "\x1b[1m\x1b[7m" + line + "\x1b[0m"
+		line = p.Bold.Code() + p.Selection.Code() + line + "\x1b[0m"
 	}
 
 	return line

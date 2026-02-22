@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // PermissionResponse represents the user's decision on a permission prompt.
@@ -43,14 +44,16 @@ func (d *PermissionDialog) ToolName() string {
 
 // Render draws the permission dialog with Claude-style minimal styling.
 func (d *PermissionDialog) Render(out *tui.RenderBuffer, w int) {
+	p := theme.Current().Palette
+
 	out.WriteLine("")
 
 	// Claude-style: simple header without box, just "Permission Required"
-	out.WriteLine("\x1b[1;33mPermission Required\x1b[0m")
+	out.WriteLine(p.Warning.Bold().Apply("Permission Required"))
 	out.WriteLine("")
 
 	// Tool name with simple indent
-	out.WriteLine(fmt.Sprintf("  Tool: \x1b[1m%s\x1b[0m", d.toolName))
+	out.WriteLine(fmt.Sprintf("  Tool: %s", p.Bold.Apply(d.toolName)))
 
 	// Args if present, wrapped and indented
 	if d.args != "" {
@@ -62,7 +65,8 @@ func (d *PermissionDialog) Render(out *tui.RenderBuffer, w int) {
 	out.WriteLine("")
 
 	// Options: [y] Allow  [a] Always  [n] Deny (Claude-style minimal)
-	out.WriteLine("  \x1b[32m[y]\x1b[0m Allow  \x1b[36m[a]\x1b[0m Always  \x1b[31m[n]\x1b[0m Deny")
+	out.WriteLine(fmt.Sprintf("  %s Allow  %s Always  %s Deny",
+		p.Success.Apply("[y]"), p.Info.Apply("[a]"), p.Error.Apply("[n]")))
 	out.WriteLine("")
 }
 

@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
-const (
-	ansiBold      = "\x1b[1m"
-	ansiItalic    = "\x1b[3m"
-	ansiDim       = "\x1b[2m"
-	ansiUnderline = "\x1b[4m"
-	ansiCyan      = "\x1b[36m"
-	ansiReset     = "\x1b[0m"
-)
+const ansiReset = "\x1b[0m"
+
+// mdPalette returns the current theme's formatting codes for markdown rendering.
+func mdPalette() (bold, italic, dim, underline, cyan string) {
+	p := theme.Current().Palette
+	return p.Bold.Code(), p.Italic.Code(), p.Dim.Code(), p.Underline.Code(), p.Info.Code()
+}
 
 var (
 	reBold       = regexp.MustCompile(`\*\*(.+?)\*\*`)
@@ -62,6 +62,8 @@ func (md *Markdown) renderLines() []string {
 	if md.content == "" {
 		return []string{""}
 	}
+
+	ansiBold, _, ansiDim, _, ansiCyan := mdPalette()
 
 	raw := strings.Split(md.content, "\n")
 	var result []string
@@ -132,6 +134,8 @@ func (md *Markdown) renderLines() []string {
 }
 
 func (md *Markdown) renderInline(s string) string {
+	ansiBold, ansiItalic, ansiDim, ansiUnderline, ansiCyan := mdPalette()
+
 	// Process bold first (** before *)
 	s = reBold.ReplaceAllString(s, ansiBold+"$1"+ansiReset)
 

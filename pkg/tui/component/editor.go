@@ -13,6 +13,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/killring"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/internal/undo"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -454,7 +455,8 @@ func (ed *Editor) Render(out *tui.RenderBuffer, w int) {
 
 	// Placeholder: shown when empty, focused, and placeholder is set
 	if ed.focused && ed.isEmpty() && ed.placeholder != "" {
-		out.WriteLine(ed.prompt + tui.CursorMarker + "\x1b[2m" + ed.placeholder + "\x1b[0m")
+		p := theme.Current().Palette
+		out.WriteLine(ed.prompt + tui.CursorMarker + p.Muted.Code() + ed.placeholder + "\x1b[0m")
 		return
 	}
 

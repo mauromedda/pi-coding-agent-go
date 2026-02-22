@@ -41,6 +41,9 @@ type Settings struct {
 
 	// Auto-compact threshold (percentage 1-100; 0 means use default 80%)
 	AutoCompactThreshold int `json:"autoCompactThreshold,omitempty"`
+
+	// Theme name or path to a custom JSON theme file
+	Theme string `json:"theme,omitempty"`
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).

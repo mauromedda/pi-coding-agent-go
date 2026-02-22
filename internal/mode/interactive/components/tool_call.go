@@ -9,20 +9,22 @@ import (
 	"sync"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
-// toolColor returns the ANSI color code for a tool name header.
-func toolColor(name string) string {
+// toolColor returns the semantic theme color for a tool name header.
+func toolColor(name string) theme.Color {
+	p := theme.Current().Palette
 	lower := strings.ToLower(name)
 	switch {
 	case strings.Contains(lower, "read") || strings.Contains(lower, "glob") || strings.Contains(lower, "grep"):
-		return "\x1b[32m" // green
+		return p.ToolRead
 	case strings.Contains(lower, "bash") || strings.Contains(lower, "exec") || strings.Contains(lower, "shell"):
-		return "\x1b[33m" // yellow/amber
+		return p.ToolBash
 	case strings.Contains(lower, "write") || strings.Contains(lower, "edit"):
-		return "\x1b[35m" // magenta
+		return p.ToolWrite
 	default:
-		return "\x1b[36m" // cyan
+		return p.ToolOther
 	}
 }
 
@@ -83,6 +85,7 @@ func (t *ToolCall) Render(out *tui.RenderBuffer, w int) {
 	expanded := t.expanded
 	t.mu.Unlock()
 
+	p := theme.Current().Palette
 	nameColor := toolColor(name)
 
 	// Status indicator
@@ -99,7 +102,7 @@ func (t *ToolCall) Render(out *tui.RenderBuffer, w int) {
 	}
 
 	// Tool info line
-	toolInfo := fmt.Sprintf("%s %s%s\x1b[0m %s", status, nameColor, name, args)
+	toolInfo := fmt.Sprintf("%s %s %s", status, nameColor.Apply(name), args)
 	toolInfo = strings.TrimSpace(toolInfo)
 
 	// Claude-style border
@@ -136,7 +139,7 @@ func (t *ToolCall) Render(out *tui.RenderBuffer, w int) {
 
 	// Add error if present
 	if errMsg != "" {
-		out.WriteLine(fmt.Sprintf("%s %-*s %s", verticalBorder, contentWidth, "\x1b[31m"+errMsg+"\x1b[0m", verticalBorder))
+		out.WriteLine(fmt.Sprintf("%s %-*s %s", verticalBorder, contentWidth, p.Error.Apply(errMsg), verticalBorder))
 	}
 
 	// Add output if expanded
@@ -162,9 +165,9 @@ func (t *ToolCall) Render(out *tui.RenderBuffer, w int) {
 
 	// Expand/collapse indicator
 	if expanded {
-		out.WriteLine(fmt.Sprintf("\x1b[2m  Press Ctrl+O to collapse\x1b[0m"))
+		out.WriteLine(p.Dim.Apply("  Press Ctrl+O to collapse"))
 	} else {
-		out.WriteLine(fmt.Sprintf("\x1b[2m  Press Ctrl+O to expand output\x1b[0m"))
+		out.WriteLine(p.Dim.Apply("  Press Ctrl+O to expand output"))
 	}
 	out.WriteLine("")
 }

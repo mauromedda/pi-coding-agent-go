@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -96,6 +97,7 @@ func (cp *CommandPalette) Render(out *tui.RenderBuffer, w int) {
 		}
 	}
 
+	p := theme.Current().Palette
 	for i := start; i < end; i++ {
 		entry := cp.visible[i]
 		name := fmt.Sprintf("/%s", entry.Name)
@@ -106,9 +108,9 @@ func (cp *CommandPalette) Render(out *tui.RenderBuffer, w int) {
 		line = width.TruncateToWidth(line, w)
 
 		if i == cp.selected {
-			line = "\x1b[1m\x1b[7m" + line + "\x1b[0m" // bold + inverse
+			line = p.Bold.Code() + p.Selection.Code() + line + "\x1b[0m" // bold + inverse
 		} else {
-			line = "\x1b[2m" + line + "\x1b[0m" // dim
+			line = p.Dim.Code() + line + "\x1b[0m" // dim
 		}
 		out.WriteLine(line)
 	}

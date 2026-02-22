@@ -6,6 +6,7 @@ package components
 import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
 
 // SessionSelector displays a list of sessions to resume.
@@ -25,7 +26,8 @@ func NewSessionSelector(sessions []session.SessionStartData, onSelect func(sessi
 
 // Render draws the session list.
 func (s *SessionSelector) Render(out *tui.RenderBuffer, _ int) {
-	out.WriteLine("\x1b[1m  Resume Session  \x1b[0m")
+	p := theme.Current().Palette
+	out.WriteLine(p.Bold.Apply("  Resume Session  "))
 	out.WriteLine("")
 
 	if len(s.sessions) == 0 {
@@ -36,7 +38,7 @@ func (s *SessionSelector) Render(out *tui.RenderBuffer, _ int) {
 	for i, sess := range s.sessions {
 		prefix := "  "
 		if i == s.selected {
-			prefix = "\x1b[7m> "
+			prefix = p.Selection.Code() + "> "
 		}
 		line := prefix + sess.ID + " - " + sess.Model + " (" + sess.CWD + ")"
 		if i == s.selected {

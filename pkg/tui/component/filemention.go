@@ -15,6 +15,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/fuzzy"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -298,7 +299,8 @@ func (fm *FileMentionSelector) applyFilterLocked() {
 // Render writes the file list into the buffer
 func (fm *FileMentionSelector) Render(out *tui.RenderBuffer, w int) {
 	if len(fm.visible) == 0 {
-		out.WriteLine("\x1b[2mNo files found\x1b[0m")
+		p := theme.Current().Palette
+		out.WriteLine(p.Muted.Apply("No files found"))
 		return
 	}
 
@@ -312,12 +314,14 @@ func (fm *FileMentionSelector) Render(out *tui.RenderBuffer, w int) {
 }
 
 func (fm *FileMentionSelector) formatItem(item FileInfo, w int, selected bool) string {
+	p := theme.Current().Palette
+
 	// Format: relative path with color coding
 	var line string
 
-	// Color coding: directories are blue, others default
+	// Color coding: directories use Info color, others default
 	if item.IsDir {
-		line = fmt.Sprintf("  \x1b[34m%s/\x1b[0m", item.RelPath)
+		line = fmt.Sprintf("  %s%s/\x1b[0m", p.Info.Code(), item.RelPath)
 	} else {
 		line = fmt.Sprintf("  %s", item.RelPath)
 	}
@@ -329,12 +333,12 @@ func (fm *FileMentionSelector) formatItem(item FileInfo, w int, selected bool) s
 	}
 	modTime := item.ModTime.Format("Jan 02 15:04")
 
-	line += fmt.Sprintf("  \x1b[90m(%s, %s)\x1b[0m", sizeStr, modTime)
+	line += fmt.Sprintf("  %s(%s, %s)\x1b[0m", p.Secondary.Code(), sizeStr, modTime)
 
 	line = width.TruncateToWidth(line, w)
 
 	if selected {
-		line = "\x1b[1m\x1b[7m" + line + "\x1b[0m"
+		line = p.Bold.Code() + p.Selection.Code() + line + "\x1b[0m"
 	}
 	return line
 }

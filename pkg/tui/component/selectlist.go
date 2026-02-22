@@ -9,6 +9,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/fuzzy"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/key"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -158,12 +159,13 @@ func (sl *SelectList) Render(out *tui.RenderBuffer, w int) {
 }
 
 func (sl *SelectList) formatItem(item ListItem, w int, selected bool) string {
+	p := theme.Current().Palette
 	label := item.Label
 	desc := item.Description
 
 	var line string
 	if desc != "" {
-		line = fmt.Sprintf("  %s  \x1b[2m%s\x1b[0m", label, desc)
+		line = fmt.Sprintf("  %s  %s%s\x1b[0m", label, p.Muted.Code(), desc)
 	} else {
 		line = fmt.Sprintf("  %s", label)
 	}
@@ -171,7 +173,7 @@ func (sl *SelectList) formatItem(item ListItem, w int, selected bool) string {
 	line = width.TruncateToWidth(line, w)
 
 	if selected {
-		line = "\x1b[1m\x1b[7m" + line + "\x1b[0m"
+		line = p.Bold.Code() + p.Selection.Code() + line + "\x1b[0m"
 	}
 	return line
 }

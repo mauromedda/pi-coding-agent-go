@@ -10,6 +10,7 @@ import (
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -142,29 +143,30 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 	f.mu.Unlock()
 
 	// === Line 1: project path + git branch + model + cost ===
+	p := theme.Current().Palette
 	var parts []string
 
 	// Project path (from line1 or fallback)
 	if line1 != "" {
-		parts = append(parts, fmt.Sprintf("\x1b[2;36m%s\x1b[0m", line1))
+		parts = append(parts, p.FooterPath.Apply(line1))
 	}
 
 	// Git branch with icon
 	if gitBranch != "" {
-		parts = append(parts, fmt.Sprintf("\x1b[2;32m\ue0a0 %s\x1b[0m", gitBranch))
+		parts = append(parts, p.FooterBranch.Apply("\ue0a0 "+gitBranch))
 	}
 
 	// Model name
 	if model != "" {
-		parts = append(parts, fmt.Sprintf("\x1b[2;35m%s\x1b[0m", model))
+		parts = append(parts, p.FooterModel.Apply(model))
 	}
 
 	// Cost (only if > 0)
 	if cost > 0 {
-		parts = append(parts, fmt.Sprintf("\x1b[2;33m$%.2f\x1b[0m", cost))
+		parts = append(parts, p.FooterCost.Apply(fmt.Sprintf("$%.2f", cost)))
 	}
 
-	line1Str := strings.Join(parts, "\x1b[2m  \x1b[0m")
+	line1Str := strings.Join(parts, p.Muted.Apply("  "))
 	out.WriteLine(line1Str)
 
 	// === Line 2: mode + permissions + stats + context ===
@@ -172,36 +174,36 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 
 	// Permission mode indicator
 	if permMode != "" {
-		permColor := "\x1b[33m" // yellow default
+		permColor := p.Warning // yellow default
 		switch strings.ToLower(permMode) {
 		case "bypass", "yolo":
-			permColor = "\x1b[31m" // red for bypass
+			permColor = p.Error // red for bypass
 		case "normal", "plan":
-			permColor = "\x1b[32m" // green for safe modes
+			permColor = p.FooterPerm // green for safe modes
 		}
-		line2 += fmt.Sprintf(" %s▸▸ %s\x1b[0m", permColor, permMode)
+		line2 += " " + permColor.Apply("▸▸ "+permMode)
 	}
 
 	if modeLabel != "" {
-		line2 += fmt.Sprintf(" \x1b[33m%s\x1b[0m", modeLabel)
+		line2 += " " + p.Warning.Apply(modeLabel)
 	}
 
 	if contextPct > 0 {
-		ctxColor := "\x1b[90m" // dim for < 60%
+		ctxColor := p.Secondary // dim for < 60%
 		if contextPct >= 80 {
-			ctxColor = "\x1b[31m" // red
+			ctxColor = p.Error // red
 		} else if contextPct >= 60 {
-			ctxColor = "\x1b[33m" // yellow
+			ctxColor = p.Warning // yellow
 		}
-		line2 += fmt.Sprintf(" %sctx %d%%\x1b[0m", ctxColor, contextPct)
+		line2 += " " + ctxColor.Apply(fmt.Sprintf("ctx %d%%", contextPct))
 	}
 
 	if queued > 0 {
-		line2 += fmt.Sprintf(" \x1b[33m[%d queued]\x1b[0m", queued)
+		line2 += " " + p.Warning.Apply(fmt.Sprintf("[%d queued]", queued))
 	}
 
 	if thinking != config.ThinkingOff {
-		line2 += fmt.Sprintf(" \x1b[36m[%s]\x1b[0m", thinking.String())
+		line2 += " " + p.Info.Apply("["+thinking.String()+"]")
 	}
 
 	leftW := width.VisibleWidth(line2)
@@ -213,7 +215,7 @@ func (f *Footer) Render(out *tui.RenderBuffer, w int) {
 		fullLine2 = width.TruncateToWidth(line2, w)
 	} else {
 		pad := w - leftW - rightW
-		fullLine2 = line2 + strings.Repeat(" ", pad) + "\x1b[2m" + line2Right + "\x1b[0m"
+		fullLine2 = line2 + strings.Repeat(" ", pad) + p.Muted.Apply(line2Right)
 	}
 	out.WriteLine(fullLine2)
 }
