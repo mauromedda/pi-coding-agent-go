@@ -18,13 +18,14 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/sse"
 )
 
-const defaultBaseURL = "https://api.openai.com"
+const (
+	defaultBaseURL     = "https://api.openai.com"
+	chatCompletionPath = "/v1/chat/completions"
+)
 
 // Provider implements the OpenAI Chat Completions API.
 type Provider struct {
-	baseURL string
-	apiKey  string
-	client  *http.Client
+	client *httputil.Client
 }
 
 // New creates an OpenAI provider.
@@ -36,10 +37,14 @@ func New(apiKey, baseURL string) *Provider {
 		baseURL = defaultBaseURL
 	}
 	baseURL = httputil.NormalizeBaseURL(baseURL)
+
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + apiKey,
+	}
+
 	return &Provider{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		client:  &http.Client{},
+		client: httputil.NewClient(baseURL, headers),
 	}
 }
 
@@ -68,29 +73,20 @@ func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Con
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
-	pilog.Debug("http: POST %s/v1/chat/completions model=%s", p.baseURL, model.Name)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.baseURL+"/v1/chat/completions", bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.client.Do(req)
+	pilog.Debug("http: POST %s%s model=%s", p.client.BaseURL(), chatCompletionPath, model.Name)
+	reader, resp, err := p.client.StreamSSE(ctx, http.MethodPost, chatCompletionPath, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
 	defer resp.Body.Close()
-	pilog.Debug("http: POST %s/v1/chat/completions → %d", p.baseURL, resp.StatusCode)
+	pilog.Debug("http: POST %s%s → %d", p.client.BaseURL(), chatCompletionPath, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, body)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, errBody)
 	}
 
-	return p.processSSE(sse.NewReader(resp.Body), stream)
+	return p.processSSE(reader, stream)
 }
 
 func (p *Provider) processSSE(reader *sse.Reader, stream *ai.EventStream) error {

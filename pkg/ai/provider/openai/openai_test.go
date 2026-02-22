@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -412,6 +413,47 @@ func TestProviderStreamFinishReasonTerminatesEarly(t *testing.T) {
 	}
 	if result.Usage.OutputTokens != 2 {
 		t.Errorf("OutputTokens = %d, want 2", result.Usage.OutputTokens)
+	}
+}
+
+func TestProviderRetryOn429(t *testing.T) {
+	t.Parallel()
+
+	var attempt atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := attempt.Add(1)
+		if n == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limited"}}`))
+			return
+		}
+
+		sseBody := buildSSETextResponse("retried ok")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(sseBody))
+	}))
+	t.Cleanup(srv.Close)
+
+	provider := New("test-key", srv.URL)
+	stream := provider.Stream(context.Background(), &ai.ModelGPT4o, &ai.Context{
+		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
+	}, nil)
+
+	for range stream.Events() {
+	}
+
+	result := stream.Result()
+	if result == nil {
+		t.Fatal("expected result after retry, got nil (provider did not retry on 429)")
+	}
+	if result.StopReason != ai.StopEndTurn {
+		t.Errorf("StopReason = %q, want %q", result.StopReason, ai.StopEndTurn)
+	}
+	if got := attempt.Load(); got < 2 {
+		t.Errorf("server received %d requests, want >= 2 (retry expected)", got)
 	}
 }
 
