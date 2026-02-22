@@ -133,6 +133,9 @@ type App struct {
 
 	// Configurable auto-compact threshold (percentage 1-100; 0 = default 80%)
 	autoCompactThreshold int
+
+	// Last compaction file tracking
+	lastCompaction session.CompactionEntry
 }
 
 // NewFromDeps creates a fully-wired interactive app from dependencies.
@@ -932,6 +935,7 @@ func (a *App) compactionThreshold() int {
 }
 
 // autoCompactIfNeeded compacts messages if context occupation >= threshold.
+// Extracts file operations from the compacted span for context tracking.
 func (a *App) autoCompactIfNeeded() {
 	if a.model == nil || a.model.MaxTokens == 0 {
 		return
@@ -940,14 +944,24 @@ func (a *App) autoCompactIfNeeded() {
 	if pct < a.compactionThreshold() {
 		return
 	}
+
+	// Extract file ops from the messages that will be compacted
+	oldCount := len(a.messages)
+	if oldCount > keepRecentMessages {
+		oldMessages := a.messages[:oldCount-keepRecentMessages]
+		a.lastCompaction = session.ExtractFileOps(oldMessages)
+	}
+
 	compacted, _, err := session.Compact(a.messages)
 	if err != nil {
 		return
 	}
-	if len(compacted) < len(a.messages) {
+	if len(compacted) < oldCount {
 		a.messages = compacted
 	}
 }
+
+const keepRecentMessages = 10 // mirrors session.keepRecentMessages
 
 // askPermission shows a permission dialog overlay and blocks until the user responds.
 func (a *App) askPermission(tool string, args map[string]any) (bool, error) {

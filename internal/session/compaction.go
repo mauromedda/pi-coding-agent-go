@@ -4,11 +4,83 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
+
+// CompactionEntry records metadata about a compacted message span.
+type CompactionEntry struct {
+	FilesRead    []string // file paths that were read during the span
+	FilesWritten []string // file paths that were written/edited during the span
+	MessageCount int      // number of messages in the compacted span
+}
+
+// readTools are tool names that read files.
+var readTools = map[string]bool{
+	"Read": true, "Glob": true, "Grep": true,
+}
+
+// writeTools are tool names that write/edit files.
+var writeTools = map[string]bool{
+	"Write": true, "Edit": true, "NotebookEdit": true,
+}
+
+// ExtractFileOps scans messages for tool_use content blocks and extracts
+// file paths categorized as read or written.
+func ExtractFileOps(messages []ai.Message) CompactionEntry {
+	entry := CompactionEntry{
+		MessageCount: len(messages),
+	}
+
+	readSeen := make(map[string]bool)
+	writeSeen := make(map[string]bool)
+
+	for _, msg := range messages {
+		for _, c := range msg.Content {
+			if c.Type != ai.ContentToolUse || len(c.Input) == 0 {
+				continue
+			}
+
+			filePath := extractFilePath(c.Input)
+			if filePath == "" {
+				continue
+			}
+
+			if readTools[c.Name] {
+				if !readSeen[filePath] {
+					readSeen[filePath] = true
+					entry.FilesRead = append(entry.FilesRead, filePath)
+				}
+			}
+			if writeTools[c.Name] {
+				if !writeSeen[filePath] {
+					writeSeen[filePath] = true
+					entry.FilesWritten = append(entry.FilesWritten, filePath)
+				}
+			}
+		}
+	}
+
+	return entry
+}
+
+// extractFilePath pulls the file_path field from tool input JSON.
+func extractFilePath(input json.RawMessage) string {
+	var args struct {
+		FilePath     string `json:"file_path"`
+		NotebookPath string `json:"notebook_path"`
+	}
+	if err := json.Unmarshal(input, &args); err != nil {
+		return ""
+	}
+	if args.FilePath != "" {
+		return args.FilePath
+	}
+	return args.NotebookPath
+}
 
 const keepRecentMessages = 10
 
