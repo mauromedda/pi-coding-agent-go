@@ -12,6 +12,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
+	"github.com/mauromedda/pi-coding-agent-go/internal/pkgmanager"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
@@ -33,6 +34,19 @@ var (
 )
 
 func main() {
+	// Intercept package subcommands before flag parsing.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "install", "remove", "update", "list":
+			cwd, _ := os.Getwd()
+			if err := pkgmanager.RunCLI(os.Args[1:], config.PackagesDir(), config.PackagesDirLocal(cwd)); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
+	}
+
 	args := parseFlags()
 
 	if args.version {

@@ -55,9 +55,7 @@ func SkillsDirs(projectRoot string) []string {
 	dirs := []string{
 		filepath.Join(ProjectDir(projectRoot), "skills"),
 		filepath.Join(GlobalDir(), "skills"),
-	}
-	if home != "" {
-		dirs = append(dirs, filepath.Join(home, ".claude", "skills"))
+		filepath.Join(home, ".claude", "skills"),
 	}
 	return dirs
 }
@@ -70,6 +68,20 @@ func UserSettingsFile() string {
 // ProjectSettingsFile returns the path to the project settings file.
 func ProjectSettingsFile(projectRoot string) string {
 	return filepath.Join(ProjectDir(projectRoot), "settings.json")
+}
+
+// ClaudeSettingsFile returns the path to Claude Code settings file.
+func ClaudeSettingsFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "settings.json")
+}
+
+// ProjectClaudeSettingsFile returns the path to project-local Claude settings file.
+func ProjectClaudeSettingsFile(projectRoot string) string {
+	return filepath.Join(projectRoot, ".claude", "settings.json")
 }
 
 // LocalSettingsFile returns the path to the local (gitignored) settings file.
@@ -97,14 +109,70 @@ func RulesDirs(projectRoot string) []string {
 	home, _ := os.UserHomeDir()
 	dirs := []string{
 		filepath.Join(ProjectDir(projectRoot), "rules"),
-	}
-	if home != "" {
-		dirs = append(dirs, filepath.Join(home, ".claude", "rules"))
+		filepath.Join(home, ".claude", "rules"),
 	}
 	return dirs
 }
 
-// AgentsDir returns the agents directory for a project.
+// AgentsDirs returns the agents directories for a project in resolution order.
+func AgentsDirs(projectRoot string) []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(ProjectDir(projectRoot), "agents"),
+		filepath.Join(home, ".pi-go", "agents"),
+		filepath.Join(home, ".claude", "agents"),
+		filepath.Join(projectRoot, ".claude", "agents"),
+	}
+	return dirs
+}
+
+// PromptsDirs returns the prompts directories for a project in resolution order.
+func PromptsDirs(projectRoot string) []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(ProjectDir(projectRoot), "prompts"),
+		filepath.Join(home, ".pi-go", "prompts"),
+		filepath.Join(home, ".claude", "prompts"),
+		filepath.Join(projectRoot, ".claude", "prompts"),
+	}
+	return dirs
+}
+
+// ThemesDirs returns the themes directories for a project in resolution order.
+func ThemesDirs(projectRoot string) []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(ProjectDir(projectRoot), "themes"),
+		filepath.Join(home, ".pi-go", "themes"),
+		filepath.Join(home, ".claude", "themes"),
+		filepath.Join(projectRoot, ".claude", "themes"),
+	}
+	return dirs
+}
+
+// ExtensionsDirs returns the extensions directories for a project in resolution order.
+func ExtensionsDirs(projectRoot string) []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(ProjectDir(projectRoot), "extensions"),
+		filepath.Join(home, ".pi-go", "extensions"),
+		filepath.Join(home, ".claude", "extensions"),
+		filepath.Join(projectRoot, ".claude", "extensions"),
+	}
+	return dirs
+}
+
+// PackagesDir returns the global packages directory (~/.pi-go/packages/).
+func PackagesDir() string {
+	return filepath.Join(GlobalDir(), "packages")
+}
+
+// PackagesDirLocal returns the project-local packages directory.
+func PackagesDirLocal(projectRoot string) string {
+	return filepath.Join(ProjectDir(projectRoot), "packages")
+}
+
+// AgentsDir returns the agents directory for a project (legacy).
 func AgentsDir(projectRoot string) string {
 	return filepath.Join(ProjectDir(projectRoot), "agents")
 }
