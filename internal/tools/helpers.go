@@ -73,3 +73,44 @@ func boolParam(params map[string]any, key string, defaultVal bool) bool {
 func errResult(err error) agent.ToolResult {
 	return agent.ToolResult{Content: err.Error(), IsError: true}
 }
+
+// requireStringSliceParam extracts a required []string from a JSON-decoded []any.
+func requireStringSliceParam(params map[string]any, key string) ([]string, error) {
+	v, ok := params[key]
+	if !ok {
+		return nil, fmt.Errorf("missing required parameter %q", key)
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("parameter %q must be an array, got %T", key, v)
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("parameter %q must not be empty", key)
+	}
+	out := make([]string, 0, len(raw))
+	for i, elem := range raw {
+		s, ok := elem.(string)
+		if !ok {
+			return nil, fmt.Errorf("parameter %q[%d] must be a string, got %T", key, i, elem)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// skipDirs contains directory names to skip during recursive file walks.
+var skipDirs = map[string]bool{
+	".git":         true,
+	"vendor":       true,
+	"node_modules": true,
+	"__pycache__":  true,
+	".venv":        true,
+	".tox":         true,
+	"dist":         true,
+	"build":        true,
+}
+
+// shouldSkipDir reports whether a directory name should be skipped during walks.
+func shouldSkipDir(name string) bool {
+	return skipDirs[name]
+}

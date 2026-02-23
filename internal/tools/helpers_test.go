@@ -155,3 +155,85 @@ func TestErrResult(t *testing.T) {
 		t.Errorf("got %q; want %q", r.Content, "test error")
 	}
 }
+
+func TestRequireStringSliceParam(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		params  map[string]any
+		key     string
+		want    []string
+		wantErr bool
+	}{
+		{
+			"valid slice",
+			map[string]any{"paths": []any{"a.go", "b.go"}},
+			"paths", []string{"a.go", "b.go"}, false,
+		},
+		{
+			"missing key",
+			map[string]any{},
+			"paths", nil, true,
+		},
+		{
+			"wrong type (string)",
+			map[string]any{"paths": "not-a-slice"},
+			"paths", nil, true,
+		},
+		{
+			"empty slice",
+			map[string]any{"paths": []any{}},
+			"paths", nil, true,
+		},
+		{
+			"non-string element",
+			map[string]any{"paths": []any{"ok", 42}},
+			"paths", nil, true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := requireStringSliceParam(tt.params, tt.key)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("err = %v; wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				if len(got) != len(tt.want) {
+					t.Fatalf("len = %d; want %d", len(got), len(tt.want))
+				}
+				for i := range got {
+					if got[i] != tt.want[i] {
+						t.Errorf("[%d] = %q; want %q", i, got[i], tt.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestShouldSkipDir(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		dir  string
+		want bool
+	}{
+		{"git", ".git", true},
+		{"vendor", "vendor", true},
+		{"node_modules", "node_modules", true},
+		{"pycache", "__pycache__", true},
+		{"regular dir", "internal", false},
+		{"src", "src", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldSkipDir(tt.dir); got != tt.want {
+				t.Errorf("shouldSkipDir(%q) = %v; want %v", tt.dir, got, tt.want)
+			}
+		})
+	}
+}
