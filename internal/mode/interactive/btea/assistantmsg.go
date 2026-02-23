@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
@@ -26,6 +25,9 @@ type AssistantMsgModel struct {
 	cachedLines []string
 	cachedWidth int
 	cachedLen   int // length of text at last wrap
+
+	// Markdown rendering (lazily initialized)
+	mdRenderer *MarkdownRenderer
 }
 
 // NewAssistantMsgModel creates an empty AssistantMsgModel.
@@ -74,6 +76,12 @@ func (m *AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AgentErrorMsg:
 		m.errors = append(m.errors, msg.Err.Error())
 
+	case tea.KeyMsg:
+		for i := range m.toolCalls {
+			updated, _ := m.toolCalls[i].Update(msg)
+			m.toolCalls[i] = updated.(ToolCallModel)
+		}
+
 	case ToggleImagesMsg:
 		for i := range m.toolCalls {
 			updated, _ := m.toolCalls[i].Update(msg)
@@ -91,7 +99,16 @@ func (m *AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// ensureRenderer lazily creates the markdown renderer.
+func (m *AssistantMsgModel) ensureRenderer() *MarkdownRenderer {
+	if m.mdRenderer == nil {
+		m.mdRenderer = NewMarkdownRenderer()
+	}
+	return m.mdRenderer
+}
+
 // wrapLines returns cached wrapped lines, refreshing the cache when text or width changes.
+// Uses glamour markdown rendering for content, falling back to plain text wrapping.
 func (m *AssistantMsgModel) wrapLines() []string {
 	raw := m.text.String()
 	w := m.width
@@ -99,10 +116,7 @@ func (m *AssistantMsgModel) wrapLines() []string {
 		w = 80
 	}
 	// Account for left border prefix: "│ " = 2 chars
-	contentWidth := w - 2
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
+	contentWidth := max(w-2, 20)
 
 	textLen := len(raw)
 	if textLen == m.cachedLen && w == m.cachedWidth && m.cachedLines != nil {
@@ -116,7 +130,13 @@ func (m *AssistantMsgModel) wrapLines() []string {
 		return nil
 	}
 
-	m.cachedLines = width.WrapTextWithAnsi(raw, contentWidth)
+	// Use markdown renderer for styled output
+	rendered := m.ensureRenderer().Render(raw, contentWidth)
+	if rendered != "" {
+		m.cachedLines = strings.Split(rendered, "\n")
+	} else {
+		m.cachedLines = width.WrapTextWithAnsi(raw, contentWidth)
+	}
 	m.cachedWidth = w
 	m.cachedLen = textLen
 	return m.cachedLines
@@ -127,10 +147,7 @@ func (m *AssistantMsgModel) View() string {
 	s := Styles()
 	var b strings.Builder
 
-	borderStyle := lipgloss.NewStyle().
-		Foreground(s.Muted.GetForeground())
-
-	borderChar := borderStyle.Render("│")
+	borderChar := s.AssistantBorder.Render("│")
 
 	// Blank line before assistant content
 	b.WriteString("\n")
@@ -142,11 +159,8 @@ func (m *AssistantMsgModel) View() string {
 
 	// Divider between thinking and text when both present
 	if m.thinking != "" && m.text.Len() > 0 {
-		divWidth := m.width - 2
-		if divWidth < 1 {
-			divWidth = 1
-		}
-		divider := borderStyle.Render("─")
+		divWidth := max(m.width-2, 1)
+		divider := s.AssistantBorder.Render("─")
 		b.WriteString(fmt.Sprintf("%s %s\n", borderChar, strings.Repeat(divider, divWidth)))
 	}
 
@@ -156,15 +170,9 @@ func (m *AssistantMsgModel) View() string {
 		b.WriteString(fmt.Sprintf("%s %s\n", borderChar, line))
 	}
 
-	// Errors with dedicated styling
+	// Errors with pre-computed style
 	for _, errText := range m.errors {
-		errStyle := lipgloss.NewStyle().
-			BorderLeft(true).
-			BorderStyle(lipgloss.ThickBorder()).
-			BorderForeground(lipgloss.Color("1")).
-			PaddingLeft(1).
-			Foreground(lipgloss.Color("1"))
-		b.WriteString(errStyle.Render(fmt.Sprintf("✗ %s", errText)) + "\n")
+		b.WriteString(s.AssistantError.Render(fmt.Sprintf("✗ %s", errText)) + "\n")
 	}
 
 	// Tool calls

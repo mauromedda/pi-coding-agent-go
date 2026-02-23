@@ -841,6 +841,7 @@ func (m AppModel) handleSlashCommand(text string) (AppModel, tea.Cmd) {
 
 func (m AppModel) startAgentCmd() tea.Cmd {
 	program := m.sh.program
+	sh := m.sh // shared pointer for agent assignment
 	deps := m.deps
 	messages := make([]ai.Message, len(m.messages))
 	copy(messages, m.messages)
@@ -880,6 +881,7 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		}
 
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
+		sh.activeAgent = ag // enable cancellation via abortAgent()
 
 		// Wire adaptive performance if probe has completed
 		if profile != nil {
@@ -888,11 +890,12 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 			})
 		}
 
-		events := ag.Prompt(context.Background(), llmCtx, opts)
+		events := ag.Prompt(sh.ctx, llmCtx, opts)
 
 		// The bridge sends streaming events via program.Send; blocks until done.
 		RunAgentBridge(program, events)
 
+		sh.activeAgent = nil // clear agent reference after completion
 		// Return AgentDoneMsg with the updated conversation messages.
 		return AgentDoneMsg{Messages: llmCtx.Messages}
 	}

@@ -52,19 +52,23 @@ type ToolCallModel struct {
 	width          int
 	images         []ImageViewModel
 	showImages     bool
-	cachedFilePath string // extracted once at creation, not per View()
+	cachedFilePath string        // extracted once at creation, not per View()
+	borderStyle    lipgloss.Style // cached border style for this tool's color
 }
 
 // NewToolCallModel creates a ToolCallModel for the given tool invocation.
 // File path is extracted once here rather than on every View() call.
 func NewToolCallModel(id, name, args string) ToolCallModel {
-	return ToolCallModel{
+	tc := ToolCallModel{
 		id:             id,
 		name:           name,
 		args:           args,
 		showImages:     true,
 		cachedFilePath: extractFilePath(args),
 	}
+	// Cache border style at creation to avoid recomputing per View()
+	tc.borderStyle = lipgloss.NewStyle().Foreground(toolColor(name).GetForeground())
+	return tc
 }
 
 // Init returns nil; no commands needed for a leaf model.
@@ -161,10 +165,9 @@ func (m ToolCallModel) View() string {
 
 	s := Styles()
 	nameStyle := toolColorFromStyles(m.name, s)
-	borderColor := nameStyle.GetForeground()
 
-	// Border style with tool-specific color
-	bs := lipgloss.NewStyle().Foreground(borderColor)
+	// Use cached border style (computed once at creation)
+	bs := m.borderStyle
 
 	// Status indicator
 	var status string
@@ -253,7 +256,13 @@ func (m ToolCallModel) View() string {
 		// Separator line inside box
 		writeBoxLine(&b, border, bs.Render(strings.Repeat(borderChar, contentWidth)), contentWidth)
 
-		lines := strings.SplitSeq(strings.TrimRight(m.output, "\n"), "\n")
+		// Color edit tool output as a diff
+		outputText := m.output
+		if IsEditTool(m.name) {
+			outputText = RenderDiff(outputText)
+		}
+
+		lines := strings.SplitSeq(strings.TrimRight(outputText, "\n"), "\n")
 		for line := range lines {
 			writeBoxLine(&b, border, line, contentWidth)
 		}
