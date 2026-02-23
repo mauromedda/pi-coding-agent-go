@@ -91,6 +91,11 @@ func (r *Registry) registerBuiltins() {
 		NewLsTool(),
 		NewWebFetchTool(),
 		NewWebSearchTool(),
+		NewFileInfoTool(),
+		NewValidatePathsTool(),
+		NewFindReferencesTool(r.hasRg),
+		NewDependencyGraphTool(),
+		NewSearchDefinitionsTool(),
 	}
 	for _, t := range builtins {
 		r.Register(t)
