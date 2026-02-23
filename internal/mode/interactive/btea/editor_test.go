@@ -443,3 +443,73 @@ func TestEditorModel_KillAtEndOfLine(t *testing.T) {
 		t.Errorf("kill at end: Text() = %q; want %q", got, "hello")
 	}
 }
+
+// --- Ghost text tests ---
+
+func TestEditorModel_SetGhostText(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m = m.SetGhostText("lp")
+	if got := m.GhostText(); got != "lp" {
+		t.Errorf("GhostText() = %q; want %q", got, "lp")
+	}
+}
+
+func TestEditorModel_GhostTextDefaultEmpty(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	if got := m.GhostText(); got != "" {
+		t.Errorf("expected empty ghost text, got %q", got)
+	}
+}
+
+func TestEditorModel_AcceptGhostText(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m = m.SetText("/he")
+	m = m.SetGhostText("lp")
+
+	// Tab should accept ghost text
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "/help" {
+		t.Errorf("after accept: Text() = %q; want %q", got, "/help")
+	}
+	if got := m.GhostText(); got != "" {
+		t.Errorf("ghost text should be cleared after accept, got %q", got)
+	}
+}
+
+func TestEditorModel_TabWithoutGhostText(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m = m.SetText("hello")
+
+	// Tab with no ghost text: inserts tab character
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "hello\t" {
+		t.Errorf("tab without ghost text should insert tab, got %q", got)
+	}
+}
+
+func TestEditorModel_GhostTextInView(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+	m = m.SetFocused(true)
+	m = m.SetText("/he")
+	m = m.SetGhostText("lp")
+
+	view := m.View()
+	if !strings.Contains(view, "lp") {
+		t.Errorf("expected ghost text 'lp' in view, got:\n%s", view)
+	}
+}

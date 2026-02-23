@@ -1470,6 +1470,58 @@ func TestAlias_ListExcludesAliases(t *testing.T) {
 	}
 }
 
+func TestBestMatch_FindsShortestMatch(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	// "he" should match "help" (shortest starting with "he")
+	got := reg.BestMatch("he")
+	if got != "help" {
+		t.Errorf("BestMatch('he') = %q; want 'help'", got)
+	}
+}
+
+func TestBestMatch_ExactMatchReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	// exact match returns empty (nothing to complete)
+	got := reg.BestMatch("help")
+	if got != "" {
+		t.Errorf("BestMatch('help') = %q; want empty for exact match", got)
+	}
+}
+
+func TestBestMatch_NoMatch(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	got := reg.BestMatch("zzz")
+	if got != "" {
+		t.Errorf("BestMatch('zzz') = %q; want empty", got)
+	}
+}
+
+func TestBestMatch_EmptyPrefix(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	got := reg.BestMatch("")
+	if got != "" {
+		t.Errorf("BestMatch('') = %q; want empty", got)
+	}
+}
+
+func TestBestMatch_CaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	got := reg.BestMatch("HE")
+	if got != "help" {
+		t.Errorf("BestMatch('HE') = %q; want 'help'", got)
+	}
+}
+
 func TestIsCommand(t *testing.T) {
 	t.Parallel()
 

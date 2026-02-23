@@ -451,6 +451,22 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editor = updated.(EditorModel)
 		return m, cmd
 
+	case "tab":
+		// Tab accepts ghost text when no overlay is open
+		if m.overlay == nil && m.editor.GhostText() != "" {
+			updated, cmd := m.editor.Update(msg)
+			m.editor = updated.(EditorModel)
+			m.editor = m.editor.SetGhostText("")
+			return m, cmd
+		}
+		// Otherwise, pass tab to overlay or editor
+		if m.overlay != nil {
+			return m.updateOverlay(msg)
+		}
+		updated, cmd := m.editor.Update(msg)
+		m.editor = updated.(EditorModel)
+		return m, cmd
+
 	default:
 		// Check for "/" to open command palette
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
@@ -472,6 +488,8 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Route to editor
 		updated, cmd := m.editor.Update(msg)
 		m.editor = updated.(EditorModel)
+		// Compute ghost text after each editor update
+		m.editor = m.editor.SetGhostText(m.computeGhostText())
 		return m, cmd
 	}
 }
@@ -685,6 +703,25 @@ func (m AppModel) modelName() string {
 		return m.deps.Model.Name
 	}
 	return ""
+}
+
+// computeGhostText returns the completion suffix for the current editor text.
+// Only active when text starts with "/" and has no spaces.
+func (m AppModel) computeGhostText() string {
+	text := m.editor.Text()
+	if !strings.HasPrefix(text, "/") || strings.Contains(text, " ") {
+		return ""
+	}
+	prefix := text[1:] // strip "/"
+	if prefix == "" {
+		return ""
+	}
+	match := m.cmdRegistry.BestMatch(prefix)
+	if match == "" {
+		return ""
+	}
+	// Return the suffix that would complete the command
+	return match[len(prefix):]
 }
 
 func (m AppModel) buildCmdPalette() CmdPaletteModel {

@@ -131,6 +131,32 @@ func (r *Registry) List() []*Command {
 	return result
 }
 
+// BestMatch returns the shortest command name that starts with prefix (case-insensitive).
+// Returns empty string if no match or if prefix is an exact match.
+func (r *Registry) BestMatch(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	lower := strings.ToLower(prefix)
+	var best string
+	for key, cmd := range r.commands {
+		// Only match primary names, not aliases
+		if key != cmd.Name {
+			continue
+		}
+		name := strings.ToLower(cmd.Name)
+		if name == lower {
+			return "" // exact match: nothing to complete
+		}
+		if strings.HasPrefix(name, lower) {
+			if best == "" || len(cmd.Name) < len(best) {
+				best = cmd.Name
+			}
+		}
+	}
+	return best
+}
+
 // Dispatch parses a "/command args" input, looks up the command, and executes it.
 // Returns the command output or an error if the command is not found.
 func (r *Registry) Dispatch(ctx *CommandContext, input string) (string, error) {

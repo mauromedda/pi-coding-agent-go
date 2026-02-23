@@ -105,6 +105,7 @@ type EditorModel struct {
 	promptWidth int
 	placeholder string
 	width       int
+	ghostText   string // dimmed completion shown after cursor
 }
 
 // NewEditorModel creates a new empty editor.
@@ -229,6 +230,17 @@ func (m EditorModel) IsEmpty() bool {
 	return len(m.lines) == 1 && len(m.lines[0]) == 0
 }
 
+// SetGhostText sets dimmed completion text shown after the cursor.
+func (m EditorModel) SetGhostText(g string) EditorModel {
+	m.ghostText = g
+	return m
+}
+
+// GhostText returns the current ghost text.
+func (m EditorModel) GhostText() string {
+	return m.ghostText
+}
+
 // --- Key dispatch ---
 
 func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
@@ -239,6 +251,12 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 		}
 	case tea.KeySpace:
 		m.insertRune(' ')
+	case tea.KeyTab:
+		if m.ghostText != "" {
+			m.acceptGhostText()
+		} else {
+			m.insertRune('\t')
+		}
 	case tea.KeyEnter:
 		m.insertNewline()
 	case tea.KeyBackspace:
@@ -270,6 +288,15 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 	case tea.KeyCtrlV:
 		m.pasteImage()
 	}
+}
+
+// acceptGhostText inserts the ghost text at the cursor position and clears it.
+func (m *EditorModel) acceptGhostText() {
+	if m.ghostText == "" {
+		return
+	}
+	m.insertText(m.ghostText)
+	m.ghostText = ""
 }
 
 // --- Editing operations ---
@@ -498,6 +525,11 @@ func (m *EditorModel) renderLineWithCursor(b *strings.Builder, wrapped []string,
 			b.WriteString(CursorMarker)
 			if cursorOffset < len(runes) {
 				b.WriteString(string(runes[cursorOffset:]))
+			}
+			// Render ghost text after cursor if at end of line
+			if m.ghostText != "" && cursorOffset >= len(runes) {
+				s := Styles()
+				b.WriteString(s.Dim.Render(m.ghostText))
 			}
 		} else {
 			b.WriteString(lp + wl)
