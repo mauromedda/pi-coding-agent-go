@@ -52,7 +52,12 @@ func ProbeTTFB(ctx context.Context, baseURL string, apiKey string) ProbeResult {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
-	url := strings.TrimRight(baseURL, "/") + "/v1/chat/completions"
+	base := strings.TrimRight(baseURL, "/")
+	// Avoid duplicating /v1 if the baseURL already includes it.
+	url := base + "/v1/chat/completions"
+	if strings.HasSuffix(base, "/v1") {
+		url = base + "/chat/completions"
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(probePayload))
 	if err != nil {
 		return ProbeResult{TTFB: probeTimeout, Latency: LatencySlow}

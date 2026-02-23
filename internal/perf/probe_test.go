@@ -96,6 +96,23 @@ func TestProbeTTFB_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestProbeTTFB_BaseURLWithV1Suffix(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "data: {}\n\n")
+	}))
+	defer srv.Close()
+
+	// baseURL already includes /v1; should NOT produce /v1/v1/chat/completions
+	ProbeTTFB(context.Background(), srv.URL+"/v1", "test-key")
+
+	if gotPath != "/v1/chat/completions" {
+		t.Errorf("expected path /v1/chat/completions, got %q", gotPath)
+	}
+}
+
 func TestProbeTTFB_SendsAuthHeader(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
