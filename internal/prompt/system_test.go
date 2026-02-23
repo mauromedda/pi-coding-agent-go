@@ -92,3 +92,98 @@ func TestBuildSystem_WithoutStyle(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSystem_PersonalityPrompt(t *testing.T) {
+	opts := SystemOpts{
+		CWD:               "/tmp/test",
+		PersonalityPrompt: "Be thorough and verify your work.",
+	}
+	result := BuildSystem(opts)
+
+	if !strings.Contains(result, "# Personality") {
+		t.Error("expected personality section header")
+	}
+	if !strings.Contains(result, "Be thorough and verify your work.") {
+		t.Error("expected personality prompt text in output")
+	}
+}
+
+func TestBuildSystem_PersonalityPrompt_Empty(t *testing.T) {
+	opts := SystemOpts{
+		CWD: "/tmp/test",
+	}
+	result := BuildSystem(opts)
+
+	if strings.Contains(result, "# Personality") {
+		t.Error("empty personality prompt should not produce personality section")
+	}
+}
+
+func TestBuildSystem_PersonalityAfterSkills(t *testing.T) {
+	opts := SystemOpts{
+		CWD:               "/tmp/test",
+		Skills:            []SkillRef{{Name: "test-skill", Content: "skill content"}},
+		PersonalityPrompt: "personality text",
+		ContextFiles:      []ContextFile{{Name: "ctx", Content: "context content"}},
+	}
+	result := BuildSystem(opts)
+
+	skillIdx := strings.Index(result, "# Skill: test-skill")
+	personalityIdx := strings.Index(result, "# Personality")
+	contextIdx := strings.Index(result, "# Context: ctx")
+
+	if skillIdx < 0 || personalityIdx < 0 || contextIdx < 0 {
+		t.Fatalf("missing sections: skill=%d, personality=%d, context=%d", skillIdx, personalityIdx, contextIdx)
+	}
+	if personalityIdx < skillIdx {
+		t.Error("personality section should appear after skills")
+	}
+	if personalityIdx > contextIdx {
+		t.Error("personality section should appear before context files")
+	}
+}
+
+func TestBuildSystem_PromptVersionFallback(t *testing.T) {
+	// When PromptVersion is set but no prompts directory exists,
+	// it should fall back to the hardcoded header.
+	opts := SystemOpts{
+		CWD:           "/tmp/test",
+		PromptVersion: "v99.99.99", // Non-existent version
+	}
+	result := BuildSystem(opts)
+
+	// Fallback should produce the hardcoded header
+	if !strings.Contains(result, "pi-go") {
+		t.Error("expected fallback header to contain 'pi-go'")
+	}
+}
+
+func TestBuildSystem_NoPromptVersion(t *testing.T) {
+	// Empty PromptVersion should use the hardcoded header
+	opts := SystemOpts{
+		CWD: "/tmp/test",
+	}
+	result := BuildSystem(opts)
+
+	if !strings.Contains(result, "You are pi-go") {
+		t.Error("expected hardcoded header when PromptVersion is empty")
+	}
+}
+
+func TestModeForVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		opts SystemOpts
+		want string
+	}{
+		{"plan mode", SystemOpts{PlanMode: true}, "plan"},
+		{"execute mode", SystemOpts{PlanMode: false}, "execute"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := modeForVersion(tt.opts); got != tt.want {
+				t.Errorf("modeForVersion() = %q; want %q", got, tt.want)
+			}
+		})
+	}
+}

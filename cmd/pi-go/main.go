@@ -11,14 +11,18 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/intent"
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/btea"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/personality"
+	"github.com/mauromedda/pi-coding-agent-go/internal/personality/checks"
 	"github.com/mauromedda/pi-coding-agent-go/internal/pkgmanager"
 	"github.com/mauromedda/pi-coding-agent-go/internal/prompt"
 	"github.com/mauromedda/pi-coding-agent-go/internal/statusline"
+	"github.com/mauromedda/pi-coding-agent-go/internal/telemetry"
 	"github.com/mauromedda/pi-coding-agent-go/internal/tools"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/provider/anthropic"
@@ -154,18 +158,50 @@ func run(args cliArgs) error {
 	memEntries, _ := memory.Load(cwd, home)
 	memSection := memory.FormatForPrompt(memEntries, nil)
 
+	// Initialize telemetry tracker
+	var tracker *telemetry.Tracker
+	if cfg.Telemetry.IsEnabled() {
+		tracker = telemetry.NewTracker(cfg.Telemetry.BudgetUSD, cfg.Telemetry.EffectiveWarnAtPct())
+	}
+	_ = tracker // Will be wired into agent loop in a future phase
+
+	// Initialize personality engine
+	var personalityPrompt string
+	if cfg.Personality != nil {
+		engine, err := personality.NewEngine("")
+		if err == nil {
+			if err := engine.SetProfile(cfg.Personality.EffectiveProfile()); err != nil {
+				pilog.Debug("personality: profile %q not found, using base", cfg.Personality.EffectiveProfile())
+			}
+			ctx := checks.CheckContext{} // Empty context; populated per-request later
+			personalityPrompt = engine.ComposePrompt(ctx)
+		}
+	}
+
+	// Initialize intent classifier (for future use; not wired into agent loop yet)
+	var intentClassifier *intent.Classifier
+	if cfg.Intent.IsEnabled() {
+		intentClassifier = intent.NewClassifier(intent.ClassifierConfig{
+			HeuristicThreshold: cfg.Intent.EffectiveHeuristicThreshold(),
+			AutoPlanFileCount:  cfg.Intent.EffectiveAutoPlanFileCount(),
+		})
+	}
+	_ = intentClassifier // Will be wired into agent loop in a future phase
+
 	// Build system prompt with memory and tool names
 	toolNames := make([]string, 0, len(toolRegistry.All()))
 	for _, t := range toolRegistry.All() {
 		toolNames = append(toolNames, t.Name)
 	}
 	systemPrompt := prompt.BuildSystem(prompt.SystemOpts{
-		CWD:           cwd,
-		PlanMode:      args.plan,
-		ToolNames:     toolNames,
-		MemorySection: memSection,
-		ContextFiles:  prompt.LoadContextFiles(cwd),
-		Style:         args.style,
+		CWD:               cwd,
+		PlanMode:           args.plan,
+		ToolNames:          toolNames,
+		MemorySection:      memSection,
+		ContextFiles:       prompt.LoadContextFiles(cwd),
+		Style:              args.style,
+		PersonalityPrompt:  personalityPrompt,
+		PromptVersion:      promptVersion(cfg),
 	})
 
 	// -p "prompt" shorthand: non-interactive mode with inline prompt
@@ -334,6 +370,14 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 		AutoCompactThreshold: autoCompactThreshold,
 		PermissionMode:       checker.Mode(),
 	})
+}
+
+// promptVersion returns the active prompt version from config, or empty for hardcoded fallback.
+func promptVersion(cfg *config.Settings) string {
+	if cfg.Prompts != nil && cfg.Prompts.ActiveVersion != "" {
+		return cfg.Prompts.ActiveVersion
+	}
+	return ""
 }
 
 // resolveTheme loads the theme from config. It checks:

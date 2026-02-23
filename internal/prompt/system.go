@@ -8,17 +8,33 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/mauromedda/pi-coding-agent-go/internal/prompts"
 )
 
 // BuildSystem constructs the system prompt for the agent.
 func BuildSystem(opts SystemOpts) string {
 	var b strings.Builder
 
-	b.WriteString("You are pi-go, an elité AI coding assistant.\n\n")
-
-	// Date and working directory
-	b.WriteString(fmt.Sprintf("Current date: %s\n", time.Now().Format("2006-01-02")))
-	b.WriteString(fmt.Sprintf("Working directory: %s\n\n", opts.CWD))
+	// Base prompt: versioned loader or hardcoded fallback
+	if opts.PromptVersion != "" {
+		loader := prompts.NewLoader("prompts", "prompts/overrides")
+		vars := map[string]string{
+			"DATE":      time.Now().Format("2006-01-02"),
+			"CWD":       opts.CWD,
+			"TOOL_LIST": strings.Join(opts.ToolNames, ", "),
+			"MODE":      modeForVersion(opts),
+		}
+		if composed, err := loader.Compose(opts.PromptVersion, vars); err == nil {
+			b.WriteString(composed)
+			b.WriteString("\n\n")
+		} else {
+			// Fallback to hardcoded on error
+			writeHardcodedHeader(&b, opts.CWD)
+		}
+	} else {
+		writeHardcodedHeader(&b, opts.CWD)
+	}
 
 	// Mode
 	if opts.PlanMode {
@@ -39,6 +55,13 @@ func BuildSystem(opts SystemOpts) string {
 		b.WriteString(fmt.Sprintf("# Skill: %s\n%s\n\n", skill.Name, skill.Content))
 	}
 
+	// Personality prompt (after skills, before context files)
+	if opts.PersonalityPrompt != "" {
+		b.WriteString("# Personality\n")
+		b.WriteString(opts.PersonalityPrompt)
+		b.WriteString("\n\n")
+	}
+
 	// Memory entries
 	if opts.MemorySection != "" {
 		b.WriteString(opts.MemorySection)
@@ -57,6 +80,21 @@ func BuildSystem(opts SystemOpts) string {
 	return b.String()
 }
 
+// writeHardcodedHeader writes the default header when no versioned prompt is active.
+func writeHardcodedHeader(b *strings.Builder, cwd string) {
+	b.WriteString("You are pi-go, an elité AI coding assistant.\n\n")
+	b.WriteString(fmt.Sprintf("Current date: %s\n", time.Now().Format("2006-01-02")))
+	b.WriteString(fmt.Sprintf("Working directory: %s\n\n", cwd))
+}
+
+// modeForVersion maps SystemOpts to a mode string for prompt variable substitution.
+func modeForVersion(opts SystemOpts) string {
+	if opts.PlanMode {
+		return "plan"
+	}
+	return "execute"
+}
+
 // SystemOpts configures the system prompt.
 type SystemOpts struct {
 	CWD           string
@@ -66,6 +104,13 @@ type SystemOpts struct {
 	ContextFiles  []ContextFile
 	MemorySection string
 	Style         string
+
+	// PromptVersion delegates base prompt to prompts.Loader when set.
+	// Empty string preserves the hardcoded default header.
+	PromptVersion string
+
+	// PersonalityPrompt is an injected personality prompt fragment.
+	PersonalityPrompt string
 }
 
 // SkillRef is a reference to a loaded skill.
