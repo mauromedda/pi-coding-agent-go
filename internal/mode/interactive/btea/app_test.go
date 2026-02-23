@@ -190,6 +190,25 @@ func TestAppModel_AgentDoneMsg(t *testing.T) {
 	}
 }
 
+func TestAppModel_AgentDoneMsgPreservesMessages(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.agentRunning = true
+
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "hi there"),
+	}
+	result, _ := m.Update(AgentDoneMsg{Messages: msgs})
+	model := result.(AppModel)
+
+	if len(model.messages) != 2 {
+		t.Fatalf("messages length = %d; want 2", len(model.messages))
+	}
+	if model.agentRunning {
+		t.Error("agentRunning should be false after AgentDoneMsg")
+	}
+}
+
 func TestAppModel_AgentUsageMsg(t *testing.T) {
 	m := NewAppModel(testDeps())
 	usage := &ai.Usage{InputTokens: 500, OutputTokens: 100}

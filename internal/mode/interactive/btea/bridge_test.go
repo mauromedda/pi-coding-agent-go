@@ -167,14 +167,11 @@ func TestRunAgentBridge_EventMapping(t *testing.T) {
 			RunAgentBridge(sender, ch)
 
 			msgs := sender.Messages()
-			// Expect the mapped message + AgentDoneMsg
-			if len(msgs) < 2 {
-				t.Fatalf("got %d messages; want at least 2", len(msgs))
+			// Expect only the mapped message; AgentDoneMsg is sent by the caller
+			if len(msgs) != 1 {
+				t.Fatalf("got %d messages; want 1", len(msgs))
 			}
 			tt.check(t, msgs[0])
-			if _, ok := msgs[len(msgs)-1].(AgentDoneMsg); !ok {
-				t.Errorf("last message = %T; want AgentDoneMsg", msgs[len(msgs)-1])
-			}
 		})
 	}
 }
@@ -187,11 +184,9 @@ func TestRunAgentBridge_ChannelCloseOnly(t *testing.T) {
 	RunAgentBridge(sender, ch)
 
 	msgs := sender.Messages()
-	if len(msgs) != 1 {
-		t.Fatalf("got %d messages; want 1 (AgentDoneMsg)", len(msgs))
-	}
-	if _, ok := msgs[0].(AgentDoneMsg); !ok {
-		t.Errorf("msg = %T; want AgentDoneMsg", msgs[0])
+	// Bridge should NOT send AgentDoneMsg; the caller handles it
+	if len(msgs) != 0 {
+		t.Fatalf("got %d messages; want 0 (bridge should not send AgentDoneMsg)", len(msgs))
 	}
 }
 
@@ -206,8 +201,8 @@ func TestRunAgentBridge_MultipleEventsPreservesOrder(t *testing.T) {
 	RunAgentBridge(sender, ch)
 
 	msgs := sender.Messages()
-	if len(msgs) != 4 { // 3 text + 1 done
-		t.Fatalf("got %d messages; want 4", len(msgs))
+	if len(msgs) != 3 { // 3 text; no AgentDoneMsg from bridge
+		t.Fatalf("got %d messages; want 3", len(msgs))
 	}
 
 	expected := []string{"first", "second", "third"}
@@ -219,10 +214,6 @@ func TestRunAgentBridge_MultipleEventsPreservesOrder(t *testing.T) {
 		if msg.Text != want {
 			t.Errorf("msg[%d].Text = %q; want %q", i, msg.Text, want)
 		}
-	}
-
-	if _, ok := msgs[3].(AgentDoneMsg); !ok {
-		t.Errorf("msg[3] = %T; want AgentDoneMsg", msgs[3])
 	}
 }
 
@@ -237,12 +228,9 @@ func TestRunAgentBridge_IgnoresUnknownEventTypes(t *testing.T) {
 	RunAgentBridge(sender, ch)
 
 	msgs := sender.Messages()
-	// Only AgentDoneMsg; the start/end events are agent-internal
-	if len(msgs) != 1 {
-		t.Fatalf("got %d messages; want 1 (AgentDoneMsg only)", len(msgs))
-	}
-	if _, ok := msgs[0].(AgentDoneMsg); !ok {
-		t.Errorf("msg = %T; want AgentDoneMsg", msgs[0])
+	// No messages; unknown events are ignored and AgentDoneMsg is the caller's job
+	if len(msgs) != 0 {
+		t.Fatalf("got %d messages; want 0", len(msgs))
 	}
 }
 

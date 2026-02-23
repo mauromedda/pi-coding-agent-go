@@ -15,7 +15,8 @@ type ProgramSender interface {
 }
 
 // RunAgentBridge reads agent events and sends them as tea.Msg to the program.
-// Blocks until the events channel is closed. Sends AgentDoneMsg when finished.
+// Blocks until the events channel is closed. The caller is responsible for
+// sending AgentDoneMsg with the final messages after the bridge returns.
 func RunAgentBridge(program ProgramSender, events <-chan agent.AgentEvent) {
 	for evt := range events {
 		switch evt.Type {
@@ -43,5 +44,4 @@ func RunAgentBridge(program ProgramSender, events <-chan agent.AgentEvent) {
 			program.Send(AgentErrorMsg{Err: evt.Error})
 		}
 	}
-	program.Send(AgentDoneMsg{})
 }

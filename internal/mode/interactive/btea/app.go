@@ -518,9 +518,11 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
 		events := ag.Prompt(context.Background(), llmCtx, opts)
 
-		// The bridge sends all events via program.Send; blocks until done.
+		// The bridge sends streaming events via program.Send; blocks until done.
 		RunAgentBridge(program, events)
-		return nil // AgentDoneMsg already sent by RunAgentBridge
+
+		// Return AgentDoneMsg with the updated conversation messages.
+		return AgentDoneMsg{Messages: llmCtx.Messages}
 	}
 }
 
