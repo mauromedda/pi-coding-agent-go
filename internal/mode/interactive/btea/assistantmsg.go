@@ -9,30 +9,32 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
 // AssistantMsgModel renders an assistant's response with streamed text,
-// thinking indicator, and inline tool call sub-models.
+// thinking indicator, error messages, and inline tool call sub-models.
 type AssistantMsgModel struct {
 	text      strings.Builder
 	thinking  string
+	errors    []string
 	toolCalls []ToolCallModel
 	width     int
 }
 
 // NewAssistantMsgModel creates an empty AssistantMsgModel.
-func NewAssistantMsgModel() AssistantMsgModel {
-	return AssistantMsgModel{}
+func NewAssistantMsgModel() *AssistantMsgModel {
+	return &AssistantMsgModel{}
 }
 
 // Init returns nil; no commands needed for a leaf model.
-func (m AssistantMsgModel) Init() tea.Cmd {
+func (m *AssistantMsgModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles messages for text accumulation, thinking, and tool call routing.
-func (m AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case AgentTextMsg:
 		m.text.WriteString(msg.Text)
@@ -64,6 +66,9 @@ func (m AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case AgentErrorMsg:
+		m.errors = append(m.errors, msg.Err.Error())
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		for i := range m.toolCalls {
@@ -76,7 +81,7 @@ func (m AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the assistant message with thinking indicator, text, and tool calls.
-func (m AssistantMsgModel) View() string {
+func (m *AssistantMsgModel) View() string {
 	s := Styles()
 	var b strings.Builder
 
@@ -99,6 +104,17 @@ func (m AssistantMsgModel) View() string {
 		for _, line := range lines {
 			b.WriteString(line + "\n")
 		}
+	}
+
+	// Errors with dedicated styling
+	for _, errText := range m.errors {
+		errStyle := lipgloss.NewStyle().
+			BorderLeft(true).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderForeground(lipgloss.Color("1")).
+			PaddingLeft(1).
+			Foreground(lipgloss.Color("1"))
+		b.WriteString(errStyle.Render(fmt.Sprintf("✗ %s", errText)) + "\n")
 	}
 
 	// Tool calls

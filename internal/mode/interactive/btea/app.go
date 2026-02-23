@@ -267,7 +267,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case AgentErrorMsg:
 		m = m.ensureAssistantMsg()
-		m = m.updateLastAssistant(AgentTextMsg{Text: fmt.Sprintf("\n[Error: %v]", msg.Err)})
+		m = m.updateLastAssistant(msg)
 		return m, nil
 
 	// --- Key routing ---
