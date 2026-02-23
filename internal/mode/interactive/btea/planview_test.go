@@ -193,3 +193,74 @@ func TestPlanViewModel_WindowSizeMsg(t *testing.T) {
 		t.Errorf("height = %d; want 40", pm.height)
 	}
 }
+
+// --- WS2: Overlay border tests ---
+
+func TestPlanViewModel_ViewHasBorder(t *testing.T) {
+	t.Parallel()
+	m := NewPlanViewModel("test plan content")
+	m.width = 80
+	m.height = 24
+	view := m.View()
+
+	if !strings.Contains(view, "╭") || !strings.Contains(view, "╰") {
+		t.Errorf("View() should contain rounded border chars (╭/╰); got:\n%s", view)
+	}
+}
+
+func TestPlanViewModel_ViewHasScrollIndicator(t *testing.T) {
+	t.Parallel()
+	// Create a plan with many lines
+	lines := make([]string, 50)
+	for i := range lines {
+		lines[i] = "Line content"
+	}
+	m := NewPlanViewModel(strings.Join(lines, "\n"))
+	m.width = 80
+	m.height = 20
+	view := m.View()
+
+	if !strings.Contains(view, "lines") {
+		t.Errorf("View() should contain scroll indicator with 'lines'; got:\n%s", view)
+	}
+}
+
+func TestOverlayRender_CentersOverlay(t *testing.T) {
+	t.Parallel()
+	bg := "background line 1\nbackground line 2\nbackground line 3\nbackground line 4\nbackground line 5"
+	overlay := "OVR"
+
+	result := overlayRender(bg, overlay, 20, 5)
+
+	// Result should have 5 lines (matching height)
+	resultLines := strings.Split(result, "\n")
+	if len(resultLines) != 5 {
+		t.Errorf("overlayRender produced %d lines; want 5", len(resultLines))
+	}
+
+	// The overlay text should appear somewhere in the output
+	if !strings.Contains(result, "OVR") {
+		t.Errorf("overlayRender output should contain overlay text; got:\n%s", result)
+	}
+}
+
+func TestOverlayRender_PreservesBackgroundOnNonOverlayRows(t *testing.T) {
+	t.Parallel()
+	bg := "AAAAAA\nBBBBBB\nCCCCCC\nDDDDDD\nEEEEEE"
+	overlay := "X"
+
+	result := overlayRender(bg, overlay, 6, 5)
+
+	// At least some background rows should be preserved (not all replaced)
+	lines := strings.Split(result, "\n")
+	hasBackground := false
+	for _, l := range lines {
+		if strings.Contains(l, "AAAAAA") || strings.Contains(l, "EEEEE") {
+			hasBackground = true
+			break
+		}
+	}
+	if !hasBackground {
+		t.Errorf("overlayRender should preserve some background rows; got:\n%s", result)
+	}
+}

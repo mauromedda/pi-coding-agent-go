@@ -584,7 +584,7 @@ func (m AppModel) View() string {
 	main := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if m.overlay != nil {
-		return main + "\n" + m.overlay.View()
+		return overlayRender(main, m.overlay.View(), m.width, m.height)
 	}
 
 	return main

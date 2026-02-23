@@ -52,17 +52,55 @@ func (m CostViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the cost dashboard.
+// View renders the cost dashboard as a bordered overlay box.
 func (m CostViewModel) View() string {
+	s := Styles()
+	bs := s.OverlayBorder
+
+	const (
+		dash    = "─"
+		vBorder = "│"
+		tl      = "╭"
+		tr      = "╮"
+		bl      = "╰"
+		br      = "╯"
+	)
+
+	boxWidth := 44 // fixed width for cost dashboard
+	innerWidth := boxWidth - 2
+	contentWidth := boxWidth - 4
+	border := bs.Render(vBorder)
+
 	var b strings.Builder
-	b.WriteString("--- Token & Cost Dashboard ---\n")
-	b.WriteString(fmt.Sprintf("  Input tokens:  %s\n", formatNumber(m.totalInput)))
-	b.WriteString(fmt.Sprintf("  Output tokens: %s\n", formatNumber(m.totalOutput)))
-	b.WriteString(fmt.Sprintf("  Total cost:    $%.2f\n", m.totalCost))
-	b.WriteString(fmt.Sprintf("  API calls:     %d\n", m.callCount))
-	b.WriteString(fmt.Sprintf("  Budget:        $%.2f\n", m.budgetUSD))
-	b.WriteString(fmt.Sprintf("  Used:          %.1f%%\n", m.budgetUsedPct))
-	b.WriteString("--- Press ESC to close ---")
+
+	// Top border with title
+	title := s.OverlayTitle.Render(" Token & Cost Dashboard ")
+	titleLen := len(" Token & Cost Dashboard ")
+	dashesLeft := max((innerWidth-titleLen)/2, 0)
+	dashesRight := max(innerWidth-titleLen-dashesLeft, 0)
+	b.WriteString(bs.Render(tl))
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesLeft)))
+	b.WriteString(title)
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesRight)))
+	b.WriteString(bs.Render(tr))
+	b.WriteByte('\n')
+
+	// Content lines
+	writeBoxLine(&b, border, fmt.Sprintf("Input tokens:  %s", formatNumber(m.totalInput)), contentWidth)
+	writeBoxLine(&b, border, fmt.Sprintf("Output tokens: %s", formatNumber(m.totalOutput)), contentWidth)
+	writeBoxLine(&b, border, fmt.Sprintf("Total cost:    $%.2f", m.totalCost), contentWidth)
+	writeBoxLine(&b, border, fmt.Sprintf("API calls:     %d", m.callCount), contentWidth)
+	writeBoxLine(&b, border, fmt.Sprintf("Budget:        $%.2f", m.budgetUSD), contentWidth)
+	writeBoxLine(&b, border, fmt.Sprintf("Used:          %.1f%%", m.budgetUsedPct), contentWidth)
+
+	// Hint line
+	writeBoxLine(&b, border, s.Dim.Render("Press ESC to close"), contentWidth)
+
+	// Bottom border
+	b.WriteString(bs.Render(bl))
+	b.WriteString(bs.Render(strings.Repeat(dash, innerWidth)))
+	b.WriteString(bs.Render(br))
+
 	return b.String()
 }
 

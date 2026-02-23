@@ -80,32 +80,60 @@ func (m PermDialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the permission dialog with tool info and key options.
+// View renders the permission dialog as a bordered overlay box.
 func (m PermDialogModel) View() string {
 	s := Styles()
+	bs := s.OverlayBorder
+
+	const (
+		dash    = "─"
+		vBorder = "│"
+		tl      = "╭"
+		tr      = "╮"
+		bl      = "╰"
+		br      = "╯"
+	)
+
+	boxWidth := 50
+	innerWidth := boxWidth - 2
+	contentWidth := boxWidth - 4
+	border := bs.Render(vBorder)
+
 	var b strings.Builder
 
-	// Header
-	b.WriteString(s.Warning.Render(s.Bold.Render("Permission Required")))
+	// Top border with title
+	title := s.OverlayTitle.Render(" Permission Required ")
+	titleLen := len(" Permission Required ")
+	dashesLeft := max((innerWidth-titleLen)/2, 0)
+	dashesRight := max(innerWidth-titleLen-dashesLeft, 0)
+	b.WriteString(bs.Render(tl))
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesLeft)))
+	b.WriteString(title)
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesRight)))
+	b.WriteString(bs.Render(tr))
 	b.WriteByte('\n')
 
 	// Tool name
-	b.WriteString(fmt.Sprintf("  Tool: %s", s.Bold.Render(m.tool)))
-	b.WriteByte('\n')
+	writeBoxLine(&b, border, fmt.Sprintf("Tool: %s", s.Bold.Render(m.tool)), contentWidth)
 
 	// Args
 	if len(m.args) > 0 {
-		b.WriteString(fmt.Sprintf("  Args: %s", formatArgs(m.args)))
-		b.WriteByte('\n')
+		writeBoxLine(&b, border, fmt.Sprintf("Args: %s", formatArgs(m.args)), contentWidth)
 	}
 
-	b.WriteByte('\n')
+	// Empty line
+	writeBoxLine(&b, border, "", contentWidth)
 
 	// Options
 	allow := s.Success.Render("[y] Allow")
 	always := s.Info.Render("[a] Always")
 	deny := s.Error.Render("[n] Deny")
-	b.WriteString(fmt.Sprintf("%s  %s  %s", allow, always, deny))
+	writeBoxLine(&b, border, fmt.Sprintf("%s  %s  %s", allow, always, deny), contentWidth)
+
+	// Bottom border
+	b.WriteString(bs.Render(bl))
+	b.WriteString(bs.Render(strings.Repeat(dash, innerWidth)))
+	b.WriteString(bs.Render(br))
 
 	return b.String()
 }

@@ -114,19 +114,46 @@ func (m QueueViewModel) closeCmd() func() tea.Msg {
 	}
 }
 
-// View renders the queue overlay.
+// View renders the queue overlay as a bordered box.
 func (m QueueViewModel) View() string {
 	s := Styles()
+	bs := s.OverlayBorder
+
+	const (
+		dash    = "─"
+		vBorder = "│"
+		tl      = "╭"
+		tr      = "╮"
+		bl      = "╰"
+		br      = "╯"
+	)
+
+	boxWidth := max(m.width*2/5, 40)
+	if boxWidth > m.width-4 {
+		boxWidth = max(m.width-4, 40)
+	}
+	innerWidth := max(boxWidth-2, 0)
+	contentWidth := max(boxWidth-4, 20)
+	border := bs.Render(vBorder)
+
 	var b strings.Builder
 
-	b.WriteString(s.Bold.Render("--- Queued Prompts ---"))
+	// Top border with title
+	title := s.OverlayTitle.Render(" Queued Prompts ")
+	titleLen := len(" Queued Prompts ")
+	dashesLeft := max((innerWidth-titleLen)/2, 0)
+	dashesRight := max(innerWidth-titleLen-dashesLeft, 0)
+	b.WriteString(bs.Render(tl))
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesLeft)))
+	b.WriteString(title)
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesRight)))
+	b.WriteString(bs.Render(tr))
 	b.WriteByte('\n')
 
 	if len(m.items) == 0 {
-		b.WriteString(s.Dim.Render("  (empty)"))
-		b.WriteByte('\n')
+		writeBoxLine(&b, border, s.Dim.Render("(empty)"), contentWidth)
 	} else {
-		maxW := m.width - 8 // account for prefix + padding
+		maxW := contentWidth - 6 // prefix + number
 		if maxW < 10 {
 			maxW = 10
 		}
@@ -141,14 +168,20 @@ func (m QueueViewModel) View() string {
 			}
 			line := fmt.Sprintf("%s%d. %s", prefix, i+1, display)
 			if i == m.cursor {
-				b.WriteString(s.Selection.Render(line))
+				writeBoxLine(&b, border, s.Selection.Render(line), contentWidth)
 			} else {
-				b.WriteString(s.Dim.Render(line))
+				writeBoxLine(&b, border, s.Dim.Render(line), contentWidth)
 			}
-			b.WriteByte('\n')
 		}
 	}
 
-	b.WriteString(s.Muted.Render("  j/k:nav  d:del  J/K:move  e:edit  esc:close"))
+	// Hint line
+	writeBoxLine(&b, border, s.Muted.Render("j/k:nav  d:del  J/K:move  e:edit  esc:close"), contentWidth)
+
+	// Bottom border
+	b.WriteString(bs.Render(bl))
+	b.WriteString(bs.Render(strings.Repeat(dash, innerWidth)))
+	b.WriteString(bs.Render(br))
+
 	return b.String()
 }

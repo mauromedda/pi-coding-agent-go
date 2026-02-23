@@ -57,32 +57,87 @@ func (m PlanViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the plan with a header and scroll support.
+// View renders the plan as a bordered overlay box with scroll support.
 func (m PlanViewModel) View() string {
-	header := "Plan Review (y=approve, n=reject, j/k=scroll)"
+	s := Styles()
+	bs := s.OverlayBorder
+
+	// Box geometry: 60% of terminal width, clamped
+	boxWidth := max(m.width*3/5, 40)
+	if boxWidth > m.width-4 {
+		boxWidth = max(m.width-4, 40)
+	}
+	contentWidth := max(boxWidth-4, 20) // │ + space + content + space + │
 
 	lines := strings.Split(m.plan, "\n")
+	totalLines := len(lines)
 
 	// Apply scroll offset
-	start := m.scroll
-	if start > len(lines) {
-		start = len(lines)
-	}
+	start := min(m.scroll, totalLines)
 	visible := lines[start:]
 
-	// Limit visible lines to available height (reserve 3 for header + footer + border)
+	// Reserve rows for: top border(1) + header(1) + separator(1) + footer(1) + bottom border(1) = 5
 	maxVisible := len(visible)
-	if m.height > 4 && maxVisible > m.height-4 {
-		maxVisible = m.height - 4
+	boxHeight := max(m.height*3/5, 10)
+	contentRows := max(boxHeight-5, 3)
+	if maxVisible > contentRows {
+		maxVisible = contentRows
 	}
 	if maxVisible > 0 {
 		visible = visible[:maxVisible]
 	}
+	end := start + maxVisible
+
+	// Border chars
+	const (
+		dash    = "─"
+		vBorder = "│"
+		tl      = "╭"
+		tr      = "╮"
+		bl      = "╰"
+		br      = "╯"
+	)
+
+	border := bs.Render(vBorder)
+	innerWidth := max(boxWidth-2, 0)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("--- %s ---\n", header))
-	b.WriteString(strings.Join(visible, "\n"))
-	b.WriteString("\n---")
+
+	// Top border with title
+	title := s.OverlayTitle.Render(" Plan Review ")
+	titleLen := len(" Plan Review ") // visible chars
+	dashesLeft := max((innerWidth-titleLen)/2, 0)
+	dashesRight := max(innerWidth-titleLen-dashesLeft, 0)
+	b.WriteString(bs.Render(tl))
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesLeft)))
+	b.WriteString(title)
+	b.WriteString(bs.Render(strings.Repeat(dash, dashesRight)))
+	b.WriteString(bs.Render(tr))
+	b.WriteByte('\n')
+
+	// Keybinding hints line
+	hints := s.Dim.Render("y=approve  n=reject  j/k=scroll")
+	writeBoxLine(&b, border, hints, contentWidth)
+
+	// Separator
+	writeBoxLine(&b, border, bs.Render(strings.Repeat(dash, contentWidth)), contentWidth)
+
+	// Plan content lines
+	for _, line := range visible {
+		// Truncate long lines to fit content area
+		writeBoxLine(&b, border, line, contentWidth)
+	}
+
+	// Scroll indicator
+	if totalLines > contentRows {
+		indicator := s.Dim.Render(fmt.Sprintf("lines %d-%d of %d", start+1, end, totalLines))
+		writeBoxLine(&b, border, indicator, contentWidth)
+	}
+
+	// Bottom border
+	b.WriteString(bs.Render(bl))
+	b.WriteString(bs.Render(strings.Repeat(dash, innerWidth)))
+	b.WriteString(bs.Render(br))
 
 	return b.String()
 }
