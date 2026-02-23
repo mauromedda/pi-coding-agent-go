@@ -6,6 +6,7 @@ package btea
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -202,5 +203,43 @@ func TestDismissOverlayCmd(t *testing.T) {
 	msg := dismissOverlayCmd()
 	if _, ok := msg.(DismissOverlayMsg); !ok {
 		t.Errorf("dismissOverlayCmd() returned %T; want DismissOverlayMsg", msg)
+	}
+}
+
+// --- WS3: Channel safety tests ---
+
+func TestPermDialogModel_SendReplyDoesNotHangOnFullChannel(t *testing.T) {
+	// Use an unbuffered channel with no reader; sendReply must not block.
+	replyCh := make(chan PermissionReply)
+	m := NewPermDialogModel("Bash", nil, replyCh)
+
+	// This must return immediately; if sendReply blocks, the test will deadlock/timeout.
+	done := make(chan struct{})
+	go func() {
+		m.sendReply(PermissionReply{Allowed: true})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// sendReply returned without blocking; success.
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("sendReply blocked on unbuffered channel with no reader")
+	}
+}
+
+func TestPermDialogModel_SendReplyDeliversWhenBuffered(t *testing.T) {
+	replyCh := make(chan PermissionReply, 1)
+	m := NewPermDialogModel("Bash", nil, replyCh)
+
+	m.sendReply(PermissionReply{Allowed: true, Always: true})
+
+	select {
+	case reply := <-replyCh:
+		if !reply.Allowed || !reply.Always {
+			t.Errorf("reply = %+v; want Allowed=true Always=true", reply)
+		}
+	default:
+		t.Fatal("no reply delivered to buffered channel")
 	}
 }

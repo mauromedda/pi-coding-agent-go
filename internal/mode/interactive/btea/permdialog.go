@@ -38,6 +38,15 @@ func NewPermDialogModel(tool string, args map[string]any, replyCh chan<- Permiss
 	}
 }
 
+// sendReply sends a PermissionReply on the reply channel without blocking.
+// Uses a non-blocking select to prevent deadlock if the receiver has gone away.
+func (m PermDialogModel) sendReply(reply PermissionReply) {
+	select {
+	case m.replyCh <- reply:
+	default:
+	}
+}
+
 // Init returns nil; no commands needed at startup.
 func (m PermDialogModel) Init() tea.Cmd {
 	return nil
@@ -54,17 +63,17 @@ func (m PermDialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch msg.Runes[0] {
 			case 'y':
-				m.replyCh <- PermissionReply{Allowed: true}
+				m.sendReply(PermissionReply{Allowed: true})
 				return m, func() tea.Msg { return dismissOverlayCmd() }
 			case 'a':
-				m.replyCh <- PermissionReply{Allowed: true, Always: true}
+				m.sendReply(PermissionReply{Allowed: true, Always: true})
 				return m, func() tea.Msg { return dismissOverlayCmd() }
 			case 'n':
-				m.replyCh <- PermissionReply{Allowed: false}
+				m.sendReply(PermissionReply{Allowed: false})
 				return m, func() tea.Msg { return dismissOverlayCmd() }
 			}
 		case tea.KeyEsc:
-			m.replyCh <- PermissionReply{Allowed: false}
+			m.sendReply(PermissionReply{Allowed: false})
 			return m, func() tea.Msg { return dismissOverlayCmd() }
 		}
 	}
