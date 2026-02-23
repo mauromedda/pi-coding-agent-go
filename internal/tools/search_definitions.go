@@ -271,43 +271,53 @@ func searchRegex(root, lang string, nameRe *regexp.Regexp) []defResult {
 				continue
 			}
 
-			f, openErr := os.Open(path)
-			if openErr != nil {
-				return nil
+			found := scanFileForDefs(path, root, m.pattern, nameRe, &results)
+			if found || len(results) >= maxDefResults {
+				break
 			}
-
-			rel, _ := filepath.Rel(root, path)
-			if rel == "" {
-				rel = path
-			}
-
-			scanner := bufio.NewScanner(f)
-			lineNum := 0
-			for scanner.Scan() {
-				lineNum++
-				line := scanner.Text()
-				matches := m.pattern.FindStringSubmatch(line)
-				if matches == nil {
-					continue
-				}
-				// The last capture group is the name.
-				defName := matches[len(matches)-1]
-				if !nameRe.MatchString(defName) {
-					continue
-				}
-				results = append(results, defResult{
-					file: rel, line: lineNum,
-					kind: "def", name: strings.TrimSpace(line),
-				})
-				if len(results) >= maxDefResults {
-					f.Close()
-					return fs.SkipAll
-				}
-			}
-			f.Close()
-			break // Only match one language per file.
+		}
+		if len(results) >= maxDefResults {
+			return fs.SkipAll
 		}
 		return nil
 	})
 	return results
+}
+
+// scanFileForDefs scans a single file for definition matches and appends to results.
+// Returns true if the file matched the extension (regardless of whether definitions were found).
+func scanFileForDefs(path, root string, defPattern, nameRe *regexp.Regexp, results *[]defResult) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return true
+	}
+	defer f.Close()
+
+	rel, _ := filepath.Rel(root, path)
+	if rel == "" {
+		rel = path
+	}
+
+	scanner := bufio.NewScanner(f)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		matches := defPattern.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		defName := matches[len(matches)-1]
+		if !nameRe.MatchString(defName) {
+			continue
+		}
+		*results = append(*results, defResult{
+			file: rel, line: lineNum,
+			kind: "def", name: strings.TrimSpace(line),
+		})
+		if len(*results) >= maxDefResults {
+			return true
+		}
+	}
+	return true
 }
