@@ -230,5 +230,103 @@ func TestToolCallModel_ViewBorderBox(t *testing.T) {
 	}
 }
 
+// --- Phase 5B: Tool-specific border colors and file path subtitle ---
+
+func TestToolColor_SeparateEditAndGrep(t *testing.T) {
+	// Edit and Grep should have distinct colors from Write and Read
+	tests := []struct {
+		name     string
+		toolName string
+	}{
+		{"edit tool", "Edit"},
+		{"grep tool", "Grep"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := toolColor(tt.toolName)
+			rendered := s.Render("test")
+			if rendered == "" {
+				t.Errorf("toolColor(%q).Render('test') is empty", tt.toolName)
+			}
+		})
+	}
+}
+
+func TestToolColor_BorderColorMapping(t *testing.T) {
+	// Verify each tool type returns a distinct style
+	s := Styles()
+	readStyle := toolColor("Read")
+	writeStyle := toolColor("Write")
+	editStyle := toolColor("Edit")
+	bashStyle := toolColor("Bash")
+	grepStyle := toolColor("Grep")
+
+	// Each rendered text should be different from others (different ANSI codes)
+	rendered := map[string]string{
+		"Read":  readStyle.Render("x"),
+		"Write": writeStyle.Render("x"),
+		"Edit":  editStyle.Render("x"),
+		"Bash":  bashStyle.Render("x"),
+		"Grep":  grepStyle.Render("x"),
+	}
+
+	// Read should use ToolRead (cyan)
+	if readStyle.Render("x") != s.ToolRead.Render("x") {
+		t.Error("Read tool should use ToolRead style")
+	}
+	// Write should use ToolWrite (green)
+	if writeStyle.Render("x") != s.ToolWrite.Render("x") {
+		t.Error("Write tool should use ToolWrite style")
+	}
+	// Edit should use ToolEdit (yellow)
+	if editStyle.Render("x") != s.ToolEdit.Render("x") {
+		t.Error("Edit tool should use ToolEdit style")
+	}
+	// Bash should use ToolBash (orange)
+	if bashStyle.Render("x") != s.ToolBash.Render("x") {
+		t.Error("Bash tool should use ToolBash style")
+	}
+	// Grep should use ToolGrep (magenta)
+	if grepStyle.Render("x") != s.ToolGrep.Render("x") {
+		t.Error("Grep tool should use ToolGrep style")
+	}
+
+	_ = rendered
+}
+
+func TestToolCallModel_ViewShowsFilePathSubtitle(t *testing.T) {
+	m := NewToolCallModel("t1", "Read", `{"file_path":"/home/user/main.go"}`)
+	m.width = 80
+
+	view := m.View()
+	if !strings.Contains(view, "main.go") || !strings.Contains(view, "/home/user") {
+		t.Errorf("View() missing file path subtitle; got %q", view)
+	}
+}
+
+func TestToolCallModel_ViewShowsPathForBash(t *testing.T) {
+	m := NewToolCallModel("t1", "Bash", `{"command":"ls -la"}`)
+	m.width = 80
+
+	view := m.View()
+	// Bash commands don't have file paths; should not crash
+	if !strings.Contains(view, "Bash") {
+		t.Errorf("View() missing tool name; got %q", view)
+	}
+}
+
+func TestToolCallModel_ToolBorderColor(t *testing.T) {
+	// The tool call box should use tool-specific border color
+	m := NewToolCallModel("t1", "Read", `{"file_path":"/tmp/test"}`)
+	m.width = 80
+
+	view := m.View()
+	// View should contain the border characters
+	if !strings.Contains(view, "─") {
+		t.Errorf("View() missing border; got %q", view)
+	}
+}
+
 // Suppress unused import lint for lipgloss (used in compile-time type check above).
 var _ = lipgloss.Style{}

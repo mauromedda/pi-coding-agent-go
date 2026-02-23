@@ -243,3 +243,86 @@ func TestAssistantMsgModel_ViewWithToolCalls(t *testing.T) {
 		t.Errorf("View() missing tool call render")
 	}
 }
+
+// --- Phase 5A: Visual hierarchy tests ---
+
+func TestAssistantMsgModel_ViewHasLeftBorder(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	updated, _ := m.Update(AgentTextMsg{Text: "Hello world"})
+	m1 := updated.(*AssistantMsgModel)
+
+	view := m1.View()
+	// Text lines should have a left border character
+	if !strings.Contains(view, "│") {
+		t.Errorf("View() missing left border character; got %q", view)
+	}
+}
+
+func TestAssistantMsgModel_ThinkingTextDivider(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	// Add thinking then text
+	updated, _ := m.Update(AgentThinkingMsg{Text: "reasoning"})
+	m1 := updated.(*AssistantMsgModel)
+	updated2, _ := m1.Update(AgentTextMsg{Text: "Here is my answer"})
+	m2 := updated2.(*AssistantMsgModel)
+
+	view := m2.View()
+	// Should have a divider between thinking and text sections
+	if !strings.Contains(view, "─") {
+		t.Errorf("View() missing divider between thinking and text; got %q", view)
+	}
+}
+
+func TestAssistantMsgModel_CachedWrapInvalidatesOnWidthChange(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	updated, _ := m.Update(AgentTextMsg{Text: "Hello world this is some text"})
+	m1 := updated.(*AssistantMsgModel)
+
+	// First render caches
+	_ = m1.View()
+	if m1.cachedWidth != 80 {
+		t.Errorf("cachedWidth = %d; want 80", m1.cachedWidth)
+	}
+	if len(m1.cachedLines) == 0 {
+		t.Error("cachedLines should be populated after View()")
+	}
+
+	// Change width: cache should invalidate on next View()
+	updated2, _ := m1.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	m2 := updated2.(*AssistantMsgModel)
+	_ = m2.View()
+	if m2.cachedWidth != 40 {
+		t.Errorf("cachedWidth after resize = %d; want 40", m2.cachedWidth)
+	}
+}
+
+func TestAssistantMsgModel_CachedWrapInvalidatesOnNewText(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	updated, _ := m.Update(AgentTextMsg{Text: "First"})
+	m1 := updated.(*AssistantMsgModel)
+	_ = m1.View()
+	oldLen := len(m1.cachedLines)
+
+	// Add more text: cache should update
+	updated2, _ := m1.Update(AgentTextMsg{Text: " Second"})
+	m2 := updated2.(*AssistantMsgModel)
+	_ = m2.View()
+
+	// New text should produce different or longer cached lines
+	if m2.text.String() != "First Second" {
+		t.Errorf("text = %q; want %q", m2.text.String(), "First Second")
+	}
+	// Cache should have been refreshed (at minimum, not stale)
+	if len(m2.cachedLines) == 0 {
+		t.Error("cachedLines should not be empty after new text")
+	}
+	_ = oldLen // used for reasoning; exact count depends on wrapping
+}

@@ -126,9 +126,9 @@ func (r *Registry) Dispatch(ctx *CommandContext, input string) (string, error) {
 	return cmd.Execute(ctx, args)
 }
 
-// IsCommand returns true if input starts with '/'.
+// IsCommand returns true if input starts with '/' or '!'.
 func IsCommand(input string) bool {
-	return len(input) > 0 && input[0] == '/'
+	return len(input) > 0 && (input[0] == '/' || input[0] == '!')
 }
 
 // defaultHotkeysTable returns a formatted table of default keybindings.

@@ -54,6 +54,20 @@ func (m CmdPaletteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
+		case tea.KeyRunes:
+			// Typing characters filters the palette
+			if len(msg.Runes) > 0 {
+				m.filter += string(msg.Runes)
+				m.selected = 0
+				m.applyFilter()
+			}
+		case tea.KeyBackspace, tea.KeyLeft:
+			// Delete last character from filter
+			if len(m.filter) > 0 {
+				m.filter = m.filter[:len(m.filter)-1]
+				m.selected = 0
+				m.applyFilter()
+			}
 		case tea.KeyUp:
 			m.moveUp()
 		case tea.KeyDown:

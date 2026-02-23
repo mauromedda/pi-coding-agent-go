@@ -21,13 +21,16 @@ var builtins = map[string]*Theme{
 			Error:   NewColor("\x1b[38;5;203m"),
 			Info:    NewColor("\x1b[38;5;117m"),
 
-			Border:    NewColor("\x1b[38;5;240m"),
-			Selection: NewColor("\x1b[48;5;236m"),
-			Prompt:    NewColor("\x1b[1m\x1b[97m"),
+			Border:      NewColor("\x1b[38;5;240m"),
+			Selection:   NewColor("\x1b[48;5;236m"),
+			Prompt:      NewColor("\x1b[1m\x1b[97m"),
+			BashSeparator: NewColor("\x1b[38;5;208m"), // Orange
 
 			ToolRead:  NewColor("\x1b[38;5;117m"),
 			ToolBash:  NewColor("\x1b[38;5;221m"),
 			ToolWrite: NewColor("\x1b[38;5;114m"),
+			ToolEdit:  NewColor("\x1b[38;5;221m"),
+			ToolGrep:  NewColor("\x1b[38;5;183m"),
 			ToolOther: NewColor("\x1b[38;5;183m"),
 
 			FooterPath:   NewColor("\x1b[1m\x1b[97m"),
@@ -57,13 +60,16 @@ var builtins = map[string]*Theme{
 			Error:   NewColor("\x1b[38;5;160m"),
 			Info:    NewColor("\x1b[38;5;25m"),
 
-			Border:    NewColor("\x1b[38;5;249m"),
-			Selection: NewColor("\x1b[48;5;254m"),
-			Prompt:    NewColor("\x1b[1m\x1b[30m"),
+			Border:      NewColor("\x1b[38;5;249m"),
+			Selection:   NewColor("\x1b[48;5;254m"),
+			Prompt:      NewColor("\x1b[1m\x1b[30m"),
+			BashSeparator: NewColor("\x1b[38;5;208m"), // Orange
 
 			ToolRead:  NewColor("\x1b[38;5;25m"),
 			ToolBash:  NewColor("\x1b[38;5;130m"),
 			ToolWrite: NewColor("\x1b[38;5;28m"),
+			ToolEdit:  NewColor("\x1b[38;5;130m"),
+			ToolGrep:  NewColor("\x1b[38;5;91m"),
 			ToolOther: NewColor("\x1b[38;5;91m"),
 
 			FooterPath:   NewColor("\x1b[1m\x1b[30m"),
@@ -93,13 +99,16 @@ var builtins = map[string]*Theme{
 			Error:   NewColor("\x1b[1m\x1b[4m"),
 			Info:    NewColor("\x1b[1m"),
 
-			Border:    NewColor("\x1b[2m"),
-			Selection: NewColor("\x1b[7m"),
-			Prompt:    NewColor("\x1b[1m"),
+			Border:      NewColor("\x1b[2m"),
+			Selection:   NewColor("\x1b[7m"),
+			Prompt:      NewColor("\x1b[1m"),
+			BashSeparator: NewColor("\x1b[1m"), // Orange equivalent in monochrome (bold)
 
 			ToolRead:  NewColor("\x1b[2m"),
 			ToolBash:  NewColor("\x1b[1m"),
 			ToolWrite: NewColor("\x1b[1m"),
+			ToolEdit:  NewColor("\x1b[1m"),
+			ToolGrep:  NewColor("\x1b[2m"),
 			ToolOther: NewColor("\x1b[2m"),
 
 			FooterPath:   NewColor("\x1b[1m"),

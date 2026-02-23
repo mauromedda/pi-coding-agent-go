@@ -425,28 +425,29 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 
 func (m AppModel) handleBashCommand(command string) (AppModel, tea.Cmd) {
 	// Run bash command synchronously and show result
-	result, err := runBashCommand(command)
-	if err != nil {
-		result = fmt.Sprintf("Error: %v", err)
-	}
+	result, exitCode := runBashCommand(command)
 
 	// Create bash output model with proper styling
 	bom := NewBashOutputModel(command)
 	bom.AddOutput(result)
+	bom.SetExitCode(exitCode)
 	bom.width = m.width
 	m.content = append(m.content, bom)
 	return m, nil
 }
 
-func runBashCommand(command string) (string, error) {
+func runBashCommand(command string) (string, int) {
 	// Use /bin/bash with full path to avoid PATH issues
 	cmd := exec.Command("/bin/bash", "-c", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// Include the actual bash output in the error message
-		return "", fmt.Errorf("command failed: %w\n%s", err, output)
+		exitCode := 1
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+		return string(output), exitCode
 	}
-	return string(output), nil
+	return string(output), 0
 }
 
 func (m AppModel) handleSlashCommand(text string) (AppModel, tea.Cmd) {

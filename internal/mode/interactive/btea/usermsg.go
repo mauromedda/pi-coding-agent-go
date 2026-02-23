@@ -19,6 +19,11 @@ func NewUserMsgModel(text string) UserMsgModel {
 	return UserMsgModel{text: text}
 }
 
+// Text returns the raw user input text.
+func (m UserMsgModel) Text() string {
+	return m.text
+}
+
 // Init returns nil; no commands needed for a static message.
 func (m UserMsgModel) Init() tea.Cmd {
 	return nil

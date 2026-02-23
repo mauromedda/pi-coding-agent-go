@@ -1245,9 +1245,13 @@ func TestIsCommand(t *testing.T) {
 		{"slash help", "/help", true},
 		{"slash with args", "/model gpt-4", true},
 		{"slash space", "/ test", true},
+		{"bash command", "!ls", true},
+		{"bash with args", "!ls -la", true},
+		{"bash space", "! test", true},
 		{"plain text", "hello", false},
 		{"empty string", "", false},
 		{"just slash", "/", true},
+		{"just bang", "!", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

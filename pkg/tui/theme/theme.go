@@ -52,14 +52,17 @@ type Palette struct {
 	Info    Color
 
 	// UI
-	Border    Color
-	Selection Color
-	Prompt    Color
+	Border      Color
+	Selection   Color
+	Prompt      Color
+	BashSeparator Color // Orange separator for bash command output
 
 	// Tool categories
 	ToolRead  Color
 	ToolBash  Color
 	ToolWrite Color
+	ToolEdit  Color
+	ToolGrep  Color
 	ToolOther Color
 
 	// Footer
@@ -101,14 +104,17 @@ func DefaultPalette() Palette {
 		Info:    NewColor("\x1b[36m"),
 
 		// UI
-		Border:    NewColor("\x1b[90m"),
-		Selection: NewColor("\x1b[7m"),
-		Prompt:    NewColor("\x1b[1m"),
+		Border:      NewColor("\x1b[90m"),
+		Selection:   NewColor("\x1b[7m"),
+		Prompt:      NewColor("\x1b[1m"),
+		BashSeparator: NewColor("\x1b[38;5;208m"), // Orange
 
 		// Tool categories
 		ToolRead:  NewColor("\x1b[36m"),
 		ToolBash:  NewColor("\x1b[33m"),
 		ToolWrite: NewColor("\x1b[32m"),
+		ToolEdit:  NewColor("\x1b[33m"),    // yellow
+		ToolGrep:  NewColor("\x1b[35m"),    // magenta
 		ToolOther: NewColor("\x1b[35m"),
 
 		// Footer

@@ -166,13 +166,16 @@ type ThemeStyles struct {
 	Error   lipgloss.Style
 	Info    lipgloss.Style
 
-	Border    lipgloss.Style
-	Selection lipgloss.Style
-	Prompt    lipgloss.Style
+	Border      lipgloss.Style
+	Selection   lipgloss.Style
+	Prompt      lipgloss.Style
+	BashSeparator lipgloss.Style
 
 	ToolRead  lipgloss.Style
 	ToolBash  lipgloss.Style
 	ToolWrite lipgloss.Style
+	ToolEdit  lipgloss.Style
+	ToolGrep  lipgloss.Style
 	ToolOther lipgloss.Style
 
 	FooterPath   lipgloss.Style
@@ -203,13 +206,16 @@ func Styles() ThemeStyles {
 		Error:   colorToStyle(p.Error.Code()),
 		Info:    colorToStyle(p.Info.Code()),
 
-		Border:    colorToStyle(p.Border.Code()),
-		Selection: colorToStyle(p.Selection.Code()),
-		Prompt:    colorToStyle(p.Prompt.Code()),
+		Border:      colorToStyle(p.Border.Code()),
+		Selection:   colorToStyle(p.Selection.Code()),
+		Prompt:      colorToStyle(p.Prompt.Code()),
+		BashSeparator: colorToStyle(p.BashSeparator.Code()),
 
 		ToolRead:  colorToStyle(p.ToolRead.Code()),
 		ToolBash:  colorToStyle(p.ToolBash.Code()),
 		ToolWrite: colorToStyle(p.ToolWrite.Code()),
+		ToolEdit:  colorToStyle(p.ToolEdit.Code()),
+		ToolGrep:  colorToStyle(p.ToolGrep.Code()),
 		ToolOther: colorToStyle(p.ToolOther.Code()),
 
 		FooterPath:   colorToStyle(p.FooterPath.Code()),
