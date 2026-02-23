@@ -154,61 +154,71 @@ func run(args cliArgs) error {
 		}
 	}
 
-	// W2: Load memory hierarchy and format for system prompt
-	memEntries, _ := memory.Load(cwd, home)
-	memSection := memory.FormatForPrompt(memEntries, nil)
-
-	// Initialize telemetry tracker
-	var tracker *telemetry.Tracker
-	if cfg.Telemetry.IsEnabled() {
-		var budgetUSD float64
-		var warnPct int
-		if cfg.Telemetry != nil {
-			budgetUSD = cfg.Telemetry.BudgetUSD
-			warnPct = cfg.Telemetry.EffectiveWarnAtPct()
-		}
-		tracker = telemetry.NewTracker(budgetUSD, warnPct)
-	}
-	_ = tracker // Will be wired into agent loop in a future phase
-
-	// Initialize personality engine
-	var personalityPrompt string
-	if cfg.Personality != nil {
-		engine, err := personality.NewEngine("")
-		if err == nil {
-			if err := engine.SetProfile(cfg.Personality.EffectiveProfile()); err != nil {
-				pilog.Debug("personality: profile %q not found, using base", cfg.Personality.EffectiveProfile())
-			}
-			ctx := checks.CheckContext{} // Empty context; populated per-request later
-			personalityPrompt = engine.ComposePrompt(ctx)
-		}
-	}
-
-	// Initialize intent classifier (for future use; not wired into agent loop yet)
-	var intentClassifier *intent.Classifier
-	if cfg.Intent.IsEnabled() {
-		intentClassifier = intent.NewClassifier(intent.ClassifierConfig{
-			HeuristicThreshold: cfg.Intent.EffectiveHeuristicThreshold(),
-			AutoPlanFileCount:  cfg.Intent.EffectiveAutoPlanFileCount(),
-		})
-	}
-	_ = intentClassifier // Will be wired into agent loop in a future phase
-
-	// Build system prompt with memory and tool names
+	// Collect tool names (needed for both lean and full prompts)
 	toolNames := make([]string, 0, len(toolRegistry.All()))
 	for _, t := range toolRegistry.All() {
 		toolNames = append(toolNames, t.Name)
 	}
-	systemPrompt := prompt.BuildSystem(prompt.SystemOpts{
-		CWD:               cwd,
-		PlanMode:           args.plan,
-		ToolNames:          toolNames,
-		MemorySection:      memSection,
-		ContextFiles:       prompt.LoadContextFiles(cwd),
-		Style:              args.style,
-		PersonalityPrompt:  personalityPrompt,
-		PromptVersion:      promptVersion(cfg),
-	})
+
+	var memSection string
+	var personalityPrompt string
+
+	if !args.lean {
+		// W2: Load memory hierarchy and format for system prompt
+		memEntries, _ := memory.Load(cwd, home)
+		memSection = memory.FormatForPrompt(memEntries, nil)
+
+		// Initialize telemetry tracker
+		var tracker *telemetry.Tracker
+		if cfg.Telemetry.IsEnabled() {
+			var budgetUSD float64
+			var warnPct int
+			if cfg.Telemetry != nil {
+				budgetUSD = cfg.Telemetry.BudgetUSD
+				warnPct = cfg.Telemetry.EffectiveWarnAtPct()
+			}
+			tracker = telemetry.NewTracker(budgetUSD, warnPct)
+		}
+		_ = tracker // Will be wired into agent loop in a future phase
+
+		// Initialize personality engine
+		if cfg.Personality != nil {
+			engine, err := personality.NewEngine("")
+			if err == nil {
+				if err := engine.SetProfile(cfg.Personality.EffectiveProfile()); err != nil {
+					pilog.Debug("personality: profile %q not found, using base", cfg.Personality.EffectiveProfile())
+				}
+				ctx := checks.CheckContext{} // Empty context; populated per-request later
+				personalityPrompt = engine.ComposePrompt(ctx)
+			}
+		}
+
+		// Initialize intent classifier (for future use; not wired into agent loop yet)
+		var intentClassifier *intent.Classifier
+		if cfg.Intent.IsEnabled() {
+			intentClassifier = intent.NewClassifier(intent.ClassifierConfig{
+				HeuristicThreshold: cfg.Intent.EffectiveHeuristicThreshold(),
+				AutoPlanFileCount:  cfg.Intent.EffectiveAutoPlanFileCount(),
+			})
+		}
+		_ = intentClassifier // Will be wired into agent loop in a future phase
+	}
+
+	// Build system prompt
+	sysOpts := prompt.SystemOpts{
+		CWD:       cwd,
+		Lean:      args.lean,
+		ToolNames: toolNames,
+	}
+	if !args.lean {
+		sysOpts.PlanMode = args.plan
+		sysOpts.MemorySection = memSection
+		sysOpts.ContextFiles = prompt.LoadContextFiles(cwd)
+		sysOpts.Style = args.style
+		sysOpts.PersonalityPrompt = personalityPrompt
+		sysOpts.PromptVersion = promptVersion(cfg)
+	}
+	systemPrompt := prompt.BuildSystem(sysOpts)
 
 	// -p "prompt" shorthand: non-interactive mode with inline prompt
 	if args.prompt != "" {

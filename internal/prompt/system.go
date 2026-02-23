@@ -16,6 +16,17 @@ import (
 func BuildSystem(opts SystemOpts) string {
 	var b strings.Builder
 
+	// Lean mode: hardcoded header + tool list only
+	if opts.Lean {
+		writeHardcodedHeader(&b, opts.CWD)
+		if len(opts.ToolNames) > 0 {
+			b.WriteString("Available tools: ")
+			b.WriteString(strings.Join(opts.ToolNames, ", "))
+			b.WriteString("\n\n")
+		}
+		return b.String()
+	}
+
 	// Base prompt: versioned loader or hardcoded fallback
 	if opts.PromptVersion != "" {
 		loader := prompts.NewLoader("prompts", "prompts/overrides")
@@ -99,6 +110,7 @@ func modeForVersion(opts SystemOpts) string {
 type SystemOpts struct {
 	CWD           string
 	PlanMode      bool
+	Lean          bool // minimal prompt: header + tools only
 	ToolNames     []string
 	Skills        []SkillRef
 	ContextFiles  []ContextFile

@@ -170,6 +170,68 @@ func TestBuildSystem_NoPromptVersion(t *testing.T) {
 	}
 }
 
+func TestBuildSystem_Lean(t *testing.T) {
+	opts := SystemOpts{
+		CWD:               "/tmp/test",
+		Lean:              true,
+		ToolNames:         []string{"read", "write", "bash"},
+		Skills:            []SkillRef{{Name: "test-skill", Content: "skill content"}},
+		PersonalityPrompt: "Be thorough.",
+		MemorySection:     "# Memory\nSome memory.",
+		ContextFiles:      []ContextFile{{Name: "ctx", Content: "context content"}},
+		Style:             "concise",
+		PromptVersion:     "v1.0.0",
+		PlanMode:          true,
+	}
+	result := BuildSystem(opts)
+
+	// Lean MUST include: hardcoded header, tools
+	if !strings.Contains(result, "You are pi-go") {
+		t.Error("lean prompt must include hardcoded header")
+	}
+	if !strings.Contains(result, "read, write, bash") {
+		t.Error("lean prompt must include tool list")
+	}
+
+	// Lean MUST NOT include: skills, personality, memory, context, style, plan mode
+	excluded := []struct {
+		label string
+		text  string
+	}{
+		{"skills", "# Skill:"},
+		{"personality", "# Personality"},
+		{"memory", "# Memory"},
+		{"context files", "# Context:"},
+		{"style", "concise"},
+		{"plan mode", "PLAN mode"},
+	}
+	for _, ex := range excluded {
+		if strings.Contains(result, ex.text) {
+			t.Errorf("lean prompt must not include %s section (found %q)", ex.label, ex.text)
+		}
+	}
+}
+
+func TestBuildSystem_LeanFalse_Unchanged(t *testing.T) {
+	// Lean=false should behave exactly as before (no regression)
+	opts := SystemOpts{
+		CWD:               "/tmp/test",
+		Lean:              false,
+		ToolNames:         []string{"read"},
+		PersonalityPrompt: "Be thorough.",
+		MemorySection:     "# Memory\nSome memory.",
+		Style:             "concise",
+	}
+	result := BuildSystem(opts)
+
+	if !strings.Contains(result, "# Personality") {
+		t.Error("non-lean prompt should include personality section")
+	}
+	if !strings.Contains(result, "# Memory") {
+		t.Error("non-lean prompt should include memory section")
+	}
+}
+
 func TestModeForVersion(t *testing.T) {
 	tests := []struct {
 		name string

@@ -24,6 +24,7 @@ type cliArgs struct {
 	permissionMode   string // --permission-mode
 	allowedTools     string // --allowedTools (comma-separated)
 	disallowedTools  string // --disallowedTools (comma-separated)
+	lean             bool   // --lean minimal system prompt
 	dangerouslySkip  bool   // --dangerously-skip-permissions
 	verbose          bool   // -v / --verbose debug output
 }
@@ -49,6 +50,7 @@ func parseFlags() cliArgs {
 	flag.StringVar(&args.permissionMode, "permission-mode", "", "Permission mode: default, acceptEdits, plan, dontAsk, bypassPermissions")
 	flag.StringVar(&args.allowedTools, "allowedTools", "", "Comma-separated list of allowed tools")
 	flag.StringVar(&args.disallowedTools, "disallowedTools", "", "Comma-separated list of disallowed tools")
+	flag.BoolVar(&args.lean, "lean", false, "Use minimal system prompt (no memory, personality, context)")
 	flag.BoolVar(&args.dangerouslySkip, "dangerously-skip-permissions", false, "Skip all permission checks (alias for bypassPermissions)")
 	flag.BoolVar(&args.verbose, "v", false, "Enable verbose debug output")
 	flag.BoolVar(&args.verbose, "verbose", false, "Enable verbose debug output")
