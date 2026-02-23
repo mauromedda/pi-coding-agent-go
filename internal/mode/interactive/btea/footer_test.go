@@ -116,10 +116,65 @@ func TestFooterModel_ViewContainsModeLabel(t *testing.T) {
 func TestFooterModel_ViewContainsContextPct(t *testing.T) {
 	m := NewFooterModel()
 	m = m.WithContextPct(75)
-	m.width = 80
+	m.width = 120
 	view := m.View()
-	if !strings.Contains(view, "ctx 75%") {
-		t.Errorf("View() missing context pct; got %q", view)
+
+	// Progress bar must contain filled and empty block chars
+	if !strings.Contains(view, "█") {
+		t.Errorf("View() missing filled bar chars; got %q", view)
+	}
+	if !strings.Contains(view, "░") {
+		t.Errorf("View() missing empty bar chars; got %q", view)
+	}
+	// Must still show the percentage
+	if !strings.Contains(view, "75%") {
+		t.Errorf("View() missing percentage; got %q", view)
+	}
+	// Must still show ctx label
+	if !strings.Contains(view, "ctx") {
+		t.Errorf("View() missing ctx label; got %q", view)
+	}
+}
+
+func TestFooterModel_ViewContextBarWidth(t *testing.T) {
+	tests := []struct {
+		name       string
+		pct        int
+		wantFilled int
+		wantEmpty  int
+	}{
+		{"zero fill at 0", 1, 0, 10},   // 1*10/100 = 0
+		{"half at 50", 50, 5, 5},        // 50*10/100 = 5
+		{"full at 100", 100, 10, 0},     // 100*10/100 = 10
+		{"seven at 75", 75, 7, 3},       // 75*10/100 = 7
+		{"three at 30", 30, 3, 7},       // 30*10/100 = 3
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewFooterModel()
+			m = m.WithContextPct(tt.pct)
+			m.width = 120
+			view := m.View()
+
+			filledCount := strings.Count(view, "█")
+			emptyCount := strings.Count(view, "░")
+			if filledCount != tt.wantFilled {
+				t.Errorf("filled blocks = %d; want %d (pct=%d)", filledCount, tt.wantFilled, tt.pct)
+			}
+			if emptyCount != tt.wantEmpty {
+				t.Errorf("empty blocks = %d; want %d (pct=%d)", emptyCount, tt.wantEmpty, tt.pct)
+			}
+		})
+	}
+}
+
+func TestFooterModel_ViewContextBarHiddenAtZero(t *testing.T) {
+	m := NewFooterModel()
+	m = m.WithContextPct(0)
+	m.width = 120
+	view := m.View()
+	if strings.Contains(view, "█") || strings.Contains(view, "░") {
+		t.Errorf("View() should hide context bar when pct=0; got %q", view)
 	}
 }
 

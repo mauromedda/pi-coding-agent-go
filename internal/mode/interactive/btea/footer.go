@@ -218,13 +218,25 @@ func (m FooterModel) View() string {
 	}
 
 	if m.contextPct > 0 {
-		ctxStyle := s.Secondary
-		if m.contextPct >= 80 {
-			ctxStyle = s.Error
-		} else if m.contextPct >= 60 {
-			ctxStyle = s.Warning
+		const barWidth = 10
+		filled := m.contextPct * barWidth / 100
+		if filled > barWidth {
+			filled = barWidth
 		}
-		line2Parts = append(line2Parts, ctxStyle.Render(fmt.Sprintf("ctx %d%%", m.contextPct)))
+		empty := barWidth - filled
+
+		barStyle := s.Success // green <50%
+		if m.contextPct >= 80 {
+			barStyle = s.Error // red ≥80%
+		} else if m.contextPct >= 50 {
+			barStyle = s.Warning // yellow 50-79%
+		}
+
+		filledStr := strings.Repeat("█", filled)
+		emptyStr := strings.Repeat("░", empty)
+		bar := barStyle.Render(filledStr) + s.Dim.Render(emptyStr)
+		pct := barStyle.Render(fmt.Sprintf("%d%%", m.contextPct))
+		line2Parts = append(line2Parts, fmt.Sprintf("ctx %s %s", bar, pct))
 	}
 
 	if m.queuedCount > 0 {
