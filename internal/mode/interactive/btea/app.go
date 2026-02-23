@@ -531,70 +531,15 @@ func runBashCommand(command string) (string, int) {
 }
 
 func (m AppModel) handleSlashCommand(text string) (AppModel, tea.Cmd) {
-	// Sentinels for callbacks that need to produce tea.Cmd after dispatch.
-	var wantQuit bool
-	var wantClear bool
+	ctx, effects := m.buildCommandContext()
 
-	cwd := detectGitCWD()
-
-	cmdCtx := &commands.CommandContext{
-		Model:   m.modelName(),
-		Mode:    m.mode.String(),
-		Version: m.deps.Version,
-		CWD:     cwd,
-		Messages: len(m.messages),
-		TotalCost: m.footer.cost,
-		TotalTokens: m.totalInputTokens + m.totalOutputTokens,
-		ClearHistory: func() {
-			wantClear = true
-		},
-		ClearTUI: func() {
-			wantClear = true
-		},
-		CompactFn: func() string {
-			return "Compact not yet available."
-		},
-		ExitFn: func() {
-			wantQuit = true
-		},
-		ToggleMode: func() {
-			// Handled after dispatch via wantToggle; for now inline.
-			if m.mode == ModePlan {
-				m.mode = ModeEdit
-			} else {
-				m.mode = ModePlan
-			}
-			m.footer = m.footer.WithModeLabel(m.mode.String())
-		},
-		GetMode: func() string {
-			return m.mode.String()
-		},
-	}
-
-	result, err := m.cmdRegistry.Dispatch(cmdCtx, text)
+	result, err := m.cmdRegistry.Dispatch(ctx, text)
 	if err != nil {
 		result = fmt.Sprintf("Error: %v", err)
 	}
 
-	// Handle sentinel-based side effects.
-	if wantQuit {
-		return m, tea.Quit
-	}
-	if wantClear {
-		m.messages = nil
-		m.content = m.content[:0]
-		m.totalInputTokens = 0
-		m.totalOutputTokens = 0
-		m.footer = m.footer.WithCost(0)
-		return m, nil
-	}
-
-	if result != "" {
-		am := NewAssistantMsgModel()
-		updated, _ := am.Update(AgentTextMsg{Text: result})
-		m.content = append(m.content, updated.(*AssistantMsgModel))
-	}
-	return m, nil
+	model, cmd := m.applyEffects(effects, result)
+	return model.(AppModel), cmd
 }
 
 func (m AppModel) startAgentCmd() tea.Cmd {
