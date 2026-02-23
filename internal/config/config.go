@@ -57,6 +57,21 @@ type Settings struct {
 
 	// Terminal controls terminal rendering behavior
 	Terminal *TerminalSettings `json:"terminal,omitempty"`
+
+	// Intent configures automatic intent classification
+	Intent *IntentSettings `json:"intent,omitempty"`
+
+	// Prompts configures the versioned prompt system
+	Prompts *PromptsSettings `json:"prompts,omitempty"`
+
+	// Personality configures personality profiles and checks
+	Personality *PersonalitySettings `json:"personality,omitempty"`
+
+	// Telemetry configures cost tracking and budget alerts
+	Telemetry *TelemetrySettings `json:"telemetry,omitempty"`
+
+	// Safety configures safety guardrails
+	Safety *SafetySettings `json:"safety,omitempty"`
 }
 
 // ModelOverride allows per-model customization.
@@ -102,6 +117,109 @@ func (r *RetrySettings) EffectiveMaxDelay() int {
 type TerminalSettings struct {
 	LineWidth int  `json:"lineWidth,omitempty"` // max line width; 0 = auto-detect
 	Pager     bool `json:"pager,omitempty"`     // enable pager for long output
+}
+
+// IntentSettings configures automatic intent classification.
+type IntentSettings struct {
+	Enabled            *bool   `json:"enabled,omitempty"`            // nil = true
+	HeuristicThreshold float64 `json:"heuristicThreshold,omitempty"` // min confidence to skip LLM; default 0.7
+	AutoPlanFileCount  int     `json:"autoPlanFileCount,omitempty"`  // auto-escalate to plan if >N files; default 5
+}
+
+// IsEnabled returns whether intent classification is enabled (default true).
+func (s *IntentSettings) IsEnabled() bool {
+	if s == nil || s.Enabled == nil {
+		return true
+	}
+	return *s.Enabled
+}
+
+// EffectiveHeuristicThreshold returns the threshold or default (0.7).
+func (s *IntentSettings) EffectiveHeuristicThreshold() float64 {
+	if s == nil || s.HeuristicThreshold == 0 {
+		return 0.7
+	}
+	return s.HeuristicThreshold
+}
+
+// EffectiveAutoPlanFileCount returns the count or default (5).
+func (s *IntentSettings) EffectiveAutoPlanFileCount() int {
+	if s == nil || s.AutoPlanFileCount == 0 {
+		return 5
+	}
+	return s.AutoPlanFileCount
+}
+
+// PromptsSettings configures the versioned prompt system.
+type PromptsSettings struct {
+	ActiveVersion         string `json:"activeVersion,omitempty"`         // e.g., "v1.0.0"
+	OverridesDir          string `json:"overridesDir,omitempty"`          // path to overrides directory
+	MaxSystemPromptTokens int    `json:"maxSystemPromptTokens,omitempty"` // budget; default 4096
+}
+
+// EffectiveMaxSystemPromptTokens returns the budget or default (4096).
+func (s *PromptsSettings) EffectiveMaxSystemPromptTokens() int {
+	if s == nil || s.MaxSystemPromptTokens == 0 {
+		return 4096
+	}
+	return s.MaxSystemPromptTokens
+}
+
+// PersonalitySettings configures personality profiles and checks.
+type PersonalitySettings struct {
+	Profile string                      `json:"profile,omitempty"` // active profile name; default "base"
+	Checks  map[string]PersonalityCheck `json:"checks,omitempty"` // per-check config
+}
+
+// EffectiveProfile returns the profile name or default ("base").
+func (s *PersonalitySettings) EffectiveProfile() string {
+	if s == nil || s.Profile == "" {
+		return "base"
+	}
+	return s.Profile
+}
+
+// PersonalityCheck configures a single personality check.
+type PersonalityCheck struct {
+	Enabled *bool  `json:"enabled,omitempty"` // nil = true
+	Level   string `json:"level,omitempty"`   // e.g., "minimal", "standard", "strict", "paranoid"
+}
+
+// IsEnabled returns whether the check is enabled (default true).
+func (c PersonalityCheck) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
+// TelemetrySettings configures cost tracking and budget alerts.
+type TelemetrySettings struct {
+	Enabled   *bool   `json:"enabled,omitempty"`   // nil = true
+	BudgetUSD float64 `json:"budgetUsd,omitempty"` // session budget limit; 0 = no limit
+	WarnAtPct int     `json:"warnAtPct,omitempty"` // warn at N% of budget; default 80
+}
+
+// IsEnabled returns whether telemetry is enabled (default true).
+func (s *TelemetrySettings) IsEnabled() bool {
+	if s == nil || s.Enabled == nil {
+		return true
+	}
+	return *s.Enabled
+}
+
+// EffectiveWarnAtPct returns the warning percentage or default (80).
+func (s *TelemetrySettings) EffectiveWarnAtPct() int {
+	if s == nil || s.WarnAtPct == 0 {
+		return 80
+	}
+	return s.WarnAtPct
+}
+
+// SafetySettings configures safety guardrails.
+type SafetySettings struct {
+	NeverModify []string `json:"neverModify,omitempty"` // glob patterns for files that must never be modified
+	LockedKeys  []string `json:"lockedKeys,omitempty"`  // config keys that cannot be overridden at lower levels
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -438,6 +556,83 @@ func merge(global, project *Settings) *Settings {
 	// Terminal: override if present
 	if project.Terminal != nil {
 		result.Terminal = project.Terminal
+	}
+
+	// Intent: merge if present
+	if project.Intent != nil {
+		if result.Intent == nil {
+			result.Intent = &IntentSettings{}
+		}
+		if project.Intent.Enabled != nil {
+			result.Intent.Enabled = project.Intent.Enabled
+		}
+		if project.Intent.HeuristicThreshold != 0 {
+			result.Intent.HeuristicThreshold = project.Intent.HeuristicThreshold
+		}
+		if project.Intent.AutoPlanFileCount != 0 {
+			result.Intent.AutoPlanFileCount = project.Intent.AutoPlanFileCount
+		}
+	}
+
+	// Prompts: merge if present
+	if project.Prompts != nil {
+		if result.Prompts == nil {
+			result.Prompts = &PromptsSettings{}
+		}
+		if project.Prompts.ActiveVersion != "" {
+			result.Prompts.ActiveVersion = project.Prompts.ActiveVersion
+		}
+		if project.Prompts.OverridesDir != "" {
+			result.Prompts.OverridesDir = project.Prompts.OverridesDir
+		}
+		if project.Prompts.MaxSystemPromptTokens != 0 {
+			result.Prompts.MaxSystemPromptTokens = project.Prompts.MaxSystemPromptTokens
+		}
+	}
+
+	// Personality: merge if present
+	if project.Personality != nil {
+		if result.Personality == nil {
+			result.Personality = &PersonalitySettings{}
+		}
+		if project.Personality.Profile != "" {
+			result.Personality.Profile = project.Personality.Profile
+		}
+		if len(project.Personality.Checks) > 0 {
+			if result.Personality.Checks == nil {
+				result.Personality.Checks = make(map[string]PersonalityCheck)
+			}
+			maps.Copy(result.Personality.Checks, project.Personality.Checks)
+		}
+	}
+
+	// Telemetry: merge if present
+	if project.Telemetry != nil {
+		if result.Telemetry == nil {
+			result.Telemetry = &TelemetrySettings{}
+		}
+		if project.Telemetry.Enabled != nil {
+			result.Telemetry.Enabled = project.Telemetry.Enabled
+		}
+		if project.Telemetry.BudgetUSD != 0 {
+			result.Telemetry.BudgetUSD = project.Telemetry.BudgetUSD
+		}
+		if project.Telemetry.WarnAtPct != 0 {
+			result.Telemetry.WarnAtPct = project.Telemetry.WarnAtPct
+		}
+	}
+
+	// Safety: merge if present
+	if project.Safety != nil {
+		if result.Safety == nil {
+			result.Safety = &SafetySettings{}
+		}
+		if len(project.Safety.NeverModify) > 0 {
+			result.Safety.NeverModify = dedupStrings(result.Safety.NeverModify, project.Safety.NeverModify)
+		}
+		if len(project.Safety.LockedKeys) > 0 {
+			result.Safety.LockedKeys = dedupStrings(result.Safety.LockedKeys, project.Safety.LockedKeys)
+		}
 	}
 
 	return &result

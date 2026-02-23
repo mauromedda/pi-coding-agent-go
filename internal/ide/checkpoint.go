@@ -13,10 +13,13 @@ import (
 
 // Checkpoint captures the working tree state before a tool execution.
 type Checkpoint struct {
-	Ref       string    // Git stash ref or checkpoint directory path
-	Timestamp time.Time
-	ToolName  string
-	ToolArgs  string
+	Ref         string    // Git stash ref or checkpoint directory path
+	Timestamp   time.Time
+	ToolName    string
+	ToolArgs    string
+	Name        string // Optional human-readable name
+	Description string // Optional description of what this checkpoint captures
+	Mode        string // Permission mode at time of checkpoint (e.g., "plan", "execute")
 }
 
 // CheckpointStack manages a stack of checkpoints for the current session.
@@ -49,6 +52,31 @@ func (s *CheckpointStack) Save(toolName, toolArgs string) error {
 		Timestamp: time.Now(),
 		ToolName:  toolName,
 		ToolArgs:  toolArgs,
+	})
+	return nil
+}
+
+// SaveNamed creates a checkpoint with a human-readable name and description.
+func (s *CheckpointStack) SaveNamed(name, description, toolName, toolArgs, mode string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ref, err := gitStashCreate(s.cwd)
+	if err != nil {
+		return fmt.Errorf("creating checkpoint: %w", err)
+	}
+	if ref == "" {
+		return nil // No changes to checkpoint
+	}
+
+	s.stack = append(s.stack, Checkpoint{
+		Ref:         ref,
+		Timestamp:   time.Now(),
+		ToolName:    toolName,
+		ToolArgs:    toolArgs,
+		Name:        name,
+		Description: description,
+		Mode:        mode,
 	})
 	return nil
 }

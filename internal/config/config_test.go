@@ -627,3 +627,397 @@ func TestLoadFile_CompactionSettings(t *testing.T) {
 		t.Errorf("ReserveTokens = %d, want 8192", s.Compaction.ReserveTokens)
 	}
 }
+
+func TestIntentSettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var is *IntentSettings // nil
+
+	if !is.IsEnabled() {
+		t.Error("nil IntentSettings should be enabled by default")
+	}
+	if is.EffectiveHeuristicThreshold() != 0.7 {
+		t.Errorf("EffectiveHeuristicThreshold = %f, want 0.7", is.EffectiveHeuristicThreshold())
+	}
+	if is.EffectiveAutoPlanFileCount() != 5 {
+		t.Errorf("EffectiveAutoPlanFileCount = %d, want 5", is.EffectiveAutoPlanFileCount())
+	}
+}
+
+func TestIntentSettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	f := false
+	is := &IntentSettings{
+		Enabled:            &f,
+		HeuristicThreshold: 0.9,
+		AutoPlanFileCount:  10,
+	}
+
+	if is.IsEnabled() {
+		t.Error("should be disabled when Enabled=false")
+	}
+	if is.EffectiveHeuristicThreshold() != 0.9 {
+		t.Errorf("EffectiveHeuristicThreshold = %f, want 0.9", is.EffectiveHeuristicThreshold())
+	}
+	if is.EffectiveAutoPlanFileCount() != 10 {
+		t.Errorf("EffectiveAutoPlanFileCount = %d, want 10", is.EffectiveAutoPlanFileCount())
+	}
+}
+
+func TestPromptsSettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var ps *PromptsSettings // nil
+
+	if ps.EffectiveMaxSystemPromptTokens() != 4096 {
+		t.Errorf("EffectiveMaxSystemPromptTokens = %d, want 4096", ps.EffectiveMaxSystemPromptTokens())
+	}
+}
+
+func TestPromptsSettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	ps := &PromptsSettings{
+		ActiveVersion:         "v2.0.0",
+		OverridesDir:          "/custom/prompts",
+		MaxSystemPromptTokens: 8192,
+	}
+
+	if ps.EffectiveMaxSystemPromptTokens() != 8192 {
+		t.Errorf("EffectiveMaxSystemPromptTokens = %d, want 8192", ps.EffectiveMaxSystemPromptTokens())
+	}
+}
+
+func TestPersonalitySettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var ps *PersonalitySettings // nil
+
+	if ps.EffectiveProfile() != "base" {
+		t.Errorf("EffectiveProfile = %q, want %q", ps.EffectiveProfile(), "base")
+	}
+}
+
+func TestPersonalitySettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	ps := &PersonalitySettings{
+		Profile: "concise",
+		Checks: map[string]PersonalityCheck{
+			"humor": {Level: "minimal"},
+		},
+	}
+
+	if ps.EffectiveProfile() != "concise" {
+		t.Errorf("EffectiveProfile = %q, want %q", ps.EffectiveProfile(), "concise")
+	}
+}
+
+func TestPersonalityCheck_IsEnabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		check   PersonalityCheck
+		want    bool
+	}{
+		{"nil enabled defaults to true", PersonalityCheck{}, true},
+		{"enabled true", PersonalityCheck{Enabled: boolPtr(true)}, true},
+		{"enabled false", PersonalityCheck{Enabled: boolPtr(false)}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.check.IsEnabled(); got != tt.want {
+				t.Errorf("IsEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTelemetrySettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var ts *TelemetrySettings // nil
+
+	if !ts.IsEnabled() {
+		t.Error("nil TelemetrySettings should be enabled by default")
+	}
+	if ts.EffectiveWarnAtPct() != 80 {
+		t.Errorf("EffectiveWarnAtPct = %d, want 80", ts.EffectiveWarnAtPct())
+	}
+}
+
+func TestTelemetrySettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	f := false
+	ts := &TelemetrySettings{
+		Enabled:   &f,
+		BudgetUSD: 25.0,
+		WarnAtPct: 90,
+	}
+
+	if ts.IsEnabled() {
+		t.Error("should be disabled when Enabled=false")
+	}
+	if ts.EffectiveWarnAtPct() != 90 {
+		t.Errorf("EffectiveWarnAtPct = %d, want 90", ts.EffectiveWarnAtPct())
+	}
+}
+
+func TestMerge_IntentSettings(t *testing.T) {
+	t.Parallel()
+
+	f := false
+	global := &Settings{
+		Intent: &IntentSettings{HeuristicThreshold: 0.7, AutoPlanFileCount: 5},
+	}
+	project := &Settings{
+		Intent: &IntentSettings{Enabled: &f, AutoPlanFileCount: 10},
+	}
+
+	result := merge(global, project)
+
+	if result.Intent == nil {
+		t.Fatal("Intent should be set")
+	}
+	if result.Intent.IsEnabled() {
+		t.Error("project should override Enabled to false")
+	}
+	if result.Intent.HeuristicThreshold != 0.7 {
+		t.Errorf("HeuristicThreshold = %f, want 0.7 (from global)", result.Intent.HeuristicThreshold)
+	}
+	if result.Intent.AutoPlanFileCount != 10 {
+		t.Errorf("AutoPlanFileCount = %d, want 10 (from project)", result.Intent.AutoPlanFileCount)
+	}
+}
+
+func TestMerge_PromptsSettings(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Prompts: &PromptsSettings{ActiveVersion: "v1.0.0", MaxSystemPromptTokens: 4096},
+	}
+	project := &Settings{
+		Prompts: &PromptsSettings{OverridesDir: "/custom/prompts"},
+	}
+
+	result := merge(global, project)
+
+	if result.Prompts == nil {
+		t.Fatal("Prompts should be set")
+	}
+	if result.Prompts.ActiveVersion != "v1.0.0" {
+		t.Errorf("ActiveVersion = %q, want %q (from global)", result.Prompts.ActiveVersion, "v1.0.0")
+	}
+	if result.Prompts.OverridesDir != "/custom/prompts" {
+		t.Errorf("OverridesDir = %q, want %q (from project)", result.Prompts.OverridesDir, "/custom/prompts")
+	}
+	if result.Prompts.MaxSystemPromptTokens != 4096 {
+		t.Errorf("MaxSystemPromptTokens = %d, want 4096 (from global)", result.Prompts.MaxSystemPromptTokens)
+	}
+}
+
+func TestMerge_PersonalitySettings(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Personality: &PersonalitySettings{
+			Profile: "base",
+			Checks: map[string]PersonalityCheck{
+				"humor": {Level: "standard"},
+			},
+		},
+	}
+	project := &Settings{
+		Personality: &PersonalitySettings{
+			Profile: "concise",
+			Checks: map[string]PersonalityCheck{
+				"verbosity": {Level: "minimal"},
+			},
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Personality == nil {
+		t.Fatal("Personality should be set")
+	}
+	if result.Personality.Profile != "concise" {
+		t.Errorf("Profile = %q, want %q (from project)", result.Personality.Profile, "concise")
+	}
+	// Checks should be merged via maps.Copy: project overwrites global keys, both present
+	if _, ok := result.Personality.Checks["humor"]; !ok {
+		t.Error("humor check should be preserved from global")
+	}
+	if _, ok := result.Personality.Checks["verbosity"]; !ok {
+		t.Error("verbosity check should be set from project")
+	}
+}
+
+func TestMerge_TelemetrySettings(t *testing.T) {
+	t.Parallel()
+
+	f := false
+	global := &Settings{
+		Telemetry: &TelemetrySettings{BudgetUSD: 10.0, WarnAtPct: 80},
+	}
+	project := &Settings{
+		Telemetry: &TelemetrySettings{Enabled: &f, BudgetUSD: 25.0},
+	}
+
+	result := merge(global, project)
+
+	if result.Telemetry == nil {
+		t.Fatal("Telemetry should be set")
+	}
+	if result.Telemetry.IsEnabled() {
+		t.Error("project should override Enabled to false")
+	}
+	if result.Telemetry.BudgetUSD != 25.0 {
+		t.Errorf("BudgetUSD = %f, want 25.0 (from project)", result.Telemetry.BudgetUSD)
+	}
+	if result.Telemetry.WarnAtPct != 80 {
+		t.Errorf("WarnAtPct = %d, want 80 (from global)", result.Telemetry.WarnAtPct)
+	}
+}
+
+func TestMerge_SafetySettings(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Safety: &SafetySettings{
+			NeverModify: []string{"*.env"},
+			LockedKeys:  []string{"model"},
+		},
+	}
+	project := &Settings{
+		Safety: &SafetySettings{
+			NeverModify: []string{"secrets/*"},
+			LockedKeys:  []string{"baseURL"},
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Safety == nil {
+		t.Fatal("Safety should be set")
+	}
+	// NeverModify should be unioned with dedup
+	if !containsAll(result.Safety.NeverModify, "*.env", "secrets/*") {
+		t.Errorf("NeverModify = %v, want both *.env and secrets/*", result.Safety.NeverModify)
+	}
+	if !containsAll(result.Safety.LockedKeys, "model", "baseURL") {
+		t.Errorf("LockedKeys = %v, want both model and baseURL", result.Safety.LockedKeys)
+	}
+}
+
+func TestLoadFile_NewSettingsFields(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	data := `{
+		"intent": {
+			"enabled": false,
+			"heuristicThreshold": 0.85,
+			"autoPlanFileCount": 8
+		},
+		"prompts": {
+			"activeVersion": "v2.0.0",
+			"overridesDir": "/tmp/prompts",
+			"maxSystemPromptTokens": 8192
+		},
+		"personality": {
+			"profile": "concise",
+			"checks": {
+				"humor": {"enabled": true, "level": "minimal"}
+			}
+		},
+		"telemetry": {
+			"enabled": true,
+			"budgetUsd": 50.0,
+			"warnAtPct": 90
+		},
+		"safety": {
+			"neverModify": ["*.env", ".git/*"],
+			"lockedKeys": ["model", "baseURL"]
+		}
+	}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Intent
+	if s.Intent == nil {
+		t.Fatal("Intent should be set")
+	}
+	if s.Intent.IsEnabled() {
+		t.Error("Intent should be disabled")
+	}
+	if s.Intent.HeuristicThreshold != 0.85 {
+		t.Errorf("HeuristicThreshold = %f, want 0.85", s.Intent.HeuristicThreshold)
+	}
+	if s.Intent.AutoPlanFileCount != 8 {
+		t.Errorf("AutoPlanFileCount = %d, want 8", s.Intent.AutoPlanFileCount)
+	}
+
+	// Prompts
+	if s.Prompts == nil {
+		t.Fatal("Prompts should be set")
+	}
+	if s.Prompts.ActiveVersion != "v2.0.0" {
+		t.Errorf("ActiveVersion = %q, want %q", s.Prompts.ActiveVersion, "v2.0.0")
+	}
+	if s.Prompts.MaxSystemPromptTokens != 8192 {
+		t.Errorf("MaxSystemPromptTokens = %d, want 8192", s.Prompts.MaxSystemPromptTokens)
+	}
+
+	// Personality
+	if s.Personality == nil {
+		t.Fatal("Personality should be set")
+	}
+	if s.Personality.Profile != "concise" {
+		t.Errorf("Profile = %q, want %q", s.Personality.Profile, "concise")
+	}
+	if check, ok := s.Personality.Checks["humor"]; !ok {
+		t.Error("humor check should exist")
+	} else if !check.IsEnabled() {
+		t.Error("humor check should be enabled")
+	}
+
+	// Telemetry
+	if s.Telemetry == nil {
+		t.Fatal("Telemetry should be set")
+	}
+	if !s.Telemetry.IsEnabled() {
+		t.Error("Telemetry should be enabled")
+	}
+	if s.Telemetry.BudgetUSD != 50.0 {
+		t.Errorf("BudgetUSD = %f, want 50.0", s.Telemetry.BudgetUSD)
+	}
+
+	// Safety
+	if s.Safety == nil {
+		t.Fatal("Safety should be set")
+	}
+	if len(s.Safety.NeverModify) != 2 {
+		t.Errorf("NeverModify length = %d, want 2", len(s.Safety.NeverModify))
+	}
+	if len(s.Safety.LockedKeys) != 2 {
+		t.Errorf("LockedKeys length = %d, want 2", len(s.Safety.LockedKeys))
+	}
+}
+
+// boolPtr is a test helper that returns a pointer to a bool value.
+func boolPtr(b bool) *bool {
+	return &b
+}
