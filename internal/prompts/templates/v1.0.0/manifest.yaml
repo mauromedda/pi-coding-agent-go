@@ -1,0 +1,15 @@
+version: "v1.0.0"
+description: "Initial prompt version"
+compatible_models:
+  - "claude-*"
+  - "gpt-*"
+  - "gemini-*"
+composition_order:
+  - "system.md"
+  - "modes/{{MODE}}.md"
+variables:
+  MODE: "execute"
+  LANGUAGE: ""
+  TOOL_LIST: ""
+  DATE: ""
+  CWD: ""
