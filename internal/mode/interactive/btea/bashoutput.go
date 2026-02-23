@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
 // BashOutputModel renders a bash command with its output.
@@ -64,11 +65,15 @@ func (m *BashOutputModel) View() string {
 	cmdLine := fmt.Sprintf("%s %s", s.ToolBash.Render("!"), s.ToolBash.Render(m.command))
 	b.WriteString(cmdLine + "\n")
 
-	// Output: pass through raw lines to preserve ANSI from commands
+	// Output: pass through raw lines to preserve ANSI from commands;
+	// truncate to terminal width to prevent overflow.
 	raw := m.output.String()
 	if raw != "" {
-		lines := strings.Split(strings.TrimRight(raw, "\n"), "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(strings.TrimRight(raw, "\n"), "\n")
+		for line := range lines {
+			if m.width > 0 && width.VisibleWidth(line) > m.width {
+				line = width.TruncateToWidth(line, m.width-1) + "…"
+			}
 			b.WriteString(line + "\n")
 		}
 	}
