@@ -11,6 +11,8 @@ import (
 	"time"
 
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
+	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
+	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"golang.org/x/sync/errgroup"
 )
@@ -19,12 +21,20 @@ import (
 // Returns nil if allowed, error with reason if blocked.
 type PermCheckFunc func(tool string, args map[string]any) error
 
+// AdaptiveConfig holds optional adaptive performance parameters for the agent.
+type AdaptiveConfig struct {
+	Profile    perf.ModelProfile
+	Compaction session.CompactionConfig
+	Summarizer session.SummarizerFunc // optional; if nil, compaction is skipped
+}
+
 // Agent orchestrates the prompt-stream-tool loop against an LLM provider.
 type Agent struct {
 	provider  ai.ApiProvider
 	model     *ai.Model
 	tools     map[string]*AgentTool
 	permCheck PermCheckFunc
+	adaptive  *AdaptiveConfig
 	state     atomic.Int32 // stores AgentState
 	events    chan AgentEvent
 	steerCh   chan ai.Message
@@ -50,6 +60,11 @@ func NewWithPermissions(provider ai.ApiProvider, model *ai.Model, tools []*Agent
 		permCheck: permCheck,
 		steerCh:   make(chan ai.Message, 8),
 	}
+}
+
+// SetAdaptive configures adaptive performance for the agent.
+func (a *Agent) SetAdaptive(cfg *AdaptiveConfig) {
+	a.adaptive = cfg
 }
 
 // Prompt starts the agent loop in a goroutine and returns an event channel.
@@ -105,6 +120,7 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 		}
 
 		a.drainSteeringMessages(llmCtx)
+		a.applyAdaptive(ctx, llmCtx, opts)
 
 		msg, err := a.streamResponse(ctx, llmCtx, opts)
 		if err != nil {
@@ -148,6 +164,39 @@ func (a *Agent) drainSteeringMessages(llmCtx *ai.Context) {
 		default:
 			return
 		}
+	}
+}
+
+// applyAdaptive runs pre-flight decisions: compaction and adaptive MaxOutputTokens.
+func (a *Agent) applyAdaptive(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOptions) {
+	if a.adaptive == nil {
+		return
+	}
+
+	inputTokens := session.EstimateMessagesTokens(llmCtx.Messages)
+	contextWindow := a.adaptive.Profile.ContextWindow
+	params := perf.Decide(a.adaptive.Profile, inputTokens, contextWindow)
+
+	// Pre-flight compaction
+	if params.CompactBeforeCall && a.adaptive.Summarizer != nil {
+		if session.ShouldCompact(llmCtx.Messages, contextWindow, a.adaptive.Compaction) {
+			pilog.Debug("agent: pre-flight compaction triggered (input=%d, window=%d)", inputTokens, contextWindow)
+			result, err := session.CompactWithLLM(ctx, llmCtx.Messages, a.adaptive.Compaction, a.adaptive.Summarizer)
+			if err != nil {
+				pilog.Debug("agent: pre-flight compaction failed: %v", err)
+			} else {
+				llmCtx.Messages = result.Messages
+				pilog.Debug("agent: compacted %d→%d tokens", result.TokensBefore, session.EstimateMessagesTokens(result.Messages))
+			}
+		}
+	}
+
+	// Adaptive MaxOutputTokens
+	opts.MaxTokens = params.MaxOutputTokens
+
+	// Prompt caching
+	if params.UsePromptCaching {
+		ai.ApplyPromptCaching(llmCtx, a.model.Api)
 	}
 }
 
