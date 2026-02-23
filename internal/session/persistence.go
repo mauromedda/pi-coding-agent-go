@@ -94,6 +94,11 @@ type CompactionData struct {
 	FilesWritten     []string `json:"files_written,omitempty"`
 }
 
+// CurrentRecordVersion is the version stamped on new records.
+// V1: original format. V3: adds compaction and branch records.
+// Reading is backward-compatible with all prior versions.
+const CurrentRecordVersion = 3
+
 // Writer appends records to a session JSONL file.
 type Writer struct {
 	file *os.File
@@ -126,7 +131,7 @@ func (w *Writer) WriteRecord(recType RecordType, data any) error {
 	}
 
 	rec := Record{
-		Version: 1,
+		Version: CurrentRecordVersion,
 		Type:    recType,
 		TS:      time.Now().UTC().Format(time.RFC3339),
 		Data:    dataBytes,
@@ -142,6 +147,11 @@ func (w *Writer) WriteRecord(recType RecordType, data any) error {
 		return fmt.Errorf("writing record: %w", err)
 	}
 	return nil
+}
+
+// WriteCompaction writes a compaction record to the session file.
+func (w *Writer) WriteCompaction(data CompactionData) error {
+	return w.WriteRecord(RecordCompaction, data)
 }
 
 // Close closes the session file.
@@ -179,6 +189,36 @@ func ReadRecords(sessionID string) ([]Record, error) {
 
 	if err := scanner.Err(); err != nil {
 		return records, fmt.Errorf("scanning session %s: %w", sessionID, err)
+	}
+	return records, nil
+}
+
+// ReadRecordsFromPath reads all records from a JSONL file at the given path.
+// It accepts records of any version for backward compatibility.
+func ReadRecordsFromPath(path string) ([]Record, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening session file: %w", err)
+	}
+	defer f.Close()
+
+	var records []Record
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
+
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		var rec Record
+		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
+			log.Printf("warning: %s line %d: malformed JSONL: %v", path, lineNum, err)
+			continue
+		}
+		records = append(records, rec)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return records, fmt.Errorf("scanning %s: %w", path, err)
 	}
 	return records, nil
 }

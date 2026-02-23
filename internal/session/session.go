@@ -81,6 +81,91 @@ func (s *Session) AddAssistantMessage(msg *ai.AssistantMessage) error {
 	})
 }
 
+// BuildSessionContext reconstructs ai.Messages from persisted JSONL records.
+// If a compaction record exists, it uses the latest one: a summary user message,
+// an acknowledgment assistant message, then messages from kept records after
+// the compaction. Without compaction, it rebuilds all user/assistant messages.
+func BuildSessionContext(records []Record) ([]ai.Message, error) {
+	if len(records) == 0 {
+		return nil, nil
+	}
+
+	// Find the latest compaction record index.
+	lastCompactionIdx := -1
+	for i, rec := range records {
+		if rec.Type == RecordCompaction {
+			lastCompactionIdx = i
+		}
+	}
+
+	if lastCompactionIdx >= 0 {
+		return buildFromCompaction(records, lastCompactionIdx)
+	}
+	return buildFromAll(records)
+}
+
+// buildFromCompaction creates messages from a compaction point onward.
+func buildFromCompaction(records []Record, compactionIdx int) ([]ai.Message, error) {
+	var cd CompactionData
+	if err := records[compactionIdx].Unmarshal(&cd); err != nil {
+		return nil, fmt.Errorf("unmarshaling compaction data: %w", err)
+	}
+
+	// Build summary + file tracking text.
+	summaryText := fmt.Sprintf("[Context Summary]\n%s", cd.Summary)
+	if len(cd.FilesRead) > 0 {
+		summaryText += "\n\n<read-files>\n"
+		for _, f := range cd.FilesRead {
+			summaryText += "- " + f + "\n"
+		}
+		summaryText += "</read-files>"
+	}
+	if len(cd.FilesWritten) > 0 {
+		summaryText += "\n\n<modified-files>\n"
+		for _, f := range cd.FilesWritten {
+			summaryText += "- " + f + "\n"
+		}
+		summaryText += "</modified-files>"
+	}
+	summaryText += "\n[End Summary]"
+
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, summaryText),
+		ai.NewTextMessage(ai.RoleAssistant, "I understand the context. Let me continue from where we left off."),
+	}
+
+	// Append kept records after the compaction.
+	kept := records[compactionIdx+1:]
+	keptMsgs, err := buildFromAll(kept)
+	if err != nil {
+		return nil, err
+	}
+	msgs = append(msgs, keptMsgs...)
+	return msgs, nil
+}
+
+// buildFromAll converts user and assistant records into ai.Messages.
+func buildFromAll(records []Record) ([]ai.Message, error) {
+	var msgs []ai.Message
+	for _, rec := range records {
+		switch rec.Type {
+		case RecordUser:
+			var ud UserData
+			if err := rec.Unmarshal(&ud); err != nil {
+				return nil, fmt.Errorf("unmarshaling user data: %w", err)
+			}
+			msgs = append(msgs, ai.NewTextMessage(ai.RoleUser, ud.Content))
+		case RecordAssistant:
+			var ad AssistantData
+			if err := rec.Unmarshal(&ad); err != nil {
+				return nil, fmt.Errorf("unmarshaling assistant data: %w", err)
+			}
+			msgs = append(msgs, ai.NewTextMessage(ai.RoleAssistant, ad.Content))
+		}
+	}
+	return msgs, nil
+}
+
 // BuildContext creates the LLM context from current session state.
 func (s *Session) BuildContext(systemPrompt string) *ai.Context {
 	return &ai.Context{
