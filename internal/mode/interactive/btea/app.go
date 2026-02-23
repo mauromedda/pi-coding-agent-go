@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -53,7 +54,7 @@ type gitBranchMsg struct{ branch string }
 // is single-threaded, and the goroutine only writes via Program.Send.
 type shared struct {
 	program     *tea.Program
-	activeAgent *agent.Agent
+	activeAgent atomic.Pointer[agent.Agent]
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
@@ -223,6 +224,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.cachedSep = strings.Repeat("─", msg.Width)
 		m = m.propagateSize(msg)
+		// Propagate to overlay so it can track width/height
+		if m.overlay != nil {
+			updated, _ := m.overlay.Update(msg)
+			m.overlay = updated
+		}
 		return m, nil
 
 	// --- Overlay lifecycle ---
@@ -893,7 +899,7 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		}
 
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
-		sh.activeAgent = ag // enable cancellation via abortAgent()
+		sh.activeAgent.Store(ag) // enable cancellation via abortAgent()
 
 		// Wire adaptive performance if probe has completed
 		if profile != nil {
@@ -907,7 +913,7 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		// The bridge sends streaming events via program.Send; blocks until done.
 		RunAgentBridge(program, events)
 
-		sh.activeAgent = nil // clear agent reference after completion
+		sh.activeAgent.Store(nil) // clear agent reference after completion
 		// Return AgentDoneMsg with the updated conversation messages.
 		return AgentDoneMsg{Messages: llmCtx.Messages}
 	}
@@ -1065,8 +1071,8 @@ func (m AppModel) cycleThinking() AppModel {
 }
 
 func (m AppModel) abortAgent() {
-	if m.sh.activeAgent != nil {
-		m.sh.activeAgent.Abort()
+	if ag := m.sh.activeAgent.Load(); ag != nil {
+		ag.Abort()
 	}
 }
 

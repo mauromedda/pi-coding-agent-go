@@ -1069,3 +1069,43 @@ func TestAppModel_GitCWDMsgSetsField(t *testing.T) {
 		t.Errorf("gitCWD = %q; want %q", model.gitCWD, "/home/user/project")
 	}
 }
+
+func TestAbortAgent_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+	m := NewAppModel(testDeps())
+
+	// Simulate concurrent store and load on activeAgent via shared struct.
+	// With atomic.Pointer this must not race.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 1000 {
+			m.sh.activeAgent.Store(nil)
+		}
+	}()
+
+	for range 1000 {
+		m.abortAgent()
+	}
+
+	<-done
+}
+
+func TestAppModel_WindowSizeMsgPropagatedToOverlay(t *testing.T) {
+	m := NewAppModel(testDeps())
+	ch := make(chan PermissionReply, 1)
+	m.overlay = NewPermDialogModel("Bash", nil, ch)
+
+	msg := tea.WindowSizeMsg{Width: 60, Height: 30}
+	result, _ := m.Update(msg)
+	model := result.(AppModel)
+
+	// Overlay should have received the width
+	pd, ok := model.overlay.(PermDialogModel)
+	if !ok {
+		t.Fatalf("overlay = %T; want PermDialogModel", model.overlay)
+	}
+	if pd.width != 60 {
+		t.Errorf("overlay width = %d; want 60", pd.width)
+	}
+}
