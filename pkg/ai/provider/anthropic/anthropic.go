@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/mailru/easyjson"
+
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/httputil"
@@ -164,13 +166,8 @@ func dispatchEvent(stream *ai.EventStream, acc *accumulator, ev *sse.Event) bool
 
 // handleMessageStart parses the message_start event for model and usage info.
 func handleMessageStart(acc *accumulator, ev *sse.Event) bool {
-	var payload struct {
-		Message struct {
-			Model string   `json:"model"`
-			Usage ai.Usage `json:"usage"`
-		} `json:"message"`
-	}
-	if json.Unmarshal([]byte(ev.Data), &payload) == nil {
+	var payload messageStartPayload
+	if easyjson.Unmarshal([]byte(ev.Data), &payload) == nil {
 		acc.model = payload.Message.Model
 		acc.usage = payload.Message.Usage
 	}
@@ -179,16 +176,8 @@ func handleMessageStart(acc *accumulator, ev *sse.Event) bool {
 
 // handleContentBlockStart begins a new content block in the accumulator.
 func handleContentBlockStart(stream *ai.EventStream, acc *accumulator, ev *sse.Event) bool {
-	var payload struct {
-		Index        int `json:"index"`
-		ContentBlock struct {
-			Type string `json:"type"`
-			ID   string `json:"id"`
-			Name string `json:"name"`
-			Text string `json:"text"`
-		} `json:"content_block"`
-	}
-	if json.Unmarshal([]byte(ev.Data), &payload) != nil {
+	var payload contentBlockStartPayload
+	if easyjson.Unmarshal([]byte(ev.Data), &payload) != nil {
 		return true
 	}
 
@@ -207,14 +196,8 @@ func handleContentBlockStart(stream *ai.EventStream, acc *accumulator, ev *sse.E
 
 // handleContentBlockDelta processes content deltas (text or tool input JSON).
 func handleContentBlockDelta(stream *ai.EventStream, acc *accumulator, ev *sse.Event) bool {
-	var payload struct {
-		Delta struct {
-			Type        string `json:"type"`
-			Text        string `json:"text"`
-			PartialJSON string `json:"partial_json"`
-		} `json:"delta"`
-	}
-	if json.Unmarshal([]byte(ev.Data), &payload) != nil {
+	var payload contentBlockDeltaPayload
+	if easyjson.Unmarshal([]byte(ev.Data), &payload) != nil {
 		return true
 	}
 
@@ -252,15 +235,8 @@ func handleContentBlockStop(stream *ai.EventStream, acc *accumulator) {
 
 // handleMessageDelta processes message-level updates (stop_reason, usage).
 func handleMessageDelta(stream *ai.EventStream, acc *accumulator, ev *sse.Event) bool {
-	var payload struct {
-		Delta struct {
-			StopReason ai.StopReason `json:"stop_reason"`
-		} `json:"delta"`
-		Usage struct {
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
-	}
-	if json.Unmarshal([]byte(ev.Data), &payload) != nil {
+	var payload messageDeltaPayload
+	if easyjson.Unmarshal([]byte(ev.Data), &payload) != nil {
 		return true
 	}
 
@@ -280,14 +256,9 @@ func handleMessageDelta(stream *ai.EventStream, acc *accumulator, ev *sse.Event)
 
 // handleSSEError processes an error event from the SSE stream.
 func handleSSEError(stream *ai.EventStream, ev *sse.Event) {
-	var payload struct {
-		Error struct {
-			Type    string `json:"type"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
+	var payload sseErrorPayload
 	msg := ev.Data
-	if json.Unmarshal([]byte(ev.Data), &payload) == nil && payload.Error.Message != "" {
+	if easyjson.Unmarshal([]byte(ev.Data), &payload) == nil && payload.Error.Message != "" {
 		msg = payload.Error.Message
 	}
 

@@ -195,6 +195,51 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	}
 }
 
+func TestMessageStartPayload_EasyjsonRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := `{"message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":42,"output_tokens":0}}}`
+	var payload messageStartPayload
+	if err := payload.UnmarshalJSON([]byte(input)); err != nil {
+		t.Fatalf("UnmarshalJSON error: %v", err)
+	}
+	if payload.Message.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("model = %q; want %q", payload.Message.Model, "claude-sonnet-4-20250514")
+	}
+	if payload.Message.Usage.InputTokens != 42 {
+		t.Errorf("input_tokens = %d; want 42", payload.Message.Usage.InputTokens)
+	}
+
+	out, err := payload.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON error: %v", err)
+	}
+
+	var roundTrip messageStartPayload
+	if err := roundTrip.UnmarshalJSON(out); err != nil {
+		t.Fatalf("round-trip UnmarshalJSON error: %v", err)
+	}
+	if roundTrip.Message.Model != payload.Message.Model {
+		t.Errorf("round-trip model mismatch: %q vs %q", roundTrip.Message.Model, payload.Message.Model)
+	}
+}
+
+func TestContentBlockDeltaPayload_EasyjsonRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := `{"delta":{"type":"text_delta","text":"Hello"}}`
+	var payload contentBlockDeltaPayload
+	if err := payload.UnmarshalJSON([]byte(input)); err != nil {
+		t.Fatalf("UnmarshalJSON error: %v", err)
+	}
+	if payload.Delta.Type != "text_delta" {
+		t.Errorf("type = %q; want %q", payload.Delta.Type, "text_delta")
+	}
+	if payload.Delta.Text != "Hello" {
+		t.Errorf("text = %q; want %q", payload.Delta.Text, "Hello")
+	}
+}
+
 // buildSSETextResponse constructs a realistic Anthropic SSE text streaming response.
 func buildSSETextResponse(text string) string {
 	return fmt.Sprintf(`event: message_start
