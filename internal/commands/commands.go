@@ -15,6 +15,7 @@ import (
 // Command represents a slash command.
 type Command struct {
 	Name        string
+	Aliases     []string // shorthand aliases (e.g., "q" for "quit")
 	Category    string
 	Description string
 	Execute     func(ctx *CommandContext, args string) (string, error)
@@ -80,7 +81,18 @@ type Registry struct {
 func NewRegistry() *Registry {
 	r := &Registry{commands: make(map[string]*Command)}
 	r.registerCoreCommands()
+	r.registerAliases()
 	return r
+}
+
+// registerAliases adds alias entries pointing to the same Command.
+// Must be called after registerCoreCommands.
+func (r *Registry) registerAliases() {
+	for _, cmd := range r.List() {
+		for _, alias := range cmd.Aliases {
+			r.commands[alias] = cmd
+		}
+	}
 }
 
 // Get returns a command by name.
@@ -91,10 +103,13 @@ func (r *Registry) Get(name string) (*Command, bool) {
 }
 
 // List returns all commands sorted by name for deterministic output.
+// Alias entries (where the map key differs from cmd.Name) are excluded.
 func (r *Registry) List() []*Command {
 	result := make([]*Command, 0, len(r.commands))
-	for _, cmd := range r.commands {
-		result = append(result, cmd)
+	for key, cmd := range r.commands {
+		if key == cmd.Name {
+			result = append(result, cmd)
+		}
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
@@ -181,6 +196,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "help",
+			Aliases:     []string{"h", "?"},
 			Category:    "Info",
 			Description: "Show available commands",
 			Execute: func(_ *CommandContext, _ string) (string, error) {
@@ -226,6 +242,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "status",
+			Aliases:     []string{"s"},
 			Category:    "Info",
 			Description: "Show session status",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {
@@ -550,6 +567,7 @@ func (r *Registry) registerCoreCommands() {
 		},
 		{
 			Name:        "quit",
+			Aliases:     []string{"q"},
 			Category:    "Info",
 			Description: "Exit the application (alias for /exit)",
 			Execute: func(ctx *CommandContext, _ string) (string, error) {

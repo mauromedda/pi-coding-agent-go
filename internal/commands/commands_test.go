@@ -1234,6 +1234,81 @@ func TestDispatch_Quit_NilCallback(t *testing.T) {
 	}
 }
 
+func TestAlias_DispatchViaAlias(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, cb := testContext()
+
+	// "q" is an alias for "quit"
+	result, err := reg.Dispatch(ctx, "/q")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cb.exitCalled {
+		t.Error("ExitFn was not called via alias /q")
+	}
+	if !strings.Contains(strings.ToLower(result), "goodbye") {
+		t.Errorf("expected goodbye message via alias, got %q", result)
+	}
+}
+
+func TestAlias_HelpAlias(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+
+	// "h" and "?" are aliases for "help"
+	for _, alias := range []string{"/h", "/?"} {
+		result, err := reg.Dispatch(ctx, alias)
+		if err != nil {
+			t.Fatalf("unexpected error for %s: %v", alias, err)
+		}
+		if !strings.Contains(result, "Available commands") {
+			t.Errorf("expected help output via alias %s, got %q", alias, result)
+		}
+	}
+}
+
+func TestAlias_StatusAlias(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+
+	result, err := reg.Dispatch(ctx, "/s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "claude-sonnet") {
+		t.Errorf("expected status output via alias /s, got %q", result)
+	}
+}
+
+func TestAlias_ListExcludesAliases(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	all := reg.List()
+
+	for _, cmd := range all {
+		// Each entry in List() should have Name == the map key (not an alias)
+		_, ok := reg.Get(cmd.Name)
+		if !ok {
+			t.Errorf("List() returned command %q not found via Get", cmd.Name)
+		}
+	}
+
+	// Aliases should resolve via Get but not appear in List names
+	aliasNames := map[string]bool{"q": true, "h": true, "?": true, "s": true}
+	for _, cmd := range all {
+		if aliasNames[cmd.Name] {
+			t.Errorf("alias %q should not appear in List()", cmd.Name)
+		}
+	}
+}
+
 func TestIsCommand(t *testing.T) {
 	t.Parallel()
 
