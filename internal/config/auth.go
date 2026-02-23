@@ -7,14 +7,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 )
 
 // AuthStore holds API keys and tokens.
 type AuthStore struct {
-	Keys map[string]string `json:"keys"` // provider -> api key
-	mu   sync.Mutex
+	Keys       map[string]string `json:"keys"` // provider -> api key
+	mu         sync.Mutex
+	runtimeKey string            // CLI --api-key override; not persisted
+	cmdCache   map[string]string // per-process cache for !command resolutions
 }
 
 // LoadAuth reads the auth file, or returns an empty store if it doesn't exist.
@@ -60,18 +63,40 @@ func (a *AuthStore) Save() error {
 	return nil
 }
 
-// GetKey returns the API key for a provider. Falls back to environment
-// variables: PI_API_KEY_<PROVIDER> or <PROVIDER>_API_KEY.
+// SetRuntimeKey sets a CLI-provided API key that overrides all other sources.
+func (a *AuthStore) SetRuntimeKey(key string) {
+	a.mu.Lock()
+	a.runtimeKey = key
+	a.mu.Unlock()
+}
+
+// GetKey returns the API key for a provider using the priority chain:
+// runtimeKey > stored key (with !command resolution) > env var > empty.
 func (a *AuthStore) GetKey(provider string) string {
 	a.mu.Lock()
+	runtime := a.runtimeKey
 	key := a.Keys[provider]
 	a.mu.Unlock()
 
-	if key != "" {
-		return key
+	// Priority 1: CLI runtime override
+	if runtime != "" {
+		return runtime
 	}
 
-	// Try environment variables (normalize provider to uppercase for consistency).
+	// Priority 2: Stored key (may be a !command)
+	if key != "" {
+		if strings.HasPrefix(key, "!") {
+			resolved, err := a.resolveCommandKey(key[1:])
+			if err == nil && resolved != "" {
+				return resolved
+			}
+			// Fall through to env vars on command error
+		} else {
+			return key
+		}
+	}
+
+	// Priority 3: Environment variables
 	upper := strings.ToUpper(provider)
 	envVars := []string{
 		"PI_API_KEY_" + upper,
@@ -83,6 +108,35 @@ func (a *AuthStore) GetKey(provider string) string {
 		}
 	}
 	return ""
+}
+
+// resolveCommandKey executes a shell command and returns its trimmed output.
+// Results are cached per-process to avoid repeated executions.
+func (a *AuthStore) resolveCommandKey(cmd string) (string, error) {
+	a.mu.Lock()
+	if a.cmdCache != nil {
+		if cached, ok := a.cmdCache[cmd]; ok {
+			a.mu.Unlock()
+			return cached, nil
+		}
+	}
+	a.mu.Unlock()
+
+	out, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	if err != nil {
+		return "", fmt.Errorf("executing key command %q: %w", cmd, err)
+	}
+
+	result := strings.TrimSpace(string(out))
+
+	a.mu.Lock()
+	if a.cmdCache == nil {
+		a.cmdCache = make(map[string]string)
+	}
+	a.cmdCache[cmd] = result
+	a.mu.Unlock()
+
+	return result, nil
 }
 
 // SetKey stores an API key for a provider.
