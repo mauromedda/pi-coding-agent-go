@@ -259,6 +259,46 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor = m.editor.SetFocused(true)
 		return m, nil
 
+	// --- Queue overlay results ---
+	case QueueUpdatedMsg:
+		m.overlay = nil
+		m.promptQueue = msg.Items
+		m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+		m.editor = m.editor.SetFocused(true)
+		// Resume drain if agent finished while overlay was open
+		if !m.agentRunning && len(m.promptQueue) > 0 {
+			next := m.promptQueue[0]
+			m.promptQueue = m.promptQueue[1:]
+			m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+			return m.submitPrompt(next)
+		}
+		return m, nil
+
+	case QueueEditMsg:
+		m.overlay = nil
+		// Remove the item from queue
+		if msg.Index >= 0 && msg.Index < len(m.promptQueue) {
+			m.promptQueue = append(m.promptQueue[:msg.Index], m.promptQueue[msg.Index+1:]...)
+		}
+		m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+		m.editor = m.editor.SetFocused(true).SetText(msg.Text)
+		return m, nil
+
+	// --- Agent done (must be handled regardless of overlay) ---
+	case AgentDoneMsg:
+		m.agentRunning = false
+		if len(msg.Messages) > 0 {
+			m.messages = msg.Messages
+		}
+		// Drain next queued prompt; skip if queue overlay is open (user is editing)
+		if _, editing := m.overlay.(QueueViewModel); !editing && len(m.promptQueue) > 0 {
+			next := m.promptQueue[0]
+			m.promptQueue = m.promptQueue[1:]
+			m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+			return m.submitPrompt(next)
+		}
+		return m, nil
+
 	// --- Plan overlay results ---
 	case PlanApprovedMsg:
 		m.overlay = nil
@@ -346,20 +386,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		updated, _ := m.footer.Update(msg)
 		m.footer = updated.(FooterModel)
-		return m, nil
-
-	case AgentDoneMsg:
-		m.agentRunning = false
-		if len(msg.Messages) > 0 {
-			m.messages = msg.Messages
-		}
-		// Drain next queued prompt
-		if len(m.promptQueue) > 0 {
-			next := m.promptQueue[0]
-			m.promptQueue = m.promptQueue[1:]
-			m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
-			return m.submitPrompt(next)
-		}
 		return m, nil
 
 	case AgentErrorMsg:
@@ -462,6 +488,16 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.content[i] = updated
 		}
 		return m, nil
+
+	case "ctrl+e":
+		if len(m.promptQueue) > 0 {
+			m.overlay = NewQueueViewModel(m.promptQueue, m.width)
+			return m, nil
+		}
+		// No queue: fall through to editor (end-of-line)
+		updated, cmd := m.editor.Update(msg)
+		m.editor = updated.(EditorModel)
+		return m, cmd
 
 	case "ctrl+o":
 		// Propagate to content models so ToolCallModel can toggle expand/collapse

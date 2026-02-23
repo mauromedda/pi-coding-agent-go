@@ -106,3 +106,16 @@ type SettingsChangedMsg struct {
 type PlanGeneratedMsg struct {
 	Plan string // The plan content
 }
+
+// --- Queue overlay messages ---
+
+// QueueUpdatedMsg carries the updated queue items after the overlay closes.
+type QueueUpdatedMsg struct {
+	Items []string
+}
+
+// QueueEditMsg signals that a queue item should be popped into the editor for editing.
+type QueueEditMsg struct {
+	Text  string
+	Index int
+}
