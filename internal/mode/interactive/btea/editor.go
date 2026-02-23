@@ -191,6 +191,7 @@ func (m EditorModel) Text() string {
 
 // SetText replaces the editor content and places cursor at end.
 func (m EditorModel) SetText(s string) EditorModel {
+	m.saveUndo()
 	raw := splitLines(s)
 	m.lines = make([][]rune, len(raw))
 	for i, l := range raw {
