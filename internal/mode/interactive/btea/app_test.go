@@ -406,6 +406,40 @@ func TestAppModel_SubmitSlashCommand(t *testing.T) {
 	}
 }
 
+func TestAppModel_SlashExit_ProducesQuit(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.editor = m.editor.SetText("/exit")
+
+	key := tea.KeyMsg{Type: tea.KeyEnter}
+	_, cmd := m.Update(key)
+
+	if cmd == nil {
+		t.Fatal("expected tea.Quit cmd from /exit, got nil")
+	}
+	// tea.Quit returns a special QuitMsg when invoked.
+	msg := cmd()
+	if _, ok := msg.(tea.QuitMsg); !ok {
+		t.Errorf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
+func TestAppModel_SlashClear_ClearsContent(t *testing.T) {
+	m := NewAppModel(testDeps())
+
+	// Simulate some content first
+	m.messages = append(m.messages, ai.NewTextMessage(ai.RoleUser, "hello"))
+	m.content = append(m.content, NewUserMsgModel("hello"))
+
+	m.editor = m.editor.SetText("/clear")
+	key := tea.KeyMsg{Type: tea.KeyEnter}
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+
+	if len(model.messages) != 0 {
+		t.Errorf("messages length = %d; want 0 after /clear", len(model.messages))
+	}
+}
+
 func TestAppModel_AgentErrorMsg(t *testing.T) {
 	m := NewAppModel(testDeps())
 
