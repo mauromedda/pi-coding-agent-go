@@ -161,7 +161,13 @@ func run(args cliArgs) error {
 	// Initialize telemetry tracker
 	var tracker *telemetry.Tracker
 	if cfg.Telemetry.IsEnabled() {
-		tracker = telemetry.NewTracker(cfg.Telemetry.BudgetUSD, cfg.Telemetry.EffectiveWarnAtPct())
+		var budgetUSD float64
+		var warnPct int
+		if cfg.Telemetry != nil {
+			budgetUSD = cfg.Telemetry.BudgetUSD
+			warnPct = cfg.Telemetry.EffectiveWarnAtPct()
+		}
+		tracker = telemetry.NewTracker(budgetUSD, warnPct)
 	}
 	_ = tracker // Will be wired into agent loop in a future phase
 
