@@ -18,7 +18,7 @@ func TestRenderDiff_ColoredOutput(t *testing.T) {
 +func new() {}
  // end`
 
-	result := RenderDiff(diff)
+	result := RenderDiff(diff, Styles())
 
 	if result == "" {
 		t.Fatal("RenderDiff returned empty string")
@@ -34,7 +34,7 @@ func TestRenderDiff_ColoredOutput(t *testing.T) {
 }
 
 func TestRenderDiff_EmptyInput(t *testing.T) {
-	result := RenderDiff("")
+	result := RenderDiff("", Styles())
 	if result != "" {
 		t.Errorf("RenderDiff(\"\") = %q; want empty", result)
 	}
@@ -47,7 +47,7 @@ func TestRenderDiff_NoChanges(t *testing.T) {
  package main
  func hello() {}`
 
-	result := RenderDiff(diff)
+	result := RenderDiff(diff, Styles())
 	if result == "" {
 		t.Fatal("RenderDiff returned empty for context-only diff")
 	}
@@ -90,6 +90,26 @@ func TestComputeSimpleDiff(t *testing.T) {
 	}
 	if !strings.Contains(diff, "+modified") {
 		t.Error("diff missing added line")
+	}
+}
+
+func TestRenderDiff_UsesThemeStyles(t *testing.T) {
+	diff := "+added line\n-removed line\n@@ hunk @@\n--- header"
+	s := Styles()
+	result := RenderDiff(diff, s)
+
+	if result == "" {
+		t.Fatal("RenderDiff returned empty string")
+	}
+	// Should contain the original text (ANSI codes may be absent in headless test env)
+	if !strings.Contains(result, "added line") {
+		t.Error("result missing added line text")
+	}
+	if !strings.Contains(result, "removed line") {
+		t.Error("result missing removed line text")
+	}
+	if !strings.Contains(result, "hunk") {
+		t.Error("result missing hunk text")
 	}
 }
 

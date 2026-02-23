@@ -5,21 +5,12 @@ package btea
 
 import (
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
-// Diff line styles using lipgloss.
-var (
-	diffAdded   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))  // green
-	diffRemoved = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))  // red
-	diffHeader  = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))  // cyan
-	diffHunk    = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))  // magenta
-)
-
-// RenderDiff takes a unified diff string and returns it with ANSI color coding.
-// Added lines are green, removed lines are red, headers are cyan, hunks are magenta.
-func RenderDiff(diff string) string {
+// RenderDiff takes a unified diff string and returns it with ANSI color coding
+// derived from the active theme palette via ThemeStyles.
+// Added lines use Success, removed lines use Error, headers use Info, hunks use Secondary.
+func RenderDiff(diff string, s ThemeStyles) string {
 	if diff == "" {
 		return ""
 	}
@@ -31,13 +22,13 @@ func RenderDiff(diff string) string {
 	for _, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
-			b.WriteString(diffHeader.Render(line))
+			b.WriteString(s.DiffHeader.Render(line))
 		case strings.HasPrefix(line, "@@"):
-			b.WriteString(diffHunk.Render(line))
+			b.WriteString(s.DiffHunk.Render(line))
 		case strings.HasPrefix(line, "+"):
-			b.WriteString(diffAdded.Render(line))
+			b.WriteString(s.DiffAdded.Render(line))
 		case strings.HasPrefix(line, "-"):
-			b.WriteString(diffRemoved.Render(line))
+			b.WriteString(s.DiffRemoved.Render(line))
 		default:
 			b.WriteString(line)
 		}

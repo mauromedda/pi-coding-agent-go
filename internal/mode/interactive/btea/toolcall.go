@@ -259,7 +259,7 @@ func (m ToolCallModel) View() string {
 		// Color edit tool output as a diff
 		outputText := m.output
 		if IsEditTool(m.name) {
-			outputText = RenderDiff(outputText)
+			outputText = RenderDiff(outputText, s)
 		}
 
 		lines := strings.SplitSeq(strings.TrimRight(outputText, "\n"), "\n")

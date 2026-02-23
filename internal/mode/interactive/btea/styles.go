@@ -202,6 +202,12 @@ type ThemeStyles struct {
 	Italic    lipgloss.Style
 	Underline lipgloss.Style
 
+	// Diff styles (themed replacements for hardcoded ANSI colors)
+	DiffAdded   lipgloss.Style
+	DiffRemoved lipgloss.Style
+	DiffHeader  lipgloss.Style
+	DiffHunk    lipgloss.Style
+
 	// Pre-computed component styles (avoid per-View allocation)
 	AssistantBorder lipgloss.Style // Left border color for assistant messages
 	AssistantError  lipgloss.Style // Error block with thick left border
@@ -260,6 +266,15 @@ func buildStyles(t *theme.Theme) ThemeStyles {
 		Dim:       colorToStyle(p.Dim.Code()),
 		Italic:    colorToStyle(p.Italic.Code()),
 		Underline: colorToStyle(p.Underline.Code()),
+
+		DiffAdded: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Success.Code()).GetForeground()),
+		DiffRemoved: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Error.Code()).GetForeground()),
+		DiffHeader: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Info.Code()).GetForeground()),
+		DiffHunk: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Secondary.Code()).GetForeground()),
 
 		AssistantBorder: lipgloss.NewStyle().
 			Foreground(colorToStyle(p.Muted.Code()).GetForeground()),
