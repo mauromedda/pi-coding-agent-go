@@ -243,6 +243,46 @@ func TestAppModel_AgentUsageMsg(t *testing.T) {
 	}
 }
 
+func TestAppModel_AgentUsageMsg_SetsFooterContextPct(t *testing.T) {
+	deps := testDeps()
+	deps.Model.ContextWindow = 10000
+	m := NewAppModel(deps)
+
+	// Send usage that fills 60% of context window
+	usage := &ai.Usage{InputTokens: 6000, OutputTokens: 0}
+	result, _ := m.Update(AgentUsageMsg{Usage: usage})
+	model := result.(AppModel)
+
+	if model.footer.contextPct != 60 {
+		t.Errorf("footer.contextPct = %d; want 60", model.footer.contextPct)
+	}
+
+	// Accumulate more: now 80%
+	usage2 := &ai.Usage{InputTokens: 2000, OutputTokens: 0}
+	result2, _ := model.Update(AgentUsageMsg{Usage: usage2})
+	model2 := result2.(AppModel)
+
+	if model2.footer.contextPct != 80 {
+		t.Errorf("footer.contextPct = %d; want 80", model2.footer.contextPct)
+	}
+}
+
+func TestAppModel_AgentUsageMsg_NoContextWindow(t *testing.T) {
+	// When ContextWindow is 0, contextPct should remain 0
+	deps := testDeps()
+	deps.Model.ContextWindow = 0
+	deps.Model.MaxTokens = 0
+	m := NewAppModel(deps)
+
+	usage := &ai.Usage{InputTokens: 500, OutputTokens: 100}
+	result, _ := m.Update(AgentUsageMsg{Usage: usage})
+	model := result.(AppModel)
+
+	if model.footer.contextPct != 0 {
+		t.Errorf("footer.contextPct = %d; want 0 when no context window", model.footer.contextPct)
+	}
+}
+
 func TestAppModel_PermissionRequestCreatesOverlay(t *testing.T) {
 	m := NewAppModel(testDeps())
 	ch := make(chan PermissionReply, 1)

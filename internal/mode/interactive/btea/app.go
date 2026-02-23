@@ -482,6 +482,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, _ := m.footer.Update(msg)
 		m.footer = updated.(FooterModel)
 
+		// Update context window usage percentage
+		if m.deps.Model != nil {
+			ctxWindow := m.deps.Model.EffectiveContextWindow()
+			if ctxWindow > 0 {
+				pct := m.totalInputTokens * 100 / ctxWindow
+				if pct > 100 {
+					pct = 100
+				}
+				m.footer = m.footer.WithContextPct(pct)
+			}
+		}
+
 		// Check if auto-compaction should trigger
 		threshold := m.deps.AutoCompactThreshold
 		if threshold > 0 && !m.compacting {
