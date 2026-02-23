@@ -35,18 +35,24 @@ const (
 	ContentThinking ContentType = "thinking"
 )
 
+// CacheControl instructs the provider to cache a content block.
+type CacheControl struct {
+	Type string `json:"type"`
+}
+
 // Content represents a content block within a message.
 type Content struct {
-	Type      ContentType     `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	ID        string          `json:"id,omitempty"`         // Tool use/result ID
-	Name      string          `json:"name,omitempty"`       // Tool name
-	Input     json.RawMessage `json:"input,omitempty"`      // Tool use input
-	ResultText string         `json:"result_text,omitempty"` // Tool result content
-	IsError   bool            `json:"is_error,omitempty"`   // Tool result error flag
-	MediaType string          `json:"media_type,omitempty"` // Image media type
-	Data      string          `json:"data,omitempty"`       // Base64 image data
-	Thinking  string          `json:"thinking,omitempty"`   // Extended thinking text
+	Type         ContentType     `json:"type"`
+	Text         string          `json:"text,omitempty"`
+	ID           string          `json:"id,omitempty"`            // Tool use/result ID
+	Name         string          `json:"name,omitempty"`          // Tool name
+	Input        json.RawMessage `json:"input,omitempty"`         // Tool use input
+	ResultText   string          `json:"result_text,omitempty"`   // Tool result content
+	IsError      bool            `json:"is_error,omitempty"`      // Tool result error flag
+	MediaType    string          `json:"media_type,omitempty"`    // Image media type
+	Data         string          `json:"data,omitempty"`          // Base64 image data
+	Thinking     string          `json:"thinking,omitempty"`      // Extended thinking text
+	CacheControl *CacheControl   `json:"cache_control,omitempty"` // Provider caching hint
 }
 
 // Message represents a conversation message.
@@ -73,9 +79,10 @@ type Usage struct {
 
 // Tool defines a tool the model can invoke.
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"input_schema"` // JSON Schema
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Parameters   json.RawMessage `json:"input_schema"`          // JSON Schema
+	CacheControl *CacheControl   `json:"cache_control,omitempty"` // Provider caching hint
 }
 
 // Api identifies an API provider.
@@ -113,9 +120,10 @@ func (m *Model) EffectiveContextWindow() int {
 
 // Context holds the messages and tools for an LLM call.
 type Context struct {
-	System   string    `json:"system,omitempty"`
-	Messages []Message `json:"messages"`
-	Tools    []Tool    `json:"tools,omitempty"`
+	System             string        `json:"system,omitempty"`
+	Messages           []Message     `json:"messages"`
+	Tools              []Tool        `json:"tools,omitempty"`
+	SystemCacheControl *CacheControl `json:"system_cache_control,omitempty"` // Cache hint for system prompt
 }
 
 // StreamOptions configures streaming behavior.
