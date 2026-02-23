@@ -281,6 +281,22 @@ func TestFooterModel_SettingsChangedMsg(t *testing.T) {
 	}
 }
 
+func TestFooterModel_ViewIntentLabel_CaseInsensitive(t *testing.T) {
+	// intent.Intent.String() returns lowercase; footer should still style correctly.
+	tests := []string{"plan", "execute", "debug", "explore", "refactor"}
+	for _, label := range tests {
+		t.Run(label, func(t *testing.T) {
+			m := NewFooterModel()
+			m = m.WithIntentLabel(label)
+			m.width = 80
+			view := m.View()
+			if !strings.Contains(view, label) {
+				t.Errorf("View() missing lowercase intent label %q; got %q", label, view)
+			}
+		})
+	}
+}
+
 func TestFooterModel_ViewPermissionMode(t *testing.T) {
 	tests := []struct {
 		name string

@@ -73,7 +73,8 @@ func (t *Tracker) Record(model string, inputTokens, outputTokens int) []Alert {
 	cost := EstimateCost(model, inputTokens, outputTokens)
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	// NOTE: Unlock is explicit (not deferred) so the onAlert callback
+	// can safely call Summary() without deadlocking. See below.
 
 	t.calls = append(t.calls, CallRecord{
 		Model:        model,
@@ -117,11 +118,14 @@ func (t *Tracker) Record(model string, inputTokens, outputTokens int) []Alert {
 		}
 	}
 
-	// Fire callback outside the critical path but still under lock
-	// to guarantee ordering. The callback should be fast.
-	if t.onAlert != nil {
+	// Capture callback ref under lock; fire after unlock to avoid deadlock
+	// if the callback calls Summary() or other Tracker methods.
+	cb := t.onAlert
+	t.mu.Unlock()
+
+	if cb != nil {
 		for _, a := range newAlerts {
-			t.onAlert(a)
+			cb(a)
 		}
 	}
 

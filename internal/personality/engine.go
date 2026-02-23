@@ -76,6 +76,7 @@ func (e *Engine) ProfileNames() []string {
 
 // ComposePrompt generates the prompt injection for the current personality.
 // Runs all enabled checks and combines their instructions.
+// Checks not explicitly configured in the active profile default to "standard" level.
 func (e *Engine) ComposePrompt(ctx checks.CheckContext) string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

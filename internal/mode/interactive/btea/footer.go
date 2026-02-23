@@ -193,16 +193,16 @@ func (m FooterModel) View() string {
 
 	if m.intentLabel != "" {
 		intentStyle := s.Muted
-		switch m.intentLabel {
-		case "Plan":
+		switch strings.ToLower(m.intentLabel) {
+		case "plan":
 			intentStyle = s.Info
-		case "Execute":
+		case "execute":
 			intentStyle = s.Success
-		case "Debug":
+		case "debug":
 			intentStyle = s.Error
-		case "Explore":
+		case "explore":
 			intentStyle = s.Secondary
-		case "Refactor":
+		case "refactor":
 			intentStyle = s.Warning
 		}
 		line2Parts = append(line2Parts, intentStyle.Render("["+m.intentLabel+"]"))

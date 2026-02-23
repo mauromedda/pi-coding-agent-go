@@ -256,6 +256,25 @@ func TestTracker_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+func TestTracker_AlertCallback_NoDeadlock(t *testing.T) {
+	t.Parallel()
+
+	tr := NewTracker(0.01, 80)
+
+	// Callback calls Summary() which acquires the lock.
+	// Before the fix, this would deadlock because Record held the lock.
+	tr.SetAlertCallback(func(a Alert) {
+		s := tr.Summary()
+		if s.CallCount == 0 {
+			t.Error("expected CallCount > 0 in callback")
+		}
+	})
+
+	// Exceed budget: should fire callback without deadlocking.
+	// Test will timeout if deadlock occurs.
+	tr.Record("claude-opus-4", 1000, 0)
+}
+
 func TestTracker_WarningOnlyOnce(t *testing.T) {
 	t.Parallel()
 
