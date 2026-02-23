@@ -149,7 +149,7 @@ func (r *Registry) BestMatch(prefix string) string {
 			return "" // exact match: nothing to complete
 		}
 		if strings.HasPrefix(name, lower) {
-			if best == "" || len(cmd.Name) < len(best) {
+			if best == "" || len(cmd.Name) < len(best) || (len(cmd.Name) == len(best) && cmd.Name < best) {
 				best = cmd.Name
 			}
 		}

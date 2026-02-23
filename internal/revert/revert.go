@@ -14,10 +14,10 @@ import (
 )
 
 // fileTools are tool names that modify files on disk.
+// bash is excluded: its input uses "command", not "path", making path extraction unreliable.
 var fileTools = map[string]bool{
 	"write": true,
 	"edit":  true,
-	"bash":  true,
 }
 
 // FileOp represents a file operation extracted from a tool_use content block.
@@ -86,7 +86,7 @@ func RevertOps(ops []FileOp) ([]string, error) {
 			}
 			summary = append(summary, fmt.Sprintf("removed %s", op.Path))
 
-		case "edit", "bash":
+		case "edit":
 			cmd := exec.Command("git", "checkout", "--", op.Path)
 			if err := cmd.Run(); err != nil {
 				summary = append(summary, fmt.Sprintf("git checkout failed for %s: %v", op.Path, err))
