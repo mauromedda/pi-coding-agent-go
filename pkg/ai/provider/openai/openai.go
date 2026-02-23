@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/mailru/easyjson"
+
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai/internal/httputil"
@@ -115,7 +117,7 @@ func (p *Provider) processSSE(reader *sse.Reader, stream *ai.EventStream) error 
 		}
 
 		var chunk chatCompletionChunk
-		if err := json.Unmarshal([]byte(event.Data), &chunk); err != nil {
+		if err := easyjson.Unmarshal([]byte(event.Data), &chunk); err != nil {
 			continue
 		}
 
