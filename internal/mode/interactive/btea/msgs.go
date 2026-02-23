@@ -48,6 +48,9 @@ type AgentDoneMsg struct{ Messages []ai.Message }
 // AgentErrorMsg carries a non-recoverable agent error.
 type AgentErrorMsg struct{ Err error }
 
+// AgentCancelMsg signals that the agent was cancelled by the user.
+type AgentCancelMsg struct{}
+
 // --- Permission flow ---
 
 // PermissionReply is the user's response to a permission request.

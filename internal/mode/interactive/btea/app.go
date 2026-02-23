@@ -464,6 +464,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.updateLastAssistant(msg)
 		return m, nil
 
+	case AgentCancelMsg:
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(AgentTextMsg{Text: "\n⏹ Agent cancelled."})
+		return m, nil
+
 	// --- Key routing ---
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -528,6 +533,20 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+d":
 		return m, tea.Quit
+
+	case "esc":
+		if m.agentRunning {
+			m.abortAgent()
+			return m, func() tea.Msg { return AgentCancelMsg{} }
+		}
+		return m, nil
+
+	case "ctrl+l":
+		// Clear viewport; keep only a fresh welcome
+		m.content = m.content[:0]
+		welcome := NewWelcomeModel(m.deps.Version, m.modelName(), detectGitCWD(), len(m.deps.Tools))
+		m.content = append(m.content, welcome)
+		return m, nil
 
 	case "shift+tab":
 		m = m.toggleMode()
