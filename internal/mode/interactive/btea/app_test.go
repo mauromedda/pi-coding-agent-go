@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
@@ -351,8 +352,36 @@ func TestAppModel_FileMentionSelectMsg(t *testing.T) {
 	if model.overlay != nil {
 		t.Error("overlay should be nil after FileMentionSelectMsg")
 	}
-	if got := model.editor.Text(); got != "@main.go" {
-		t.Errorf("editor text = %q; want %q", got, "@main.go")
+	// Selection replaces "@..." with "@<file> " (trailing space for typing continuation)
+	if got := model.editor.Text(); got != "@main.go " {
+		t.Errorf("editor text = %q; want %q", got, "@main.go ")
+	}
+}
+
+func TestAppModel_FileScanResultPopulatesOverlay(t *testing.T) {
+	m := NewAppModel(testDeps())
+	fm := NewFileMentionModel("/proj")
+	fm.loading = true
+	m.overlay = fm
+
+	now := time.Now()
+	items := []FileInfo{
+		{RelPath: "main.go", Name: "main.go", ModTime: now},
+		{RelPath: "util.go", Name: "util.go", ModTime: now},
+	}
+
+	result, _ := m.Update(FileScanResultMsg{Items: items})
+	model := result.(AppModel)
+
+	overlay, ok := model.overlay.(FileMentionModel)
+	if !ok {
+		t.Fatal("overlay should still be FileMentionModel after scan result")
+	}
+	if overlay.loading {
+		t.Error("loading should be false after scan result")
+	}
+	if overlay.Count() != 2 {
+		t.Errorf("Count() = %d; want 2", overlay.Count())
 	}
 }
 

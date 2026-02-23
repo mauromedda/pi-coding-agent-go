@@ -42,6 +42,7 @@ type FileMentionModel struct {
 	filter      string
 	projectRoot string
 	width       int
+	loading     bool
 }
 
 // NewFileMentionModel creates a new file mention model for the given project root.
@@ -62,10 +63,31 @@ func (m FileMentionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
+		case tea.KeyRunes:
+			if len(msg.Runes) > 0 {
+				m.filter += string(msg.Runes)
+				m.selected = 0
+				m.scrollOff = 0
+				m.applyFilter()
+			}
+		case tea.KeyBackspace:
+			if len(m.filter) > 0 {
+				m.filter = m.filter[:len(m.filter)-1]
+				m.selected = 0
+				m.scrollOff = 0
+				m.applyFilter()
+			}
 		case tea.KeyUp:
 			m.moveUp()
 		case tea.KeyDown:
 			m.moveDown()
+		case tea.KeyEnter, tea.KeyTab:
+			rel := m.SelectedRelPath()
+			if rel != "" {
+				return m, func() tea.Msg { return FileMentionSelectMsg{RelPath: rel} }
+			}
+		case tea.KeyEsc:
+			return m, func() tea.Msg { return FileMentionDismissMsg{} }
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -73,23 +95,42 @@ func (m FileMentionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the file list with color coding for directories.
+// View renders the file list with header, loading state, and color coding.
 func (m FileMentionModel) View() string {
-	if len(m.visible) == 0 {
-		return ""
-	}
-
 	s := Styles()
-	end := min(m.scrollOff+m.maxHeight, len(m.visible))
 	var b strings.Builder
 
+	// Header line
+	header := "  Files"
+	if m.filter != "" {
+		header += fmt.Sprintf(" matching %q", m.filter)
+	}
+	b.WriteString(s.Dim.Render(header))
+
+	// Loading state
+	if m.loading && len(m.items) == 0 {
+		b.WriteByte('\n')
+		b.WriteString(s.Dim.Render("  Scanning files..."))
+		return b.String()
+	}
+
+	// No matches state
+	if len(m.visible) == 0 {
+		b.WriteByte('\n')
+		if m.filter != "" {
+			b.WriteString(s.Dim.Render("  No matching files"))
+		} else {
+			b.WriteString(s.Dim.Render("  No files found"))
+		}
+		return b.String()
+	}
+
+	end := min(m.scrollOff+m.maxHeight, len(m.visible))
 	for i := m.scrollOff; i < end; i++ {
 		item := m.visible[i]
 		selected := i == m.selected
 		line := formatFileItem(s, item, m.width, selected)
-		if i > m.scrollOff {
-			b.WriteByte('\n')
-		}
+		b.WriteByte('\n')
 		b.WriteString(line)
 	}
 

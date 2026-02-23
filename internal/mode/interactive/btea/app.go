@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -250,17 +251,26 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case FileMentionSelectMsg:
 		m.overlay = nil
+		// Replace the "@..." prefix with the selected file path
 		text := m.editor.Text()
-		if text != "" && !strings.HasSuffix(text, " ") {
-			text += " "
+		if atIdx := strings.LastIndex(text, "@"); atIdx >= 0 {
+			text = text[:atIdx]
 		}
-		text += "@" + msg.RelPath
+		text += "@" + msg.RelPath + " "
 		m.editor = m.editor.SetFocused(true).SetText(text)
 		return m, nil
 
 	case FileMentionDismissMsg:
 		m.overlay = nil
 		m.editor = m.editor.SetFocused(true)
+		return m, nil
+
+	case FileScanResultMsg:
+		if fm, ok := m.overlay.(FileMentionModel); ok {
+			fm.loading = false
+			fm = fm.SetItems(msg.Items)
+			m.overlay = fm
+		}
 		return m, nil
 
 	case ModelSelectedMsg:
@@ -359,8 +369,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		// Route to overlay if active (key presses, etc.)
 		if m.overlay != nil {
-			// When command palette is active, mirror typed/deleted chars to editor
-			if _, isPalette := m.overlay.(CmdPaletteModel); isPalette {
+			// When command palette or file mention is active, mirror typed/deleted chars to editor
+			if isDropdownOverlay(m.overlay) {
 				if keyMsg, isKey := msg.(tea.KeyMsg); isKey {
 					if keyMsg.Type == tea.KeyRunes || keyMsg.Type == tea.KeyBackspace {
 						editorUpdated, _ := m.editor.Update(keyMsg)
@@ -783,8 +793,17 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case '@':
 				if !m.agentRunning {
-					m.overlay = NewFileMentionModel("")
-					return m, nil
+					fm := NewFileMentionModel(m.gitCWD)
+					fm.loading = true
+					fm.width = m.width
+					m.overlay = fm
+					m.editor = m.editor.SetText("@")
+					root := m.gitCWD
+					if root == "" {
+						cwd, _ := os.Getwd()
+						root = cwd
+					}
+					return m, scanProjectFilesCmd(root)
 				}
 			}
 		}

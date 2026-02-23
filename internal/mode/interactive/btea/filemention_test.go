@@ -155,9 +155,10 @@ func TestFileMentionModel_ViewDirectorySuffix(t *testing.T) {
 
 func TestFileMentionModel_ViewEmptyList(t *testing.T) {
 	m := NewFileMentionModel("/proj")
+	m.width = 80
 	view := m.View()
-	if view != "" {
-		t.Errorf("View() on empty list = %q; want empty", view)
+	if !strings.Contains(view, "No files found") {
+		t.Errorf("View() on empty list should show 'No files found'; got %q", view)
 	}
 }
 
@@ -188,8 +189,9 @@ func TestFileMentionModel_SetMaxHeight(t *testing.T) {
 	for len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
-	if len(lines) > 5 {
-		t.Errorf("View() with maxHeight=5 rendered %d lines; want <= 5", len(lines))
+	// maxHeight=5 file items + 1 header line = 6 lines max
+	if len(lines) > 6 {
+		t.Errorf("View() with maxHeight=5 rendered %d lines; want <= 6 (5 items + header)", len(lines))
 	}
 }
 
@@ -197,5 +199,140 @@ func TestFileMentionModel_CountEmpty(t *testing.T) {
 	m := NewFileMentionModel("/proj")
 	if m.Count() != 0 {
 		t.Errorf("Count() on empty = %d; want 0", m.Count())
+	}
+}
+
+func TestFileMentionModel_EnterSelectsItem(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = updated.(FileMentionModel)
+
+	if cmd == nil {
+		t.Fatal("Enter key should return a command")
+	}
+	msg := cmd()
+	sel, ok := msg.(FileMentionSelectMsg)
+	if !ok {
+		t.Fatalf("cmd() returned %T; want FileMentionSelectMsg", msg)
+	}
+	if sel.RelPath != "main.go" {
+		t.Errorf("selected = %q; want 'main.go'", sel.RelPath)
+	}
+}
+
+func TestFileMentionModel_TabSelectsItem(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if cmd == nil {
+		t.Fatal("Tab key should return a command")
+	}
+	msg := cmd()
+	sel, ok := msg.(FileMentionSelectMsg)
+	if !ok {
+		t.Fatalf("cmd() returned %T; want FileMentionSelectMsg", msg)
+	}
+	if sel.RelPath != "main.go" {
+		t.Errorf("selected = %q; want 'main.go'", sel.RelPath)
+	}
+}
+
+func TestFileMentionModel_EscDismisses(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("Esc key should return a command")
+	}
+	msg := cmd()
+	if _, ok := msg.(FileMentionDismissMsg); !ok {
+		t.Fatalf("cmd() returned %T; want FileMentionDismissMsg", msg)
+	}
+}
+
+func TestFileMentionModel_RunesUpdateFilter(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+
+	// Type "main"
+	for _, r := range "main" {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(FileMentionModel)
+	}
+
+	if m.filter != "main" {
+		t.Errorf("filter = %q; want 'main'", m.filter)
+	}
+	// Should have filtered to match main.go
+	found := false
+	for _, v := range m.VisibleItems() {
+		if v.RelPath == "main.go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("typing 'main' should show main.go in visible items")
+	}
+}
+
+func TestFileMentionModel_BackspaceDeletesFilter(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+	m = m.SetFilter("main")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(FileMentionModel)
+
+	if m.filter != "mai" {
+		t.Errorf("filter after backspace = %q; want 'mai'", m.filter)
+	}
+}
+
+func TestFileMentionModel_EnterOnEmptyListNoop(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	// No items loaded
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Error("Enter on empty list should return nil cmd")
+	}
+}
+
+func TestFileMentionModel_ViewShowsHeader(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+	m.width = 80
+
+	view := m.View()
+	if !strings.Contains(view, "Files") {
+		t.Error("View() should contain header with 'Files'")
+	}
+}
+
+func TestFileMentionModel_ViewShowsLoadingState(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m.loading = true
+	m.width = 80
+
+	view := m.View()
+	if !strings.Contains(view, "Scanning") {
+		t.Error("View() with loading=true should show scanning message")
+	}
+}
+
+func TestFileMentionModel_ViewShowsNoMatches(t *testing.T) {
+	m := NewFileMentionModel("/proj")
+	m = m.SetItems(testFileInfos())
+	m = m.SetFilter("zzzznonexistent")
+	m.width = 80
+
+	view := m.View()
+	if !strings.Contains(view, "No matching") {
+		t.Error("View() with no matches should show 'No matching' message")
 	}
 }
