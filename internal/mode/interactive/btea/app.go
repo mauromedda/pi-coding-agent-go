@@ -109,9 +109,18 @@ type AppModel struct {
 	retryCount int       // number of retries attempted for current error
 	retryAt    time.Time // when to retry next
 
+	// Async bash state
+	bashRunning bool
+
+	// Git working directory (populated async in Init)
+	gitCWD string
+
 	// Cached separator string (recomputed only on WindowSizeMsg)
 	cachedSep string
 }
+
+// Compile-time interface assertion.
+var _ tea.Model = AppModel{}
 
 // NewAppModel creates an AppModel wired with the given dependencies.
 func NewAppModel(deps AppDeps) AppModel {
@@ -127,7 +136,6 @@ func NewAppModel(deps AppDeps) AppModel {
 		modelName = deps.Model.Name
 	}
 
-	cwd := detectGitCWD()
 	toolCount := len(deps.Tools)
 
 	// Determine initial mode and permission label from PermissionMode.
@@ -147,13 +155,13 @@ func NewAppModel(deps AppDeps) AppModel {
 	}
 
 	footer := NewFooterModel().
-		WithPath(cwd).
+		WithPath("").
 		WithModel(modelName).
 		WithModeLabel(initialMode.String()).
 		WithPermissionMode(permLabel).
 		WithShowImages(true)
 
-	welcome := NewWelcomeModel(deps.Version, modelName, cwd, toolCount)
+	welcome := NewWelcomeModel(deps.Version, modelName, "", toolCount)
 
 	return AppModel{
 		sh:           &shared{ctx: ctx, cancel: cancel},
@@ -168,10 +176,14 @@ func NewAppModel(deps AppDeps) AppModel {
 	}
 }
 
-// Init returns startup commands: detect git branch and probe model latency.
+// Init returns startup commands: detect git branch, git CWD, and probe model latency.
 func (m AppModel) Init() tea.Cmd {
-	gitCmd := func() tea.Msg {
+	gitBranchCmd := func() tea.Msg {
 		return gitBranchMsg{branch: detectGitBranch()}
+	}
+
+	gitCWDCmd := func() tea.Msg {
+		return gitCWDMsg{cwd: detectGitCWD()}
 	}
 
 	probeCmd := func() tea.Msg {
@@ -199,7 +211,7 @@ func (m AppModel) Init() tea.Cmd {
 		return ProbeResultMsg{Profile: profile}
 	}
 
-	return tea.Batch(gitCmd, probeCmd)
+	return tea.Batch(gitBranchCmd, gitCWDCmd, probeCmd)
 }
 
 // Update routes messages to the appropriate handler.
@@ -361,6 +373,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footer = m.footer.WithGitBranch(msg.branch)
 		return m, nil
 
+	case gitCWDMsg:
+		m.gitCWD = msg.cwd
+		m.footer = m.footer.WithPath(msg.cwd)
+		// Update welcome model if it's the first content item
+		if len(m.content) > 0 {
+			if _, ok := m.content[0].(WelcomeModel); ok {
+				m.content[0] = NewWelcomeModel(m.deps.Version, m.modelName(), msg.cwd, len(m.deps.Tools))
+			}
+		}
+		return m, nil
+
 	case ProbeResultMsg:
 		m.modelProfile = &msg.Profile
 		m.footer = m.footer.WithLatencyClass(msg.Profile.Latency.String())
@@ -502,6 +525,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agentRunning = true
 		return m, m.startAgentCmd()
 
+	case BashDoneMsg:
+		m.bashRunning = false
+		bom := NewBashOutputModel(msg.Command)
+		bom.AddOutput(msg.Output)
+		bom.SetExitCode(msg.ExitCode)
+		bom.width = m.width
+		m.content = append(m.content, bom)
+		return m, nil
+
 	case AgentCancelMsg:
 		m = m.ensureAssistantMsg()
 		m = m.updateLastAssistant(AgentTextMsg{Text: "\n⏹ Agent cancelled."})
@@ -582,7 +614,7 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+l":
 		// Clear viewport; keep only a fresh welcome
 		m.content = m.content[:0]
-		welcome := NewWelcomeModel(m.deps.Version, m.modelName(), detectGitCWD(), len(m.deps.Tools))
+		welcome := NewWelcomeModel(m.deps.Version, m.modelName(), m.gitCWD, len(m.deps.Tools))
 		m.content = append(m.content, welcome)
 		return m, nil
 
@@ -769,16 +801,16 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 }
 
 func (m AppModel) handleBashCommand(command string) (AppModel, tea.Cmd) {
-	// Run bash command synchronously and show result
-	result, exitCode := runBashCommand(command)
-
-	// Create bash output model with proper styling
-	bom := NewBashOutputModel(command)
-	bom.AddOutput(result)
-	bom.SetExitCode(exitCode)
-	bom.width = m.width
-	m.content = append(m.content, bom)
-	return m, nil
+	m.bashRunning = true
+	cmd := command
+	return m, func() tea.Msg {
+		output, exitCode := runBashCommand(cmd)
+		return BashDoneMsg{
+			Command:  cmd,
+			Output:   output,
+			ExitCode: exitCode,
+		}
+	}
 }
 
 func runBashCommand(command string) (string, int) {

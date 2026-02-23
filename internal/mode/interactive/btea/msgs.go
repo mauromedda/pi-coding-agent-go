@@ -137,6 +137,18 @@ type QueueEditMsg struct {
 	Index int
 }
 
+// --- Async I/O results ---
+
+// BashDoneMsg carries the result of an asynchronous bash command execution.
+type BashDoneMsg struct {
+	Command  string
+	Output   string
+	ExitCode int
+}
+
+// gitCWDMsg carries the detected git working directory.
+type gitCWDMsg struct{ cwd string }
+
 // --- Session lifecycle messages ---
 
 // SessionLoadedMsg signals that a session was resumed and its history loaded.

@@ -36,13 +36,11 @@ func (m AppModel) buildCommandContext() (*commands.CommandContext, *cmdSideEffec
 	// Mutable mode copy for toggle within closure scope.
 	currentMode := m.mode
 
-	cwd := detectGitCWD()
-
 	ctx := &commands.CommandContext{
 		Model:       m.modelName(),
 		Mode:        m.mode.String(),
 		Version:     m.deps.Version,
-		CWD:         cwd,
+		CWD:         m.gitCWD,
 		TotalCost:   m.footer.cost,
 		TotalTokens: m.totalInputTokens + m.totalOutputTokens,
 		Messages:    len(m.messages),

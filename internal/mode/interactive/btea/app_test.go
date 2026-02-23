@@ -13,6 +13,9 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
+// Compile-time check: AppModel must satisfy tea.Model.
+var _ tea.Model = AppModel{}
+
 func testDeps() AppDeps {
 	return AppDeps{
 		Model:   &ai.Model{Name: "test-model", MaxOutputTokens: 4096},
@@ -929,5 +932,100 @@ func TestAppModel_CtrlTTogglesCostDashboard(t *testing.T) {
 	model = result.(AppModel)
 	if model.overlay != nil {
 		t.Errorf("overlay = %v; want nil after dismiss", model.overlay)
+	}
+}
+
+// --- WS1: Async I/O tests ---
+
+func TestAppModel_HandleBashCommandReturnsCmd(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.editor = m.editor.SetText("!echo hello")
+
+	key := tea.KeyMsg{Type: tea.KeyEnter}
+	result, cmd := m.Update(key)
+	model := result.(AppModel)
+
+	// handleBashCommand should return a non-nil tea.Cmd (async execution)
+	if cmd == nil {
+		t.Fatal("cmd = nil; want non-nil tea.Cmd for async bash execution")
+	}
+
+	// bashRunning should be true while command executes
+	if !model.bashRunning {
+		t.Error("bashRunning = false; want true while bash command is in flight")
+	}
+}
+
+func TestAppModel_BashDoneMsgCreatesOutputModel(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.bashRunning = true
+
+	result, _ := m.Update(BashDoneMsg{
+		Command:  "echo hello",
+		Output:   "hello\n",
+		ExitCode: 0,
+	})
+	model := result.(AppModel)
+
+	if model.bashRunning {
+		t.Error("bashRunning = true; want false after BashDoneMsg")
+	}
+
+	// Should have created a BashOutputModel in content
+	found := false
+	for _, c := range model.content {
+		if _, ok := c.(*BashOutputModel); ok {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("content should contain a *BashOutputModel after BashDoneMsg")
+	}
+}
+
+func TestAppModel_InitReturnsThreeCmds(t *testing.T) {
+	m := NewAppModel(testDeps())
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("Init() returned nil; want batch command")
+	}
+
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init cmd returned %T; want tea.BatchMsg", msg)
+	}
+
+	// Should have 3 cmds: git branch + git cwd + probe
+	if len(batch) != 3 {
+		t.Errorf("Init batch has %d cmds; want 3 (gitBranch + gitCWD + probe)", len(batch))
+	}
+
+	// Execute each and check for gitCWDMsg
+	var hasGitCWD bool
+	for _, batchCmd := range batch {
+		if batchCmd == nil {
+			continue
+		}
+		innerMsg := batchCmd()
+		if _, ok := innerMsg.(gitCWDMsg); ok {
+			hasGitCWD = true
+		}
+	}
+	if !hasGitCWD {
+		t.Error("Init batch does not contain a gitCWDMsg command")
+	}
+}
+
+func TestAppModel_GitCWDMsgSetsField(t *testing.T) {
+	m := NewAppModel(testDeps())
+	result, _ := m.Update(gitCWDMsg{cwd: "/home/user/project"})
+	model := result.(AppModel)
+
+	if model.gitCWD != "/home/user/project" {
+		t.Errorf("gitCWD = %q; want %q", model.gitCWD, "/home/user/project")
 	}
 }
