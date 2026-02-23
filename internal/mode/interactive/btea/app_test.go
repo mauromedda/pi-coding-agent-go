@@ -513,7 +513,7 @@ func TestAppModel_AtKeyOpensFileMention(t *testing.T) {
 	}
 }
 
-func TestAppModel_EnterWhileRunningDoesNotSubmit(t *testing.T) {
+func TestAppModel_EnterWhileRunningEnqueues(t *testing.T) {
 	m := NewAppModel(testDeps())
 	m.agentRunning = true
 	m.editor = m.editor.SetText("new prompt")
@@ -522,11 +522,18 @@ func TestAppModel_EnterWhileRunningDoesNotSubmit(t *testing.T) {
 	result, _ := m.Update(key)
 	model := result.(AppModel)
 
-	// Should NOT add a new UserMsgModel
+	// Should NOT add a UserMsgModel (enqueue only; no content shown)
 	for _, c := range model.content {
 		if _, ok := c.(UserMsgModel); ok {
-			t.Error("should not submit prompt while agent is running")
+			t.Error("enqueue should not add UserMsgModel to content")
 		}
+	}
+	// Should be in the queue
+	if len(model.promptQueue) != 1 {
+		t.Fatalf("promptQueue length = %d; want 1", len(model.promptQueue))
+	}
+	if model.promptQueue[0] != "new prompt" {
+		t.Errorf("promptQueue[0] = %q; want %q", model.promptQueue[0], "new prompt")
 	}
 }
 

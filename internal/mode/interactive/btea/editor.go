@@ -241,6 +241,16 @@ func (m EditorModel) GhostText() string {
 	return m.ghostText
 }
 
+// CursorRow returns the zero-based row index of the cursor.
+func (m EditorModel) CursorRow() int {
+	return m.row
+}
+
+// LineCount returns the number of lines in the editor buffer.
+func (m EditorModel) LineCount() int {
+	return len(m.lines)
+}
+
 // --- Key dispatch ---
 
 func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {

@@ -513,3 +513,33 @@ func TestEditorModel_GhostTextInView(t *testing.T) {
 		t.Errorf("expected ghost text 'lp' in view, got:\n%s", view)
 	}
 }
+
+// --- CursorRow / LineCount accessor tests ---
+
+func TestEditorModel_CursorRow(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	if got := m.CursorRow(); got != 0 {
+		t.Errorf("CursorRow() = %d; want 0 on new editor", got)
+	}
+
+	m = m.SetText("line1\nline2\nline3")
+	if got := m.CursorRow(); got != 2 {
+		t.Errorf("CursorRow() = %d; want 2 after SetText with 3 lines", got)
+	}
+}
+
+func TestEditorModel_LineCount(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	if got := m.LineCount(); got != 1 {
+		t.Errorf("LineCount() = %d; want 1 on new editor", got)
+	}
+
+	m = m.SetText("line1\nline2\nline3")
+	if got := m.LineCount(); got != 3 {
+		t.Errorf("LineCount() = %d; want 3 after SetText with 3 lines", got)
+	}
+}

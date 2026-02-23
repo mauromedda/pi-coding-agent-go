@@ -95,6 +95,12 @@ type AppModel struct {
 	// Command handling
 	cmdRegistry *commands.Registry
 
+	// Prompt queue and history
+	promptQueue   []string // prompts waiting to run after current agent finishes
+	promptHistory []string // all submitted prompts (most recent last)
+	historyIndex  int      // -1 = composing new; 0+ = browsing history (0 = most recent)
+	savedDraft    string   // editor text saved before entering history mode
+
 	// Cached separator string (recomputed only on WindowSizeMsg)
 	cachedSep string
 }
@@ -142,14 +148,15 @@ func NewAppModel(deps AppDeps) AppModel {
 	welcome := NewWelcomeModel(deps.Version, modelName, cwd, toolCount)
 
 	return AppModel{
-		sh:          &shared{ctx: ctx, cancel: cancel},
-		mode:        initialMode,
-		editor:      editor,
-		footer:      footer,
-		content:     []tea.Model{welcome},
-		deps:        deps,
-		cmdRegistry: commands.NewRegistry(),
-		showImages:  true,
+		sh:           &shared{ctx: ctx, cancel: cancel},
+		mode:         initialMode,
+		editor:       editor,
+		footer:       footer,
+		content:      []tea.Model{welcome},
+		deps:         deps,
+		cmdRegistry:  commands.NewRegistry(),
+		showImages:   true,
+		historyIndex: -1,
 	}
 }
 
@@ -346,6 +353,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.Messages) > 0 {
 			m.messages = msg.Messages
 		}
+		// Drain next queued prompt
+		if len(m.promptQueue) > 0 {
+			next := m.promptQueue[0]
+			m.promptQueue = m.promptQueue[1:]
+			m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+			return m.submitPrompt(next)
+		}
 		return m, nil
 
 	case AgentErrorMsg:
@@ -458,8 +472,17 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		if !m.agentRunning && !m.editor.IsEmpty() {
+		if !m.editor.IsEmpty() {
 			text := m.editor.Text()
+			if m.agentRunning {
+				// Enqueue for later; history is populated when drain calls submitPrompt
+				m.promptQueue = append(m.promptQueue, text)
+				m.historyIndex = -1
+				m.savedDraft = ""
+				m.editor = m.resetEditor()
+				m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+				return m, nil
+			}
 			return m.submitPrompt(text)
 		}
 		// Let editor handle enter for multi-line
@@ -484,6 +507,35 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	default:
+		// Up arrow: history navigation when cursor is on first line
+		if msg.Type == tea.KeyUp && !m.agentRunning && m.editor.CursorRow() == 0 {
+			if len(m.promptHistory) > 0 {
+				if m.historyIndex == -1 {
+					m.savedDraft = m.editor.Text()
+				}
+				newIdx := m.historyIndex + 1
+				if newIdx < len(m.promptHistory) {
+					m.historyIndex = newIdx
+					prompt := m.promptHistory[len(m.promptHistory)-1-newIdx]
+					m.editor = m.editor.SetText(prompt)
+					return m, nil
+				}
+			}
+			return m, nil
+		}
+
+		// Down arrow: exit history when browsing
+		if msg.Type == tea.KeyDown && m.historyIndex >= 0 {
+			m.historyIndex--
+			if m.historyIndex == -1 {
+				m.editor = m.editor.SetText(m.savedDraft)
+			} else {
+				prompt := m.promptHistory[len(m.promptHistory)-1-m.historyIndex]
+				m.editor = m.editor.SetText(prompt)
+			}
+			return m, nil
+		}
+
 		// Check for "/" to open command palette
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 			switch msg.Runes[0] {
@@ -514,6 +566,11 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 	m.editor = m.resetEditor()
+
+	// Track history
+	m.promptHistory = append(m.promptHistory, text)
+	m.historyIndex = -1
+	m.savedDraft = ""
 
 	// Add user message to content
 	um := NewUserMsgModel(text)
