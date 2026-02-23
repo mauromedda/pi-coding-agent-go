@@ -1,5 +1,5 @@
 // ABOUTME: Tests for the Bubble Tea image view model
-// ABOUTME: Verifies rendering, caching, and placeholder behavior
+// ABOUTME: Verifies eager rendering, placeholder behavior, and value-type safety
 
 package btea
 
@@ -35,7 +35,6 @@ func TestImageViewModel_View(t *testing.T) {
 	if view == "" {
 		t.Error("expected non-empty view")
 	}
-	// Should contain ANSI escapes or placeholder text
 	if !strings.Contains(view, "▄") && !strings.Contains(view, "[Image:") {
 		t.Errorf("expected half-block or placeholder, got: %q", view)
 	}
@@ -57,7 +56,8 @@ func TestImageViewModel_EmptyData(t *testing.T) {
 	}
 }
 
-func TestImageViewModel_CachesOutput(t *testing.T) {
+func TestImageViewModel_ValueTypeSafety(t *testing.T) {
+	// Verify that View() works correctly after value copy (no pointer receiver issues)
 	os.Unsetenv("KITTY_WINDOW_ID")
 	os.Unsetenv("ITERM_SESSION_ID")
 	os.Unsetenv("TERM_PROGRAM")
@@ -65,9 +65,23 @@ func TestImageViewModel_CachesOutput(t *testing.T) {
 	data := makeTestPNG(t, 20, 10)
 	m := NewImageViewModel(data, "image/png", 40)
 
+	// Copy the model (simulates Bubble Tea's value semantics)
+	m2 := m
+
 	view1 := m.View()
-	view2 := m.View()
+	view2 := m2.View()
 	if view1 != view2 {
-		t.Error("expected identical cached output on repeated View() calls")
+		t.Error("expected identical output from original and copy")
+	}
+	if view1 == "" {
+		t.Error("expected non-empty output")
+	}
+}
+
+func TestImageViewModel_ZeroWidth(t *testing.T) {
+	data := makeTestPNG(t, 20, 10)
+	m := NewImageViewModel(data, "image/png", 0)
+	if m.View() != "" {
+		t.Error("expected empty view for zero width")
 	}
 }

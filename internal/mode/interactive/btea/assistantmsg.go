@@ -74,6 +74,12 @@ func (m *AssistantMsgModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AgentErrorMsg:
 		m.errors = append(m.errors, msg.Err.Error())
 
+	case ToggleImagesMsg:
+		for i := range m.toolCalls {
+			updated, _ := m.toolCalls[i].Update(msg)
+			m.toolCalls[i] = updated.(ToolCallModel)
+		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		for i := range m.toolCalls {
@@ -162,9 +168,9 @@ func (m *AssistantMsgModel) View() string {
 	}
 
 	// Tool calls
-	for _, tc := range m.toolCalls {
+	for i := range m.toolCalls {
 		b.WriteString("\n")
-		b.WriteString(tc.View())
+		b.WriteString(m.toolCalls[i].View())
 		b.WriteString("\n")
 	}
 
