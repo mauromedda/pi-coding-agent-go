@@ -6,6 +6,7 @@ package btea
 import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
+	"github.com/mauromedda/pi-coding-agent-go/internal/types"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -35,6 +36,7 @@ type AgentToolEndMsg struct {
 	ToolID string
 	Text   string
 	Result *agent.ToolResult
+	Images []types.ImageBlock
 }
 
 // AgentUsageMsg carries token usage statistics.

@@ -45,6 +45,7 @@ type ToolCallModel struct {
 	output   string
 	expanded bool
 	width    int
+	images   []ImageViewModel
 }
 
 // NewToolCallModel creates a ToolCallModel for the given tool invocation.
@@ -75,6 +76,10 @@ func (m ToolCallModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.output = msg.Text
 			if msg.Result != nil && msg.Result.IsError {
 				m.errMsg = msg.Result.Content
+			}
+			for _, img := range msg.Images {
+				vm := NewImageViewModel(img.Data, img.MimeType, m.width)
+				m.images = append(m.images, vm)
 			}
 		}
 
@@ -190,6 +195,17 @@ func (m ToolCallModel) View() string {
 	if filePath := extractFilePath(m.args); filePath != "" {
 		pathLine := s.Dim.Render(filePath)
 		b.WriteString(fmt.Sprintf("%s %-*s %s\n", bs.Render(verticalBorder), contentWidth, pathLine, bs.Render(verticalBorder)))
+	}
+
+	// Image blocks
+	for i := range m.images {
+		imgView := m.images[i].View()
+		if imgView != "" {
+			imgLines := strings.Split(imgView, "\n")
+			for _, il := range imgLines {
+				b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), il))
+			}
+		}
 	}
 
 	// Error line

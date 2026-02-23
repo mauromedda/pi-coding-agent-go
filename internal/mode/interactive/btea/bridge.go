@@ -33,11 +33,15 @@ func RunAgentBridge(program ProgramSender, events <-chan agent.AgentEvent) {
 		case agent.EventToolUpdate:
 			program.Send(AgentToolUpdateMsg{ToolID: evt.ToolID, Text: evt.Text})
 		case agent.EventToolEnd:
-			program.Send(AgentToolEndMsg{
+			msg := AgentToolEndMsg{
 				ToolID: evt.ToolID,
 				Text:   evt.Text,
 				Result: evt.ToolResult,
-			})
+			}
+			if evt.ToolResult != nil {
+				msg.Images = evt.ToolResult.Images
+			}
+			program.Send(msg)
 		case agent.EventUsageUpdate:
 			program.Send(AgentUsageMsg{Usage: evt.Usage})
 		case agent.EventError:
