@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
 // WelcomeModel renders the startup banner with version info, keyboard
@@ -96,5 +97,16 @@ func (m WelcomeModel) View() string {
 	// Tool count
 	b.WriteString(s.Dim.Render(fmt.Sprintf("  [Tools: %d registered]", m.toolCount)))
 
-	return b.String()
+	// Truncate lines to terminal width on narrow terminals
+	result := b.String()
+	if m.width > 0 && m.width < 40 {
+		lines := strings.Split(result, "\n")
+		for i, line := range lines {
+			if width.VisibleWidth(line) > m.width {
+				lines[i] = width.TruncateToWidth(line, m.width)
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+	return result
 }

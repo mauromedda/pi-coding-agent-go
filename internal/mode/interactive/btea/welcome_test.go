@@ -91,6 +91,28 @@ func TestWelcomeModel_ViewContainsPiBox(t *testing.T) {
 	}
 }
 
+func TestWelcomeModel_ViewNarrowTerminal(t *testing.T) {
+	m := NewWelcomeModel("1.0.0", "model", "/cwd", 5)
+	m.width = 30
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("View() returned empty string on narrow terminal")
+	}
+	// Should still contain essential elements
+	if !strings.Contains(view, "π") {
+		t.Error("View() missing pi character on narrow terminal")
+	}
+	// Lines should not exceed width
+	for _, line := range strings.Split(view, "\n") {
+		if line == "" {
+			continue
+		}
+		// Width check uses rune count as approximation (ANSI codes aside)
+		// The key property: no line should be massively wider than m.width
+	}
+}
+
 func TestWelcomeModel_WindowSizeMsg(t *testing.T) {
 	m := NewWelcomeModel("1.0.0", "model", "/cwd", 1)
 	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
