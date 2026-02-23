@@ -268,6 +268,18 @@ func TestLoadContextFiles_NoDuplicateCLAUDEMD(t *testing.T) {
 	}
 }
 
+func TestBuildSystem_LoaderSingleton(t *testing.T) {
+	// getDefaultLoader should return the same instance on repeated calls.
+	l1 := getDefaultLoader()
+	l2 := getDefaultLoader()
+	if l1 != l2 {
+		t.Error("getDefaultLoader() returned different instances; expected singleton")
+	}
+	if l1.Cache == nil {
+		t.Error("default loader should have a Cache attached")
+	}
+}
+
 func TestModeForVersion(t *testing.T) {
 	tests := []struct {
 		name string

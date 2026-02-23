@@ -7,9 +7,16 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/prompts"
+)
+
+// defaultLoader is a singleton prompts.Loader created once via sync.Once.
+var (
+	defaultLoaderOnce sync.Once
+	defaultLoader     *prompts.Loader
 )
 
 // BuildSystem constructs the system prompt for the agent.
@@ -29,7 +36,7 @@ func BuildSystem(opts SystemOpts) string {
 
 	// Base prompt: versioned loader or hardcoded fallback
 	if opts.PromptVersion != "" {
-		loader := prompts.NewLoader("prompts", "prompts/overrides")
+		loader := getDefaultLoader()
 		vars := map[string]string{
 			"DATE":      time.Now().Format("2006-01-02"),
 			"CWD":       opts.CWD,
@@ -152,6 +159,17 @@ func StyleInstructions(style string) string {
 	default:
 		return ""
 	}
+}
+
+// getDefaultLoader returns the singleton prompts.Loader, creating it on first call.
+// The loader has a Cache attached to avoid repeated file I/O for the same version+vars.
+func getDefaultLoader() *prompts.Loader {
+	defaultLoaderOnce.Do(func() {
+		l := prompts.NewLoader("prompts", "prompts/overrides")
+		l.Cache = prompts.NewCache()
+		defaultLoader = l
+	})
+	return defaultLoader
 }
 
 // LoadContextFiles reads context files from standard locations.

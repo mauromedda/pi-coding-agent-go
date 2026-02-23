@@ -11,10 +11,23 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 )
+
+const (
+	scannerInitialBuf = 64 * 1024     // 64KB initial buffer (was 1MB)
+	scannerMaxBuf     = 10 * 1024 * 1024 // 10MB max line
+)
+
+// scannerBufPool reuses scanner buffers across ReadRecords calls.
+var scannerBufPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 0, scannerInitialBuf)
+	},
+}
 
 // validSessionID validates that a session ID contains only safe characters
 // to prevent path traversal attacks.
@@ -173,8 +186,9 @@ func ReadRecords(sessionID string) ([]Record, error) {
 	defer f.Close()
 
 	var records []Record
+	buf := scannerBufPool.Get().([]byte)
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
+	scanner.Buffer(buf[:0], scannerMaxBuf)
 
 	lineNum := 0
 	for scanner.Scan() {
@@ -186,6 +200,8 @@ func ReadRecords(sessionID string) ([]Record, error) {
 		}
 		records = append(records, rec)
 	}
+
+	scannerBufPool.Put(buf)
 
 	if err := scanner.Err(); err != nil {
 		return records, fmt.Errorf("scanning session %s: %w", sessionID, err)
@@ -203,8 +219,9 @@ func ReadRecordsFromPath(path string) ([]Record, error) {
 	defer f.Close()
 
 	var records []Record
+	buf := scannerBufPool.Get().([]byte)
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
+	scanner.Buffer(buf[:0], scannerMaxBuf)
 
 	lineNum := 0
 	for scanner.Scan() {
@@ -216,6 +233,8 @@ func ReadRecordsFromPath(path string) ([]Record, error) {
 		}
 		records = append(records, rec)
 	}
+
+	scannerBufPool.Put(buf)
 
 	if err := scanner.Err(); err != nil {
 		return records, fmt.Errorf("scanning %s: %w", path, err)

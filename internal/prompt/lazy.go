@@ -4,7 +4,10 @@
 package prompt
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -74,22 +77,85 @@ func (r *SkillRegistry) Get(name string) *LazySkill {
 	return r.skills[name]
 }
 
-// scanSkillDir enumerates skill files in a directory without reading content.
+// scanSkillDir enumerates skill files in a directory, reading only frontmatter
+// (up to the second "---" line) to extract name and description without loading
+// the full file content. This is much cheaper than loadSkillsFromDir for large
+// skill libraries.
 func scanSkillDir(dir string) []*LazySkill {
-	skills, err := loadSkillsFromDir(dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
 
-	lazy := make([]*LazySkill, 0, len(skills))
-	for _, s := range skills {
+	var lazy []*LazySkill
+	for _, entry := range entries {
+		var skillPath string
+		if entry.IsDir() {
+			skillPath = filepath.Join(dir, entry.Name(), "SKILL.md")
+		} else if strings.HasSuffix(entry.Name(), ".md") {
+			skillPath = filepath.Join(dir, entry.Name())
+		} else {
+			continue
+		}
+
+		name, desc := scanSkillFrontmatter(skillPath)
+		if name == "" {
+			// Default name from parent directory or filename.
+			d := filepath.Dir(skillPath)
+			base := filepath.Base(d)
+			if base == "." || base == "/" {
+				base = filepath.Base(skillPath)
+				base = strings.TrimSuffix(base, filepath.Ext(base))
+			}
+			name = base
+		}
+
 		lazy = append(lazy, &LazySkill{
-			Name:        s.Name,
-			Description: s.Description,
-			Path:        s.SourcePath,
+			Name:        name,
+			Description: desc,
+			Path:        skillPath,
 		})
 	}
 	return lazy
+}
+
+// scanSkillFrontmatter reads only the YAML frontmatter from a skill file,
+// stopping at the second "---" line. Returns name and description extracted
+// from simple "key: value" lines without a full YAML parse.
+func scanSkillFrontmatter(path string) (name, description string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	dashes := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			dashes++
+			if dashes >= 2 {
+				break // end of frontmatter
+			}
+			continue
+		}
+		if dashes == 1 {
+			// Inside frontmatter: extract simple key: value pairs.
+			if k, v, ok := strings.Cut(trimmed, ":"); ok {
+				val := strings.TrimSpace(v)
+				val = strings.Trim(val, "\"'")
+				switch strings.TrimSpace(k) {
+				case "name":
+					name = val
+				case "description":
+					description = val
+				}
+			}
+		}
+	}
+	return name, description
 }
 
 // BuildSkillRefs converts registry skills into SkillRef slices for system prompt assembly.

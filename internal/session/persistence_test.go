@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -164,11 +165,11 @@ func TestReadRecordsFromPath_BackwardCompat_V1(t *testing.T) {
 		`{"v":1,"type":"session_start","ts":"2025-01-01T00:00:00Z","data":{"id":"s1","model":"test","cwd":"/tmp"}}`,
 		`{"v":1,"type":"user","ts":"2025-01-01T00:01:00Z","data":{"content":"hello"}}`,
 	}
-	var content string
+	var content strings.Builder
 	for _, l := range lines {
-		content += l + "\n"
+		content.WriteString(l + "\n")
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(content.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,6 +201,34 @@ func TestCurrentRecordVersion_IsThree(t *testing.T) {
 	t.Parallel()
 	if CurrentRecordVersion != 3 {
 		t.Errorf("CurrentRecordVersion = %d, want 3", CurrentRecordVersion)
+	}
+}
+
+func TestReadRecordsFromPath_PoolReuse(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pool-test.jsonl")
+
+	// Write a few records.
+	var content strings.Builder
+	for i := range 20 {
+		content.WriteString(`{"v":3,"type":"user","ts":"2025-01-01T00:00:00Z","data":{"content":"msg ` +
+			strings.Repeat("x", i*100) + `"}}` + "\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Call ReadRecordsFromPath multiple times to exercise pool reuse.
+	for range 10 {
+		records, err := ReadRecordsFromPath(path)
+		if err != nil {
+			t.Fatalf("ReadRecordsFromPath: %v", err)
+		}
+		if len(records) != 20 {
+			t.Fatalf("expected 20 records, got %d", len(records))
+		}
 	}
 }
 

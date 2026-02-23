@@ -6,9 +6,16 @@ package tools
 import (
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+)
+
+// ripgrepOnce ensures exec.LookPath("rg") is called at most once across all registries.
+var (
+	ripgrepOnce   sync.Once
+	ripgrepResult bool
 )
 
 // Registry manages the collection of available agent tools.
@@ -103,7 +110,11 @@ func (r *Registry) registerBuiltins() {
 }
 
 // detectRipgrep checks whether rg is available on PATH.
+// The result is cached via sync.Once to avoid repeated LookPath calls.
 func detectRipgrep() bool {
-	_, err := exec.LookPath("rg")
-	return err == nil
+	ripgrepOnce.Do(func() {
+		_, err := exec.LookPath("rg")
+		ripgrepResult = err == nil
+	})
+	return ripgrepResult
 }

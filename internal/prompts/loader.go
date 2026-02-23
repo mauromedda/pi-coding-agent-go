@@ -6,6 +6,7 @@ package prompts
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ type Loader struct {
 	diskDir   string // path to disk prompts/ dir (may not exist)
 	embedded  fs.FS  // embedded templates
 	overrides string // path to overrides/ dir on disk
+	Cache     *Cache // optional cache for composed prompts
 }
 
 // activeConfig holds the active version pointer.
@@ -87,7 +89,15 @@ func (l *Loader) LoadFragment(version, path string) ([]byte, error) {
 // Compose assembles the full system prompt from a manifest and variables.
 // It loads the manifest, resolves composition_order paths (substituting variables),
 // loads each fragment, renders template variables, and concatenates.
+// If a Cache is set, results are cached by version+vars to skip repeated file I/O.
 func (l *Loader) Compose(version string, vars map[string]string) (string, error) {
+	// Check cache first.
+	if l.Cache != nil {
+		if cached, ok := l.Cache.Get(version, vars); ok {
+			return cached, nil
+		}
+	}
+
 	// Load the manifest.
 	manifestData, err := l.LoadFragment(version, "manifest.yaml")
 	if err != nil {
@@ -101,12 +111,8 @@ func (l *Loader) Compose(version string, vars map[string]string) (string, error)
 
 	// Merge manifest default variables with provided vars (provided wins).
 	merged := make(map[string]string, len(manifest.Variables)+len(vars))
-	for k, v := range manifest.Variables {
-		merged[k] = v
-	}
-	for k, v := range vars {
-		merged[k] = v
-	}
+	maps.Copy(merged, manifest.Variables)
+	maps.Copy(merged, vars)
 
 	// Compose fragments in order.
 	var parts []string
@@ -130,7 +136,14 @@ func (l *Loader) Compose(version string, vars map[string]string) (string, error)
 		parts = append(parts, rendered)
 	}
 
-	return strings.Join(parts, "\n"), nil
+	result := strings.Join(parts, "\n")
+
+	// Store in cache for next call.
+	if l.Cache != nil {
+		l.Cache.Set(version, vars, result)
+	}
+
+	return result, nil
 }
 
 // AvailableVersions returns all version directories found in embedded and disk dirs.

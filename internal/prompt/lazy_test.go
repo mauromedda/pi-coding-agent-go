@@ -143,6 +143,67 @@ func TestBuildSkillRefs_Eager(t *testing.T) {
 	}
 }
 
+func TestScanSkillFrontmatter_OnlyReadsFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "fast-skill")
+	os.MkdirAll(skillDir, 0o755)
+
+	// Create a large skill file; only frontmatter should be read by scanSkillFrontmatter.
+	content := "---\nname: fast-skill\ndescription: A fast skill\n---\n\n" + strings.Repeat("# Large body\n", 1000)
+	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644)
+
+	name, desc := scanSkillFrontmatter(filepath.Join(skillDir, "SKILL.md"))
+	if name != "fast-skill" {
+		t.Errorf("name = %q; want %q", name, "fast-skill")
+	}
+	if desc != "A fast skill" {
+		t.Errorf("description = %q; want %q", desc, "A fast skill")
+	}
+}
+
+func TestScanSkillFrontmatter_NoFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nofm.md")
+	os.WriteFile(path, []byte("# Just markdown\nNo frontmatter here."), 0o644)
+
+	name, desc := scanSkillFrontmatter(path)
+	if name != "" || desc != "" {
+		t.Errorf("expected empty name/desc for file without frontmatter; got name=%q desc=%q", name, desc)
+	}
+}
+
+func TestScanSkillDir_UseFrontmatterOnly(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create two skills: one as directory with SKILL.md, one as standalone .md.
+	skillDir := filepath.Join(dir, "dirskill")
+	os.MkdirAll(skillDir, 0o755)
+	os.WriteFile(filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: dirskill\ndescription: Dir skill\n---\n\n# Body"), 0o644)
+
+	os.WriteFile(filepath.Join(dir, "standalone.md"),
+		[]byte("---\nname: standalone\ndescription: Standalone skill\n---\n\n# Body"), 0o644)
+
+	skills := scanSkillDir(dir)
+	if len(skills) != 2 {
+		t.Fatalf("scanSkillDir returned %d skills; want 2", len(skills))
+	}
+
+	found := map[string]bool{}
+	for _, s := range skills {
+		found[s.Name] = true
+		if s.content != "" {
+			t.Errorf("skill %q should have empty content (lazy); got %q", s.Name, s.content)
+		}
+	}
+	if !found["dirskill"] {
+		t.Error("missing dirskill")
+	}
+	if !found["standalone"] {
+		t.Error("missing standalone")
+	}
+}
+
 func TestBuildSkillRefs_Lazy(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"s1", "s2"} {

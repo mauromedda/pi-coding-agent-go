@@ -84,6 +84,19 @@ func TestRegistry_Register_OverridesExisting(t *testing.T) {
 	}
 }
 
+func TestDetectRipgrep_CalledOnce(t *testing.T) {
+	// detectRipgrep uses sync.Once; calling it many times should be safe and consistent.
+	var results [100]bool
+	for i := range results {
+		results[i] = detectRipgrep()
+	}
+	for i := 1; i < len(results); i++ {
+		if results[i] != results[0] {
+			t.Fatalf("detectRipgrep() returned inconsistent results: [0]=%v, [%d]=%v", results[0], i, results[i])
+		}
+	}
+}
+
 func TestRegistry_ToolMetadata(t *testing.T) {
 	t.Parallel()
 

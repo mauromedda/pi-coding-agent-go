@@ -6,6 +6,7 @@ package prompts
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -130,15 +131,15 @@ func TestLoader_Compose_OverridesDir(t *testing.T) {
 func TestLoader_ActiveVersion(t *testing.T) {
 	t.Parallel()
 
-	// Embedded active.yaml has version: "v1.0.0".
+	// Embedded active.yaml has version: "v1.1.0".
 	l := NewLoader("/nonexistent/prompts", "/nonexistent/overrides")
 
 	v, err := l.ActiveVersion()
 	if err != nil {
 		t.Fatalf("ActiveVersion() error = %v", err)
 	}
-	if v != "v1.0.0" {
-		t.Errorf("ActiveVersion() = %q; want %q", v, "v1.0.0")
+	if v != "v1.1.0" {
+		t.Errorf("ActiveVersion() = %q; want %q", v, "v1.1.0")
 	}
 }
 
@@ -155,15 +156,11 @@ func TestLoader_AvailableVersions(t *testing.T) {
 		t.Fatal("AvailableVersions() returned empty; want at least v1.0.0")
 	}
 
-	found := false
-	for _, v := range versions {
-		if v == "v1.0.0" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(versions, "v1.0.0") {
 		t.Errorf("AvailableVersions() = %v; want to contain v1.0.0", versions)
+	}
+	if !slices.Contains(versions, "v1.1.0") {
+		t.Errorf("AvailableVersions() = %v; want to contain v1.1.0", versions)
 	}
 }
 
@@ -213,5 +210,170 @@ func TestLoader_LoadFragment_FallbackChain(t *testing.T) {
 	}
 	if string(data3) != "OVERRIDE VERSION" {
 		t.Errorf("override fragment = %q; want %q", string(data3), "OVERRIDE VERSION")
+	}
+}
+
+func TestLoader_Compose_V110_Embedded(t *testing.T) {
+	t.Parallel()
+
+	l := NewLoader("/nonexistent/prompts", "/nonexistent/overrides")
+
+	vars := map[string]string{
+		"MODE": "execute",
+		"DATE": "2026-02-23",
+		"CWD":  "/workspace",
+	}
+
+	got, err := l.Compose("v1.1.0", vars)
+	if err != nil {
+		t.Fatalf("Compose() error = %v", err)
+	}
+
+	// Verify key phrases from each fragment are present.
+	checks := []struct {
+		phrase string
+		desc   string
+	}{
+		{"Core Principles", "system.md header"},
+		{"pi-go", "system.md identity"},
+		{"2026-02-23", "DATE variable substitution"},
+		{"Tool Usage Protocol", "core/tool-usage.md"},
+		{"Read-Before-Edit", "core/file-operations.md"},
+		{"Code Quality", "core/code-quality.md"},
+		{"Error Recovery", "core/error-recovery.md"},
+		{"Safety", "core/safety.md"},
+		{"Git Protocol", "core/git-protocol.md"},
+		{"Communication", "core/communication.md"},
+		{"EXECUTE Mode", "modes/execute.md"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(got, c.phrase) {
+			t.Errorf("missing %s phrase %q in composed output", c.desc, c.phrase)
+		}
+	}
+}
+
+func TestLoader_Compose_V110_AllModes(t *testing.T) {
+	t.Parallel()
+
+	modes := []struct {
+		name   string
+		marker string
+	}{
+		{"execute", "EXECUTE Mode"},
+		{"plan", "PLAN Mode"},
+		{"debug", "DEBUG Mode"},
+		{"explore", "EXPLORE Mode"},
+		{"refactor", "REFACTOR Mode"},
+	}
+
+	l := NewLoader("/nonexistent/prompts", "/nonexistent/overrides")
+
+	for _, m := range modes {
+		t.Run(m.name, func(t *testing.T) {
+			t.Parallel()
+
+			vars := map[string]string{
+				"MODE": m.name,
+				"DATE": "2026-02-23",
+				"CWD":  "/workspace",
+			}
+
+			got, err := l.Compose("v1.1.0", vars)
+			if err != nil {
+				t.Fatalf("Compose(mode=%s) error = %v", m.name, err)
+			}
+
+			if !strings.Contains(got, m.marker) {
+				t.Errorf("Compose(mode=%s) missing marker %q", m.name, m.marker)
+			}
+
+			// All modes should include the core fragments.
+			if !strings.Contains(got, "Core Principles") {
+				t.Errorf("Compose(mode=%s) missing Core Principles from system.md", m.name)
+			}
+		})
+	}
+}
+
+func TestLoader_Compose_UsesCache(t *testing.T) {
+	t.Parallel()
+
+	l := NewLoader("/nonexistent/prompts", "/nonexistent/overrides")
+	l.Cache = NewCache()
+
+	vars := map[string]string{
+		"MODE": "execute",
+		"DATE": "2026-02-23",
+		"CWD":  "/workspace",
+	}
+
+	// First call populates the cache.
+	got1, err := l.Compose("v1.0.0", vars)
+	if err != nil {
+		t.Fatalf("first Compose() error = %v", err)
+	}
+	if l.Cache.Size() != 1 {
+		t.Errorf("cache size = %d after first compose; want 1", l.Cache.Size())
+	}
+
+	// Second call with same args should hit cache and return identical result.
+	got2, err := l.Compose("v1.0.0", vars)
+	if err != nil {
+		t.Fatalf("second Compose() error = %v", err)
+	}
+	if got1 != got2 {
+		t.Error("second Compose() returned different result; expected cache hit")
+	}
+
+	// Different vars should miss cache.
+	vars2 := map[string]string{
+		"MODE": "plan",
+		"DATE": "2026-02-24",
+		"CWD":  "/other",
+	}
+	got3, err := l.Compose("v1.0.0", vars2)
+	if err != nil {
+		t.Fatalf("third Compose() error = %v", err)
+	}
+	if l.Cache.Size() != 2 {
+		t.Errorf("cache size = %d after third compose; want 2", l.Cache.Size())
+	}
+	if got3 == got1 {
+		t.Error("different vars should produce different composed output")
+	}
+}
+
+func TestLoader_Compose_V110_CoreFragments(t *testing.T) {
+	t.Parallel()
+
+	fragments := []struct {
+		path   string
+		marker string
+	}{
+		{"core/tool-usage.md", "Tool Usage Protocol"},
+		{"core/file-operations.md", "Read-Before-Edit"},
+		{"core/code-quality.md", "Code Quality"},
+		{"core/error-recovery.md", "Error Recovery"},
+		{"core/safety.md", "Safety"},
+		{"core/git-protocol.md", "Git Protocol"},
+		{"core/communication.md", "Communication"},
+	}
+
+	l := NewLoader("/nonexistent/prompts", "/nonexistent/overrides")
+
+	for _, f := range fragments {
+		t.Run(f.path, func(t *testing.T) {
+			t.Parallel()
+
+			data, err := l.LoadFragment("v1.1.0", f.path)
+			if err != nil {
+				t.Fatalf("LoadFragment(%s) error = %v", f.path, err)
+			}
+
+			if !strings.Contains(string(data), f.marker) {
+				t.Errorf("LoadFragment(%s) missing marker %q", f.path, f.marker)
+			}
+		})
 	}
 }
