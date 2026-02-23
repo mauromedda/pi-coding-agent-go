@@ -593,6 +593,15 @@ func (m AppModel) View() string {
 		}
 	}
 
+	// Dropdown overlays (command palette, file mention) render inline
+	// above the editor rather than centered on screen.
+	if m.overlay != nil && isDropdownOverlay(m.overlay) {
+		dropdownView := m.overlay.View()
+		if dropdownView != "" {
+			sections = append(sections, dropdownView)
+		}
+	}
+
 	// Use cached separator string (recomputed only on WindowSizeMsg)
 	sep := m.cachedSep
 	sections = append(sections,
@@ -607,7 +616,8 @@ func (m AppModel) View() string {
 
 	main := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	if m.overlay != nil {
+	// Centered overlays (permission dialog, cost view, plan view, etc.)
+	if m.overlay != nil && !isDropdownOverlay(m.overlay) {
 		return overlayRender(main, m.overlay.View(), m.width, m.height)
 	}
 
@@ -1014,6 +1024,18 @@ func (m AppModel) autoCompact() (tea.Model, tea.Cmd) {
 }
 
 // --- Internal helpers ---
+
+// isDropdownOverlay returns true for overlays that should render inline
+// above the editor (autocomplete dropdowns), false for overlays that
+// should render centered on screen (dialogs, dashboards).
+func isDropdownOverlay(overlay tea.Model) bool {
+	switch overlay.(type) {
+	case CmdPaletteModel, FileMentionModel:
+		return true
+	default:
+		return false
+	}
+}
 
 func (m AppModel) propagateSize(msg tea.WindowSizeMsg) AppModel {
 	for i := range m.content {

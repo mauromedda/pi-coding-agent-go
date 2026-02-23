@@ -507,6 +507,35 @@ func TestAppModel_View(t *testing.T) {
 	}
 }
 
+func TestAppModel_CmdPaletteRendersAboveEditor(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+	m = m.propagateSize(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Open command palette
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	model := result.(AppModel)
+
+	view := model.View()
+
+	// The palette content should appear BEFORE the editor prompt line,
+	// not centered in the middle of the terminal. The editor prompt (❯)
+	// should appear after the palette entries.
+	paletteIdx := strings.Index(view, "/clear")
+	editorIdx := strings.Index(view, "❯")
+
+	if paletteIdx < 0 {
+		t.Fatalf("command palette content not found in View() output:\n%s", view)
+	}
+	if editorIdx < 0 {
+		t.Fatal("editor prompt not found in View() output")
+	}
+	if paletteIdx > editorIdx {
+		t.Errorf("palette (pos %d) should render before editor prompt (pos %d)", paletteIdx, editorIdx)
+	}
+}
+
 func TestMode_String(t *testing.T) {
 	tests := []struct {
 		mode Mode
