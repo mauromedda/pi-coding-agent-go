@@ -259,6 +259,7 @@ func (m AppModel) applyEffects(effects *cmdSideEffects, result string) (tea.Mode
 
 	if result != "" {
 		am := NewAssistantMsgModel()
+		am.width = m.width
 		updated, _ := am.Update(AgentTextMsg{Text: result})
 		m.content = append(m.content, updated.(*AssistantMsgModel))
 	}

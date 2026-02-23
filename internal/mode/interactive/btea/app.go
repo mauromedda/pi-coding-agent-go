@@ -636,11 +636,15 @@ func (m AppModel) propagateSize(msg tea.WindowSizeMsg) AppModel {
 
 func (m AppModel) ensureAssistantMsg() AppModel {
 	if len(m.content) == 0 {
-		m.content = append(m.content, &AssistantMsgModel{})
+		am := NewAssistantMsgModel()
+		am.width = m.width
+		m.content = append(m.content, am)
 		return m
 	}
 	if _, ok := m.content[len(m.content)-1].(*AssistantMsgModel); !ok {
-		m.content = append(m.content, &AssistantMsgModel{})
+		am := NewAssistantMsgModel()
+		am.width = m.width
+		m.content = append(m.content, am)
 	}
 	return m
 }
