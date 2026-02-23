@@ -237,6 +237,8 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 		if len(msg.Runes) > 0 {
 			m.insertRune(msg.Runes[0])
 		}
+	case tea.KeySpace:
+		m.insertRune(' ')
 	case tea.KeyEnter:
 		m.insertNewline()
 	case tea.KeyBackspace:

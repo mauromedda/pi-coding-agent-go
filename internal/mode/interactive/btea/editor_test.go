@@ -75,6 +75,24 @@ func TestEditorModel_InsertRuneViaKeyMsg(t *testing.T) {
 	}
 }
 
+func TestEditorModel_SpaceKeyInserts(t *testing.T) {
+	m := NewEditorModel()
+	// Type "hello world" — space is dispatched as tea.KeySpace
+	for _, r := range "hello" {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(EditorModel)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	m = updated.(EditorModel)
+	for _, r := range "world" {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(EditorModel)
+	}
+	if got := m.Text(); got != "hello world" {
+		t.Errorf("Text() = %q; want %q", got, "hello world")
+	}
+}
+
 func TestEditorModel_Backspace(t *testing.T) {
 	m := NewEditorModel()
 	m = m.SetText("abc")
