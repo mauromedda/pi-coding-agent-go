@@ -87,3 +87,22 @@ type SpinnerTickMsg struct{}
 type ProbeResultMsg struct {
 	Profile perf.ModelProfile
 }
+
+// --- Phase 8: TUI enhancement messages ---
+
+// ModeTransitionMsg signals that the intent classifier detected a mode change.
+type ModeTransitionMsg struct {
+	From   string // Previous intent name
+	To     string // New intent name
+	Reason string // Why the transition occurred
+}
+
+// SettingsChangedMsg signals that configuration was reloaded.
+type SettingsChangedMsg struct {
+	Section string // Which section changed (e.g., "personality", "intent", "prompts")
+}
+
+// PlanGeneratedMsg signals that a plan was generated and needs review.
+type PlanGeneratedMsg struct {
+	Plan string // The plan content
+}

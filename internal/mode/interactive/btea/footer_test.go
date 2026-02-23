@@ -206,6 +206,81 @@ func TestFooterModel_ViewTwoLines(t *testing.T) {
 	}
 }
 
+func TestFooterModel_WithIntentLabel(t *testing.T) {
+	m := NewFooterModel()
+	m = m.WithIntentLabel("Execute")
+	if m.intentLabel != "Execute" {
+		t.Errorf("intentLabel = %q; want Execute", m.intentLabel)
+	}
+}
+
+func TestFooterModel_WithActiveChecks(t *testing.T) {
+	m := NewFooterModel()
+	m = m.WithActiveChecks([]string{"SEC", "QUAL"})
+	if len(m.activeChecks) != 2 {
+		t.Fatalf("activeChecks len = %d; want 2", len(m.activeChecks))
+	}
+	if m.activeChecks[0] != "SEC" || m.activeChecks[1] != "QUAL" {
+		t.Errorf("activeChecks = %v; want [SEC QUAL]", m.activeChecks)
+	}
+}
+
+func TestFooterModel_ViewContainsIntentLabel(t *testing.T) {
+	tests := []struct {
+		name  string
+		label string
+	}{
+		{"Plan", "Plan"},
+		{"Execute", "Execute"},
+		{"Debug", "Debug"},
+		{"Explore", "Explore"},
+		{"Refactor", "Refactor"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewFooterModel()
+			m = m.WithIntentLabel(tt.label)
+			m.width = 80
+			view := m.View()
+			if !strings.Contains(view, tt.label) {
+				t.Errorf("View() missing intent label %q; got %q", tt.label, view)
+			}
+		})
+	}
+}
+
+func TestFooterModel_ViewContainsActiveChecks(t *testing.T) {
+	m := NewFooterModel()
+	m = m.WithActiveChecks([]string{"SEC", "QUAL", "ARCH"})
+	m.width = 120
+	view := m.View()
+	if !strings.Contains(view, "SEC|QUAL|ARCH") {
+		t.Errorf("View() missing active checks; got %q", view)
+	}
+}
+
+func TestFooterModel_ModeTransitionMsg(t *testing.T) {
+	m := NewFooterModel()
+	m.width = 80
+	updated, cmd := m.Update(ModeTransitionMsg{From: "Plan", To: "Execute", Reason: "user action"})
+	if cmd != nil {
+		t.Errorf("Update(ModeTransitionMsg) returned non-nil cmd")
+	}
+	f := updated.(FooterModel)
+	if f.intentLabel != "Execute" {
+		t.Errorf("intentLabel = %q; want Execute", f.intentLabel)
+	}
+}
+
+func TestFooterModel_SettingsChangedMsg(t *testing.T) {
+	m := NewFooterModel()
+	m.width = 80
+	_, cmd := m.Update(SettingsChangedMsg{Section: "personality"})
+	if cmd != nil {
+		t.Errorf("Update(SettingsChangedMsg) returned non-nil cmd")
+	}
+}
+
 func TestFooterModel_ViewPermissionMode(t *testing.T) {
 	tests := []struct {
 		name string

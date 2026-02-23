@@ -27,6 +27,8 @@ type FooterModel struct {
 	queuedCount    int
 	latencyClass   string
 	showImages     bool
+	intentLabel    string   // Current intent name (e.g., "Plan", "Execute", "Debug")
+	activeChecks   []string // Abbreviations of active checks (e.g., ["SEC", "QUAL", "ARCH"])
 	width          int
 }
 
@@ -51,6 +53,12 @@ func (m FooterModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cost += float64(msg.Usage.InputTokens)*3.0/1_000_000 +
 				float64(msg.Usage.OutputTokens)*15.0/1_000_000
 		}
+
+	case ModeTransitionMsg:
+		m.intentLabel = msg.To
+
+	case SettingsChangedMsg:
+		// No-op for now; could trigger re-render in future phases
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -125,6 +133,18 @@ func (m FooterModel) WithShowImages(show bool) FooterModel {
 	return m
 }
 
+// WithIntentLabel returns a FooterModel with the intent label set.
+func (m FooterModel) WithIntentLabel(label string) FooterModel {
+	m.intentLabel = label
+	return m
+}
+
+// WithActiveChecks returns a FooterModel with the active checks set.
+func (m FooterModel) WithActiveChecks(checks []string) FooterModel {
+	m.activeChecks = checks
+	return m
+}
+
 // View renders the two-line footer.
 func (m FooterModel) View() string {
 	s := Styles()
@@ -169,6 +189,28 @@ func (m FooterModel) View() string {
 			permStyle = s.FooterPerm
 		}
 		line2Parts = append(line2Parts, permStyle.Render("▸▸ "+m.permissionMode))
+	}
+
+	if m.intentLabel != "" {
+		intentStyle := s.Muted
+		switch m.intentLabel {
+		case "Plan":
+			intentStyle = s.Info
+		case "Execute":
+			intentStyle = s.Success
+		case "Debug":
+			intentStyle = s.Error
+		case "Explore":
+			intentStyle = s.Secondary
+		case "Refactor":
+			intentStyle = s.Warning
+		}
+		line2Parts = append(line2Parts, intentStyle.Render("["+m.intentLabel+"]"))
+	}
+
+	if len(m.activeChecks) > 0 {
+		checksStr := "[" + strings.Join(m.activeChecks, "|") + "]"
+		line2Parts = append(line2Parts, s.Muted.Render(checksStr))
 	}
 
 	if m.modeLabel != "" {

@@ -236,6 +236,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor = m.editor.SetFocused(true)
 		return m, nil
 
+	// --- Plan overlay results ---
+	case PlanApprovedMsg:
+		m.overlay = nil
+		// Plan approved; could trigger execute mode in future phases
+		return m, nil
+
+	case PlanRejectedMsg:
+		m.overlay = nil
+		return m, nil
+
 	// --- Permission flow ---
 	case PermissionRequestMsg:
 		m.overlay = NewPermDialogModel(msg.Tool, msg.Args, msg.ReplyCh)
@@ -267,6 +277,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProbeResultMsg:
 		m.modelProfile = &msg.Profile
 		m.footer = m.footer.WithLatencyClass(msg.Profile.Latency.String())
+		return m, nil
+
+	// --- Phase 8: TUI enhancement messages ---
+	case ModeTransitionMsg:
+		m.footer = m.footer.WithIntentLabel(msg.To)
+		return m, nil
+
+	case SettingsChangedMsg:
+		// Re-render footer; more wiring in Phase 9
+		return m, nil
+
+	case PlanGeneratedMsg:
+		m.overlay = NewPlanViewModel(msg.Plan)
 		return m, nil
 
 	// --- Agent streaming events ---
@@ -393,6 +416,18 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "alt+t":
 		m = m.cycleThinking()
+		return m, nil
+
+	case "ctrl+t":
+		// Toggle cost dashboard
+		if m.overlay != nil {
+			m.overlay = nil
+		} else {
+			m.overlay = NewCostViewModel(
+				m.totalInputTokens, m.totalOutputTokens, 0,
+				m.footer.cost, 0, 0,
+			)
+		}
 		return m, nil
 
 	case "alt+i":

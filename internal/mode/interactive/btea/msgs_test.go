@@ -29,6 +29,10 @@ var (
 
 	_ tea.Msg = AutoCompactMsg{}
 	_ tea.Msg = SpinnerTickMsg{}
+
+	_ tea.Msg = ModeTransitionMsg{}
+	_ tea.Msg = SettingsChangedMsg{}
+	_ tea.Msg = PlanGeneratedMsg{}
 )
 
 func TestAgentTextMsg(t *testing.T) {

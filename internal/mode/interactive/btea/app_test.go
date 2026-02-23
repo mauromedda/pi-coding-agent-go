@@ -798,3 +798,95 @@ func TestAppModel_TabCompletesFromPalette(t *testing.T) {
 		t.Error("overlay should be nil after tab completion")
 	}
 }
+
+func TestAppModel_ModeTransitionMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+	result, _ := m.Update(ModeTransitionMsg{From: "Plan", To: "Execute", Reason: "user action"})
+	model := result.(AppModel)
+
+	if model.footer.intentLabel != "Execute" {
+		t.Errorf("footer.intentLabel = %q; want Execute", model.footer.intentLabel)
+	}
+}
+
+func TestAppModel_SettingsChangedMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+	result, cmd := m.Update(SettingsChangedMsg{Section: "personality"})
+	if cmd != nil {
+		t.Errorf("cmd = %v; want nil", cmd)
+	}
+	// Should not panic and return valid model
+	_ = result.(AppModel)
+}
+
+func TestAppModel_PlanGeneratedMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+	result, _ := m.Update(PlanGeneratedMsg{Plan: "Step 1: Do X\nStep 2: Do Y"})
+	model := result.(AppModel)
+
+	if model.overlay == nil {
+		t.Fatal("overlay = nil; want PlanViewModel")
+	}
+	if _, ok := model.overlay.(PlanViewModel); !ok {
+		t.Errorf("overlay = %T; want PlanViewModel", model.overlay)
+	}
+}
+
+func TestAppModel_PlanApprovedMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.overlay = NewPlanViewModel("test plan")
+
+	result, _ := m.Update(PlanApprovedMsg{})
+	model := result.(AppModel)
+
+	if model.overlay != nil {
+		t.Errorf("overlay = %v; want nil after PlanApprovedMsg", model.overlay)
+	}
+}
+
+func TestAppModel_PlanRejectedMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.overlay = NewPlanViewModel("test plan")
+
+	result, _ := m.Update(PlanRejectedMsg{})
+	model := result.(AppModel)
+
+	if model.overlay != nil {
+		t.Errorf("overlay = %v; want nil after PlanRejectedMsg", model.overlay)
+	}
+}
+
+func TestAppModel_CtrlTTogglesCostDashboard(t *testing.T) {
+	m := NewAppModel(testDeps())
+	key := tea.KeyMsg{Type: tea.KeyCtrlT}
+
+	// First press: open cost dashboard
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+	if model.overlay == nil {
+		t.Fatal("overlay = nil; want CostViewModel after ctrl+t")
+	}
+	if _, ok := model.overlay.(CostViewModel); !ok {
+		t.Errorf("overlay = %T; want CostViewModel", model.overlay)
+	}
+
+	// Second press: overlay routes ctrl+t to CostViewModel which returns DismissOverlayMsg cmd
+	result, cmd := model.Update(key)
+	model = result.(AppModel)
+
+	if cmd == nil {
+		t.Fatal("cmd = nil; want DismissOverlayMsg cmd from CostViewModel")
+	}
+	// Execute the cmd to get DismissOverlayMsg
+	dismissMsg := cmd()
+	if _, ok := dismissMsg.(DismissOverlayMsg); !ok {
+		t.Errorf("cmd() = %T; want DismissOverlayMsg", dismissMsg)
+	}
+
+	// Apply dismiss
+	result, _ = model.Update(dismissMsg)
+	model = result.(AppModel)
+	if model.overlay != nil {
+		t.Errorf("overlay = %v; want nil after dismiss", model.overlay)
+	}
+}
