@@ -201,6 +201,12 @@ type ThemeStyles struct {
 	Dim       lipgloss.Style
 	Italic    lipgloss.Style
 	Underline lipgloss.Style
+
+	// Pre-computed component styles (avoid per-View allocation)
+	AssistantBorder lipgloss.Style // Left border color for assistant messages
+	AssistantError  lipgloss.Style // Error block with thick left border
+	OverlayBorder   lipgloss.Style // Border color for overlay boxes
+	OverlayTitle    lipgloss.Style // Title text style inside overlay headers
 }
 
 // Styles returns ThemeStyles for the current theme, using a cached value when
@@ -254,5 +260,19 @@ func buildStyles(t *theme.Theme) ThemeStyles {
 		Dim:       colorToStyle(p.Dim.Code()),
 		Italic:    colorToStyle(p.Italic.Code()),
 		Underline: colorToStyle(p.Underline.Code()),
+
+		AssistantBorder: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Muted.Code()).GetForeground()),
+		AssistantError: lipgloss.NewStyle().
+			BorderLeft(true).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderForeground(colorToStyle(p.Error.Code()).GetForeground()).
+			PaddingLeft(1).
+			Foreground(colorToStyle(p.Error.Code()).GetForeground()),
+		OverlayBorder: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Border.Code()).GetForeground()),
+		OverlayTitle: lipgloss.NewStyle().
+			Foreground(colorToStyle(p.Info.Code()).GetForeground()).
+			Bold(true),
 	}
 }

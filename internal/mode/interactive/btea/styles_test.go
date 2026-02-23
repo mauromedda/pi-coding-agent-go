@@ -214,6 +214,53 @@ func TestStylesCacheHit(t *testing.T) {
 	}
 }
 
+// --- WS4: Pre-computed style fields ---
+
+func TestThemeStyles_HasAssistantBorder(t *testing.T) {
+	s := Styles()
+	rendered := s.AssistantBorder.Render("│")
+	if rendered == "" {
+		t.Error("AssistantBorder.Render should produce non-empty output")
+	}
+}
+
+func TestThemeStyles_HasAssistantError(t *testing.T) {
+	s := Styles()
+	rendered := s.AssistantError.Render("error text")
+	if rendered == "" {
+		t.Error("AssistantError.Render should produce non-empty output")
+	}
+}
+
+func TestThemeStyles_HasOverlayBorder(t *testing.T) {
+	s := Styles()
+	rendered := s.OverlayBorder.Render("╭─╮")
+	if rendered == "" {
+		t.Error("OverlayBorder.Render should produce non-empty output")
+	}
+}
+
+func TestThemeStyles_HasOverlayTitle(t *testing.T) {
+	s := Styles()
+	rendered := s.OverlayTitle.Render("Title")
+	if rendered == "" {
+		t.Error("OverlayTitle.Render should produce non-empty output")
+	}
+}
+
+func BenchmarkAssistantMsgView(b *testing.B) {
+	m := NewAssistantMsgModel()
+	m.width = 120
+	m.Update(AgentTextMsg{Text: "This is a moderately long response that exercises the wrapping logic and style rendering path in the assistant message view."})
+	m.Update(AgentToolStartMsg{ToolID: "t1", ToolName: "Read", Args: map[string]any{"path": "/tmp/test.go"}})
+	m.Update(AgentToolEndMsg{ToolID: "t1", Text: "file contents here"})
+
+	b.ResetTimer()
+	for range b.N {
+		_ = m.View()
+	}
+}
+
 func TestStylesCacheInvalidatedOnThemeChange(t *testing.T) {
 	// Verify cache invalidates when theme pointer changes.
 	_ = Styles() // prime cache
