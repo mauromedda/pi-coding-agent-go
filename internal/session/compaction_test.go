@@ -1,10 +1,12 @@
-// ABOUTME: Tests for compaction file tracking: extracting read/written files from tool_use blocks
-// ABOUTME: Verifies CompactionEntry correctly categorizes file operations from messages
+// ABOUTME: Tests for compaction: file tracking, token-budget triggers, cut points, LLM compaction
+// ABOUTME: Verifies CompactionEntry, ShouldCompact, FindCutPoint, CompactWithLLM
 
 package session
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -204,5 +206,130 @@ func TestExtractFileOps_EmptyMessages(t *testing.T) {
 	}
 	if len(entry.FilesWritten) != 0 {
 		t.Errorf("expected empty FilesWritten, got %v", entry.FilesWritten)
+	}
+}
+
+// --- ShouldCompact tests ---
+
+func TestShouldCompact_UnderBudget(t *testing.T) {
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "hi"),
+	}
+	cfg := CompactionConfig{ReserveTokens: 16384}
+
+	if ShouldCompact(msgs, 200000, cfg) {
+		t.Error("ShouldCompact should be false when well under budget")
+	}
+}
+
+func TestShouldCompact_OverBudget(t *testing.T) {
+	// Create messages with ~60K chars → ~15K tokens
+	largeText := strings.Repeat("word ", 12000)
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, largeText),
+		ai.NewTextMessage(ai.RoleAssistant, largeText),
+	}
+	// Set context window to 20K tokens with 16K reserve → only 4K budget
+	if !ShouldCompact(msgs, 20000, CompactionConfig{ReserveTokens: 16384}) {
+		t.Error("ShouldCompact should be true when over budget")
+	}
+}
+
+// --- FindCutPoint tests ---
+
+func TestFindCutPoint_KeepsRecentTokens(t *testing.T) {
+	msgs := make([]ai.Message, 20)
+	for i := range msgs {
+		role := ai.RoleUser
+		if i%2 == 1 {
+			role = ai.RoleAssistant
+		}
+		msgs[i] = ai.NewTextMessage(role, strings.Repeat("a", 100)) // ~25 tokens each
+	}
+
+	// Keep ~200 tokens worth → last ~8 messages
+	cutIdx := FindCutPoint(msgs, 200)
+
+	if cutIdx < 1 {
+		t.Errorf("FindCutPoint should cut at least 1 message; got cutIdx=%d", cutIdx)
+	}
+	if cutIdx >= len(msgs) {
+		t.Errorf("FindCutPoint should keep some messages; got cutIdx=%d out of %d", cutIdx, len(msgs))
+	}
+}
+
+func TestFindCutPoint_NeverCutsMidToolResult(t *testing.T) {
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, strings.Repeat("a", 400)),
+		{Role: ai.RoleAssistant, Content: []ai.Content{
+			{Type: ai.ContentToolUse, Name: "Read", Input: json.RawMessage(`{"file_path":"/tmp"}`)},
+		}},
+		{Role: ai.RoleUser, Content: []ai.Content{
+			{Type: ai.ContentToolResult, ResultText: "file contents"},
+		}},
+		ai.NewTextMessage(ai.RoleAssistant, "here is the result"),
+	}
+
+	// Keep very few tokens to force a cut
+	cutIdx := FindCutPoint(msgs, 50)
+
+	// Must not cut between tool_use and tool_result (indices 1-2)
+	// Valid cut points: 0 (before everything) or after the tool_result pair
+	if cutIdx == 2 {
+		t.Error("FindCutPoint should not cut between tool_use and tool_result")
+	}
+}
+
+func TestFindCutPoint_FewMessages(t *testing.T) {
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hi"),
+	}
+
+	cutIdx := FindCutPoint(msgs, 1000)
+	if cutIdx != 0 {
+		t.Errorf("FindCutPoint with 1 message should return 0; got %d", cutIdx)
+	}
+}
+
+// --- CompactWithLLM tests ---
+
+func TestCompactWithLLM_UsesInjectedSummarizer(t *testing.T) {
+	msgs := make([]ai.Message, 20)
+	for i := range msgs {
+		role := ai.RoleUser
+		if i%2 == 1 {
+			role = ai.RoleAssistant
+		}
+		msgs[i] = ai.NewTextMessage(role, strings.Repeat("x", 100))
+	}
+
+	summarizer := func(_ context.Context, _ []ai.Message, _ string) (string, error) {
+		return "test summary of conversation", nil
+	}
+
+	cfg := CompactionConfig{
+		ReserveTokens:   16384,
+		KeepRecentTokens: 200,
+	}
+
+	result, err := CompactWithLLM(context.Background(), msgs, cfg, summarizer)
+	if err != nil {
+		t.Fatalf("CompactWithLLM returned error: %v", err)
+	}
+
+	if result.Summary != "test summary of conversation" {
+		t.Errorf("Summary = %q; want 'test summary of conversation'", result.Summary)
+	}
+	if result.FirstKeptIndex < 1 {
+		t.Errorf("FirstKeptIndex should be > 0; got %d", result.FirstKeptIndex)
+	}
+	if len(result.Messages) < 3 {
+		t.Errorf("Messages should have at least summary + ack + kept; got %d", len(result.Messages))
+	}
+
+	// First message should be the summary
+	if !strings.Contains(result.Messages[0].Content[0].Text, "test summary") {
+		t.Error("First message should contain the summary")
 	}
 }

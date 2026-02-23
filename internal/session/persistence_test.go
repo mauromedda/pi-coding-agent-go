@@ -4,6 +4,7 @@
 package session
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,7 +85,7 @@ func TestSessionID_Validation(t *testing.T) {
 	}
 }
 
-func TestCompact_BelowThreshold(t *testing.T) {
+func TestCompactWithLLM_BelowThreshold(t *testing.T) {
 	t.Parallel()
 
 	msgs := make([]ai.Message, 5)
@@ -92,14 +93,19 @@ func TestCompact_BelowThreshold(t *testing.T) {
 		msgs[i] = ai.NewTextMessage(ai.RoleUser, "msg")
 	}
 
-	compacted, summary, err := Compact(msgs)
+	summarizer := func(_ context.Context, _ []ai.Message, _ string) (string, error) {
+		return "should not be called", nil
+	}
+	cfg := CompactionConfig{KeepRecentTokens: 100000} // very high; keeps everything
+
+	result, err := CompactWithLLM(context.Background(), msgs, cfg, summarizer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary != "" {
+	if result.Summary != "" {
 		t.Error("expected no summary below threshold")
 	}
-	if len(compacted) != 5 {
-		t.Errorf("expected 5 messages, got %d", len(compacted))
+	if len(result.Messages) != 5 {
+		t.Errorf("expected 5 messages, got %d", len(result.Messages))
 	}
 }
