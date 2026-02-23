@@ -52,23 +52,19 @@ type ToolCallModel struct {
 	width          int
 	images         []ImageViewModel
 	showImages     bool
-	cachedFilePath string        // extracted once at creation, not per View()
-	borderStyle    lipgloss.Style // cached border style for this tool's color
+	cachedFilePath string // extracted once at creation, not per View()
 }
 
 // NewToolCallModel creates a ToolCallModel for the given tool invocation.
 // File path is extracted once here rather than on every View() call.
 func NewToolCallModel(id, name, args string) ToolCallModel {
-	tc := ToolCallModel{
+	return ToolCallModel{
 		id:             id,
 		name:           name,
 		args:           args,
 		showImages:     true,
 		cachedFilePath: extractFilePath(args),
 	}
-	// Cache border style at creation to avoid recomputing per View()
-	tc.borderStyle = lipgloss.NewStyle().Foreground(toolColor(name).GetForeground())
-	return tc
 }
 
 // Init returns nil; no commands needed for a leaf model.
@@ -166,8 +162,8 @@ func (m ToolCallModel) View() string {
 	s := Styles()
 	nameStyle := toolColorFromStyles(m.name, s)
 
-	// Use cached border style (computed once at creation)
-	bs := m.borderStyle
+	// Compute border style from current theme (supports mid-session theme changes)
+	bs := lipgloss.NewStyle().Foreground(nameStyle.GetForeground())
 
 	// Status indicator
 	var status string
