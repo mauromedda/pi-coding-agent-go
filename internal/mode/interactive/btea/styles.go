@@ -8,10 +8,21 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
 )
+
+// themeStylesEntry pairs a theme pointer with its pre-built styles.
+type themeStylesEntry struct {
+	theme  *theme.Theme
+	styles ThemeStyles
+}
+
+// cachedStyles is the package-level atomic cache for ThemeStyles.
+// Cache key is the theme pointer identity; invalidated when theme changes.
+var cachedStyles atomic.Pointer[themeStylesEntry]
 
 // sgrRe matches a single ANSI SGR sequence like \x1b[38;5;208m.
 var sgrRe = regexp.MustCompile(`\x1b\[([\d;]+)m`)
@@ -88,7 +99,7 @@ func extractAttrs(code string) attrs {
 	matches := sgrRe.FindAllStringSubmatch(code, -1)
 	var a attrs
 	for _, m := range matches {
-		for _, p := range strings.Split(m[1], ";") {
+		for p := range strings.SplitSeq(m[1], ";") {
 			switch p {
 			case "1":
 				a.bold = true
@@ -166,9 +177,9 @@ type ThemeStyles struct {
 	Error   lipgloss.Style
 	Info    lipgloss.Style
 
-	Border      lipgloss.Style
-	Selection   lipgloss.Style
-	Prompt      lipgloss.Style
+	Border        lipgloss.Style
+	Selection     lipgloss.Style
+	Prompt        lipgloss.Style
 	BashSeparator lipgloss.Style
 
 	ToolRead  lipgloss.Style
@@ -192,9 +203,22 @@ type ThemeStyles struct {
 	Underline lipgloss.Style
 }
 
-// Styles builds ThemeStyles from the current theme palette.
+// Styles returns ThemeStyles for the current theme, using a cached value when
+// the theme pointer has not changed. This avoids rebuilding 32 lipgloss styles
+// (each requiring 3 regex scans) on every View() call.
 func Styles() ThemeStyles {
-	p := theme.Current().Palette
+	t := theme.Current()
+	if e := cachedStyles.Load(); e != nil && e.theme == t {
+		return e.styles
+	}
+	s := buildStyles(t)
+	cachedStyles.Store(&themeStylesEntry{theme: t, styles: s})
+	return s
+}
+
+// buildStyles constructs ThemeStyles from a theme's palette.
+func buildStyles(t *theme.Theme) ThemeStyles {
+	p := t.Palette
 	return ThemeStyles{
 		Primary:   colorToStyle(p.Primary.Code()),
 		Secondary: colorToStyle(p.Secondary.Code()),
@@ -206,9 +230,9 @@ func Styles() ThemeStyles {
 		Error:   colorToStyle(p.Error.Code()),
 		Info:    colorToStyle(p.Info.Code()),
 
-		Border:      colorToStyle(p.Border.Code()),
-		Selection:   colorToStyle(p.Selection.Code()),
-		Prompt:      colorToStyle(p.Prompt.Code()),
+		Border:        colorToStyle(p.Border.Code()),
+		Selection:     colorToStyle(p.Selection.Code()),
+		Prompt:        colorToStyle(p.Prompt.Code()),
 		BashSeparator: colorToStyle(p.BashSeparator.Code()),
 
 		ToolRead:  colorToStyle(p.ToolRead.Code()),

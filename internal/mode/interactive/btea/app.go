@@ -93,6 +93,9 @@ type AppModel struct {
 
 	// Command handling
 	cmdRegistry *commands.Registry
+
+	// Cached separator string (recomputed only on WindowSizeMsg)
+	cachedSep string
 }
 
 // NewAppModel creates an AppModel wired with the given dependencies.
@@ -179,6 +182,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.cachedSep = strings.Repeat("─", msg.Width)
 		m = m.propagateSize(msg)
 		return m, nil
 
@@ -354,18 +358,12 @@ func (m AppModel) View() string {
 	}
 
 	s := Styles()
-	sepWidth := m.width
 
 	// Determine separator color based on editor text and last content
-	// If editor starts with !, use orange separator
-	// Otherwise, if last content is bash output (AssistantMsgModel), use orange separator
-	// Otherwise, use grey (Border) separator
 	sepColor := s.Border
 	if !m.editor.IsEmpty() && strings.HasPrefix(m.editor.Text(), "!") {
 		sepColor = s.BashSeparator
 	} else if len(m.content) > 0 {
-		// Check if last content is AssistantMsgModel (which could contain bash output)
-		// or BashOutputModel (which displays bash command results)
 		if _, isAssistant := m.content[len(m.content)-1].(*AssistantMsgModel); isAssistant {
 			sepColor = s.BashSeparator
 		} else if _, isBashOutput := m.content[len(m.content)-1].(*BashOutputModel); isBashOutput {
@@ -373,17 +371,15 @@ func (m AppModel) View() string {
 		}
 	}
 
-	// Add separator before editor
-	sep := strings.Repeat("─", sepWidth)
+	// Use cached separator string (recomputed only on WindowSizeMsg)
+	sep := m.cachedSep
 	sections = append(sections,
 		sepColor.Render(sep),
 		m.editor.View(),
 	)
 
-	// Footer separator is always grey (Border color)
-	footerSep := strings.Repeat("─", sepWidth)
 	sections = append(sections,
-		s.Border.Render(footerSep),
+		s.Border.Render(sep),
 		m.footer.View(),
 	)
 
@@ -437,6 +433,14 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		toggleMsg := ToggleImagesMsg{Show: m.showImages}
 		for i := range m.content {
 			updated, _ := m.content[i].Update(toggleMsg)
+			m.content[i] = updated
+		}
+		return m, nil
+
+	case "ctrl+o":
+		// Propagate to content models so ToolCallModel can toggle expand/collapse
+		for i := range m.content {
+			updated, _ := m.content[i].Update(msg)
 			m.content[i] = updated
 		}
 		return m, nil

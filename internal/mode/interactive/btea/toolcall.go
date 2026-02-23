@@ -10,13 +10,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
 // toolColor returns a lipgloss.Style for the tool name header based on tool type.
-// Colors: Read/Glob -> cyan, Write -> green, Edit -> yellow,
-// Bash/Exec/Shell -> orange, Grep -> magenta, other -> magenta.
+// This is a convenience wrapper that calls Styles() internally.
 func toolColor(name string) lipgloss.Style {
-	s := Styles()
+	return toolColorFromStyles(name, Styles())
+}
+
+// toolColorFromStyles returns the style for a tool name using a pre-fetched ThemeStyles,
+// avoiding a redundant Styles() call when the caller already has the styles.
+func toolColorFromStyles(name string, s ThemeStyles) lipgloss.Style {
 	lower := strings.ToLower(name)
 	switch {
 	case strings.Contains(lower, "grep"):
@@ -37,25 +42,28 @@ func toolColor(name string) lipgloss.Style {
 // ToolCallModel renders a tool invocation with Claude-style bordered box,
 // status indicator, and expand/collapse support for output.
 type ToolCallModel struct {
-	id       string
-	name     string
-	args     string
-	done     bool
-	errMsg   string
-	output   string
-	expanded bool
-	width    int
-	images     []ImageViewModel
-	showImages bool
+	id             string
+	name           string
+	args           string
+	done           bool
+	errMsg         string
+	output         string
+	expanded       bool
+	width          int
+	images         []ImageViewModel
+	showImages     bool
+	cachedFilePath string // extracted once at creation, not per View()
 }
 
 // NewToolCallModel creates a ToolCallModel for the given tool invocation.
+// File path is extracted once here rather than on every View() call.
 func NewToolCallModel(id, name, args string) ToolCallModel {
 	return ToolCallModel{
-		id:         id,
-		name:       name,
-		args:       args,
-		showImages: true,
+		id:             id,
+		name:           name,
+		args:           args,
+		showImages:     true,
+		cachedFilePath: extractFilePath(args),
 	}
 }
 
@@ -124,6 +132,26 @@ func extractFilePath(argsJSON string) string {
 	return ""
 }
 
+// padRight pads s with spaces to targetWidth visible columns.
+// Uses ANSI-aware width measurement so escape codes do not inflate the count.
+func padRight(s string, targetWidth int) string {
+	vis := width.VisibleWidth(s)
+	if vis >= targetWidth {
+		return s
+	}
+	return s + strings.Repeat(" ", targetWidth-vis)
+}
+
+// writeBoxLine writes a bordered content line: │ <content padded to contentWidth> │
+func writeBoxLine(b *strings.Builder, border string, content string, contentWidth int) {
+	b.WriteString(border)
+	b.WriteByte(' ')
+	b.WriteString(padRight(content, contentWidth))
+	b.WriteByte(' ')
+	b.WriteString(border)
+	b.WriteByte('\n')
+}
+
 // View renders the tool call as a bordered box with status indicator.
 // The border color matches the tool type; file paths appear as subtitles.
 func (m ToolCallModel) View() string {
@@ -132,7 +160,7 @@ func (m ToolCallModel) View() string {
 	}
 
 	s := Styles()
-	nameStyle := toolColor(m.name)
+	nameStyle := toolColorFromStyles(m.name, s)
 	borderColor := nameStyle.GetForeground()
 
 	// Border style with tool-specific color
@@ -153,7 +181,7 @@ func (m ToolCallModel) View() string {
 	toolInfo := fmt.Sprintf("%s %s %s", status, nameStyle.Render(m.name), m.args)
 	toolInfo = strings.TrimSpace(toolInfo)
 
-	// Border characters
+	// Border characters (each is 1 visible column wide)
 	const (
 		borderChar        = "─"
 		cornerTopLeft     = "┌"
@@ -163,21 +191,21 @@ func (m ToolCallModel) View() string {
 		verticalBorder    = "│"
 	)
 
+	// Box geometry: outer width = m.width
+	// Top/bottom borders: corner(1) + dashes + corner(1) = m.width visible cols
+	// Content lines: │(1) + space(1) + content(contentWidth) + space(1) + │(1)
+	contentWidth := max(m.width-4, 20)
+
 	// Build top border with header
 	header := " Code Generation "
-	headerLen := len(header)
-	totalWidth := m.width - 2
-	if totalWidth < 0 {
-		totalWidth = 0
-	}
-	availableForDashes := totalWidth - headerLen - 2
-	if availableForDashes < 0 {
-		availableForDashes = 0
-	}
+	headerLen := width.VisibleWidth(header)
+	innerWidth := max(m.width-2, 0) // columns between corners
+	availableForDashes := max(innerWidth-headerLen, 0)
 	dashesLeft := availableForDashes / 2
 	dashesRight := availableForDashes - dashesLeft
 
 	var b strings.Builder
+	border := bs.Render(verticalBorder)
 
 	// Top border (colored)
 	b.WriteString(bs.Render(cornerTopLeft))
@@ -189,21 +217,14 @@ func (m ToolCallModel) View() string {
 		b.WriteString(bs.Render(strings.Repeat(borderChar, dashesRight)))
 	}
 	b.WriteString(bs.Render(cornerTopRight))
-	b.WriteString("\n")
+	b.WriteByte('\n')
 
-	// Content width
-	contentWidth := m.width - 4
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
+	// Tool info line (ANSI-aware padding)
+	writeBoxLine(&b, border, toolInfo, contentWidth)
 
-	// Tool info line
-	b.WriteString(fmt.Sprintf("%s %-*s %s\n", bs.Render(verticalBorder), contentWidth, toolInfo, bs.Render(verticalBorder)))
-
-	// File path subtitle when available
-	if filePath := extractFilePath(m.args); filePath != "" {
-		pathLine := s.Dim.Render(filePath)
-		b.WriteString(fmt.Sprintf("%s %-*s %s\n", bs.Render(verticalBorder), contentWidth, pathLine, bs.Render(verticalBorder)))
+	// File path subtitle when available (cached at creation)
+	if m.cachedFilePath != "" {
+		writeBoxLine(&b, border, s.Dim.Render(m.cachedFilePath), contentWidth)
 	}
 
 	// Image blocks
@@ -211,43 +232,40 @@ func (m ToolCallModel) View() string {
 		for i := range m.images {
 			imgView := m.images[i].View()
 			if imgView != "" {
-				imgLines := strings.Split(imgView, "\n")
-				for _, il := range imgLines {
-					b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), il))
+				imgLines := strings.SplitSeq(imgView, "\n")
+				for il := range imgLines {
+					writeBoxLine(&b, border, il, contentWidth)
 				}
 			}
 		}
 	} else if len(m.images) > 0 {
 		placeholder := fmt.Sprintf("[%d image(s) hidden - Alt+I to show]", len(m.images))
-		b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), s.Dim.Render(placeholder)))
+		writeBoxLine(&b, border, s.Dim.Render(placeholder), contentWidth)
 	}
 
 	// Error line
 	if m.errMsg != "" {
-		b.WriteString(fmt.Sprintf("%s %-*s %s\n", bs.Render(verticalBorder), contentWidth, s.Error.Render(m.errMsg), bs.Render(verticalBorder)))
+		writeBoxLine(&b, border, s.Error.Render(m.errMsg), contentWidth)
 	}
 
 	// Expanded output
 	if m.expanded && m.output != "" {
-		b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), bs.Render(strings.Repeat(borderChar, m.width-4))))
+		// Separator line inside box
+		writeBoxLine(&b, border, bs.Render(strings.Repeat(borderChar, contentWidth)), contentWidth)
 
-		lines := strings.Split(strings.TrimRight(m.output, "\n"), "\n")
-		for _, line := range lines {
-			b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), line))
+		lines := strings.SplitSeq(strings.TrimRight(m.output, "\n"), "\n")
+		for line := range lines {
+			writeBoxLine(&b, border, line, contentWidth)
 		}
 
-		b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), ""))
+		writeBoxLine(&b, border, "", contentWidth)
 	}
 
-	// Bottom border (colored)
-	bottomWidth := totalWidth - len(cornerBottomLeft) - len(cornerBottomRight)
-	if bottomWidth < 0 {
-		bottomWidth = 0
-	}
+	// Bottom border: same innerWidth as top, using visual column count (1 per corner)
 	b.WriteString(bs.Render(cornerBottomLeft))
-	b.WriteString(bs.Render(strings.Repeat(borderChar, bottomWidth)))
+	b.WriteString(bs.Render(strings.Repeat(borderChar, innerWidth)))
 	b.WriteString(bs.Render(cornerBottomRight))
-	b.WriteString("\n")
+	b.WriteByte('\n')
 
 	// Expand/collapse hint
 	if m.expanded {

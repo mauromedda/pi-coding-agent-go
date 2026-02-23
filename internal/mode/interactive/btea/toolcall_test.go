@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
 // Compile-time check: ToolCallModel must satisfy tea.Model.
@@ -325,6 +326,115 @@ func TestToolCallModel_ToolBorderColor(t *testing.T) {
 	// View should contain the border characters
 	if !strings.Contains(view, "─") {
 		t.Errorf("View() missing border; got %q", view)
+	}
+}
+
+func TestPadRight(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		target int
+		want   int // expected visible width of result
+	}{
+		{"plain short", "abc", 10, 10},
+		{"plain exact", "abcdefghij", 10, 10},
+		{"plain longer", "abcdefghijk", 10, 11},
+		{"ansi styled", "\x1b[31mred\x1b[0m", 10, 10},
+		{"empty", "", 5, 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := padRight(tt.input, tt.target)
+			// Use width.VisibleWidth to verify
+			got := width.VisibleWidth(result)
+			if got != tt.want {
+				t.Errorf("padRight(%q, %d) visible width = %d; want %d", tt.input, tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToolCallModel_BoxBorderAlignment(t *testing.T) {
+	m := NewToolCallModel("t1", "Read", `{"path":"/tmp/test.go"}`)
+	m.width = 80
+	m.done = true
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	// Find the top border line (starts with ┌) and bottom border line (starts with └)
+	var topLine, bottomLine string
+	for _, line := range lines {
+		stripped := width.StripANSI(line)
+		if strings.HasPrefix(stripped, "┌") {
+			topLine = stripped
+		}
+		if strings.HasPrefix(stripped, "└") {
+			bottomLine = stripped
+		}
+	}
+
+	if topLine == "" {
+		t.Fatal("no top border line found")
+	}
+	if bottomLine == "" {
+		t.Fatal("no bottom border line found")
+	}
+
+	topWidth := width.VisibleWidth(topLine)
+	bottomWidth := width.VisibleWidth(bottomLine)
+	if topWidth != bottomWidth {
+		t.Errorf("top border width (%d) != bottom border width (%d)\ntop:    %q\nbottom: %q",
+			topWidth, bottomWidth, topLine, bottomLine)
+	}
+}
+
+func TestToolCallModel_ExpandedOutputHasRightBorder(t *testing.T) {
+	m := NewToolCallModel("t1", "Read", `{"path":"/tmp"}`)
+	m.width = 60
+	m.done = true
+	m.expanded = true
+	m.output = "line one\nline two"
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	// Every content line between top and bottom borders should end with │
+	inBox := false
+	for _, line := range lines {
+		stripped := width.StripANSI(line)
+		if strings.HasPrefix(stripped, "┌") {
+			inBox = true
+			continue
+		}
+		if strings.HasPrefix(stripped, "└") {
+			break
+		}
+		if inBox && stripped != "" {
+			if !strings.HasSuffix(stripped, "│") {
+				t.Errorf("content line missing right border: %q", stripped)
+			}
+		}
+	}
+}
+
+func TestToolCallModel_FilePathCachedAtCreation(t *testing.T) {
+	m := NewToolCallModel("t1", "Read", `{"file_path":"/home/user/main.go"}`)
+	if m.cachedFilePath != "/home/user/main.go" {
+		t.Errorf("cachedFilePath = %q; want %q", m.cachedFilePath, "/home/user/main.go")
+	}
+}
+
+func TestToolCallModel_ToolColorFromStyles(t *testing.T) {
+	// toolColorFromStyles should produce the same result as toolColor but accept styles param
+	s := Styles()
+	for _, name := range []string{"Read", "Write", "Edit", "Bash", "Grep", "CustomTool"} {
+		fromOld := toolColor(name)
+		fromNew := toolColorFromStyles(name, s)
+		if fromOld.Render("x") != fromNew.Render("x") {
+			t.Errorf("toolColorFromStyles(%q) differs from toolColor(%q)", name, name)
+		}
 	}
 }
 

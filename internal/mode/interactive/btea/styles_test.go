@@ -3,7 +3,11 @@
 
 package btea
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/theme"
+)
 
 func TestExtractColor_256Color(t *testing.T) {
 	tests := []struct {
@@ -193,5 +197,44 @@ func TestStyles_ProducesOutput(t *testing.T) {
 	rendered = s.UserBg.Render("test")
 	if rendered == "" {
 		t.Error("Styles().UserBg.Render('test') is empty")
+	}
+}
+
+func TestStylesCacheHit(t *testing.T) {
+	// Two consecutive calls should return identical styles without recomputation.
+	s1 := Styles()
+	s2 := Styles()
+
+	// Compare by rendering: identical theme → identical output
+	if s1.Accent.Render("x") != s2.Accent.Render("x") {
+		t.Error("consecutive Styles() calls should return equivalent styles")
+	}
+	if s1.Primary.Render("x") != s2.Primary.Render("x") {
+		t.Error("consecutive Styles() calls should return equivalent Primary")
+	}
+}
+
+func TestStylesCacheInvalidatedOnThemeChange(t *testing.T) {
+	// Verify cache invalidates when theme pointer changes.
+	_ = Styles() // prime cache
+
+	original := theme.Current()
+	defer theme.Set(original)
+
+	// Create a distinct theme pointer by setting a different builtin
+	mono := theme.Builtin("monochrome")
+	if mono == nil {
+		t.Skip("monochrome theme not available")
+	}
+	theme.Set(mono)
+
+	// After theme change, Styles() should rebuild (cache miss)
+	s := Styles()
+
+	// Verify it built from the monochrome palette by checking that
+	// the returned styles are consistent with the current theme
+	expected := buildStyles(theme.Current())
+	if s.Primary.Render("x") != expected.Primary.Render("x") {
+		t.Error("Styles() after theme change should match buildStyles(Current())")
 	}
 }
