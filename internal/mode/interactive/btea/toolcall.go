@@ -90,6 +90,10 @@ func (m ToolCallModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		// Invalidate cached image renders so they re-render at new width
+		for i := range m.images {
+			m.images[i] = NewImageViewModel(m.images[i].data, m.images[i].mimeType, msg.Width)
+		}
 
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlO && m.done {

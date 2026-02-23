@@ -53,18 +53,23 @@ func renderKitty(data []byte, maxCols int) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("preparing PNG for Kitty: %w", err)
 	}
-	// Estimate rows from dimensions; use 1:2 char aspect ratio
 	dim, _ := GetDimensions(pngData)
-	rows := dim.Height / 2
-	if rows < 1 {
-		rows = 1
+	if dim.Width < 1 || dim.Height < 1 {
+		dim = Dimensions{Width: maxCols, Height: maxCols}
 	}
-	cols := dim.Width
-	if cols > maxCols {
-		cols = maxCols
+
+	// Scale proportionally to fit maxCols; cells have ~1:2 pixel aspect ratio
+	scale := 1.0
+	if dim.Width > maxCols {
+		scale = float64(maxCols) / float64(dim.Width)
 	}
+	cols := int(float64(dim.Width) * scale)
+	rows := int(float64(dim.Height) * scale / 2.0)
 	if cols < 1 {
 		cols = 1
+	}
+	if rows < 1 {
+		rows = 1
 	}
 	return []string{EncodeKitty(pngData, cols, rows)}, nil
 }

@@ -5,7 +5,6 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -163,7 +162,9 @@ func imageExtMIME(path string) (string, bool) {
 
 const maxImageFileSize = 4_500_000 // 4.5 MB
 
-// handleImageFile returns a ToolResult with base64-encoded image data and an ImageBlock.
+// handleImageFile returns a ToolResult with image metadata and an ImageBlock.
+// The base64 data is NOT included in Content to avoid polluting the LLM context;
+// the Images field carries raw bytes for in-process TUI rendering only.
 func handleImageFile(data []byte, path, mime string) agent.ToolResult {
 	if len(data) > maxImageFileSize {
 		return agent.ToolResult{
@@ -171,8 +172,7 @@ func handleImageFile(data []byte, path, mime string) agent.ToolResult {
 			IsError: true,
 		}
 	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	content := fmt.Sprintf("[Image: %s %s (%d bytes)]\nbase64:%s", filepath.Base(path), mime, len(data), encoded)
+	content := fmt.Sprintf("[Image: %s %s (%d bytes)]", filepath.Base(path), mime, len(data))
 	return agent.ToolResult{
 		Content: content,
 		Images: []types.ImageBlock{

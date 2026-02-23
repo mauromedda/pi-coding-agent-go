@@ -81,7 +81,13 @@ func parseJPEGDimensions(data []byte) (Dimensions, error) {
 			break
 		}
 		segLen := int(binary.BigEndian.Uint16(data[i+2 : i+4]))
+		if segLen < 2 {
+			break // Invalid segment length
+		}
 		i += 2 + segLen
+		if i >= len(data) {
+			break
+		}
 	}
 	return Dimensions{}, fmt.Errorf("JPEG SOF marker not found")
 }
