@@ -275,6 +275,7 @@ func TestAppModel_DismissOverlayMsg(t *testing.T) {
 
 func TestAppModel_CmdPaletteSelectMsg(t *testing.T) {
 	m := NewAppModel(testDeps())
+	m.width = 80
 	m.overlay = NewCmdPaletteModel(nil)
 
 	result, _ := m.Update(CmdPaletteSelectMsg{Name: "help"})
@@ -283,8 +284,13 @@ func TestAppModel_CmdPaletteSelectMsg(t *testing.T) {
 	if model.overlay != nil {
 		t.Error("overlay should be nil after CmdPaletteSelectMsg")
 	}
-	if model.editor.Text() != "/help" {
-		t.Errorf("editor text = %q; want %q", model.editor.Text(), "/help")
+	// Auto-submit: editor should be cleared, "/help" submitted as user message
+	if model.editor.Text() != "" {
+		t.Errorf("editor text = %q; want empty (auto-submitted)", model.editor.Text())
+	}
+	// Content should have the welcome model + user message + command result
+	if len(model.content) < 2 {
+		t.Errorf("content length = %d; want >= 2 (user msg + result)", len(model.content))
 	}
 }
 

@@ -190,11 +190,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Overlay result messages (always handled by root, even when overlay is active) ---
 	case CmdPaletteSelectMsg:
 		m.overlay = nil
-		m.editor = m.editor.SetText("/" + msg.Name)
-		return m, nil
+		m.editor = m.editor.SetFocused(true)
+		// Auto-submit the selected command (matches competitor behavior)
+		return m.submitPrompt("/" + msg.Name)
 
 	case CmdPaletteDismissMsg:
 		m.overlay = nil
+		m.editor = m.editor.SetFocused(true)
 		return m, nil
 
 	case FileMentionSelectMsg:
@@ -204,29 +206,34 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text += " "
 		}
 		text += "@" + msg.RelPath
-		m.editor = m.editor.SetText(text)
+		m.editor = m.editor.SetFocused(true).SetText(text)
 		return m, nil
 
 	case FileMentionDismissMsg:
 		m.overlay = nil
+		m.editor = m.editor.SetFocused(true)
 		return m, nil
 
 	case ModelSelectedMsg:
 		m.overlay = nil
+		m.editor = m.editor.SetFocused(true)
 		// Placeholder: model switch will be wired in a later phase
 		return m, nil
 
 	case ModelSelectorDismissMsg:
 		m.overlay = nil
+		m.editor = m.editor.SetFocused(true)
 		return m, nil
 
 	case SessionSelectedMsg:
 		m.overlay = nil
+		m.editor = m.editor.SetFocused(true)
 		// Placeholder: session resume will be wired in a later phase
 		return m, nil
 
 	case SessionSelectorDismissMsg:
 		m.overlay = nil
+		m.editor = m.editor.SetFocused(true)
 		return m, nil
 
 	// --- Permission flow ---
@@ -413,8 +420,8 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						palette = palette.SetFilter(editorText)
 					}
 					m.overlay = palette
-					// Clear the editor after opening palette
-					m.editor = NewEditorModel()
+					// Clear editor but preserve configuration
+					m.editor = m.resetEditor()
 					return m, nil
 				}
 			case '@':
@@ -434,11 +441,7 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // --- Prompt submission ---
 
 func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
-	m.editor = NewEditorModel()
-	m.editor = m.editor.SetFocused(true)
-	m.editor = m.editor.SetPrompt("\u276f ")
-	m.editor = m.editor.SetPlaceholder("Try \"how does <filepath> work?\"")
-	m.editor.width = m.width
+	m.editor = m.resetEditor()
 
 	// Add user message to content
 	um := NewUserMsgModel(text)
@@ -642,6 +645,16 @@ func (m AppModel) abortAgent() {
 	if m.sh.activeAgent != nil {
 		m.sh.activeAgent.Abort()
 	}
+}
+
+// resetEditor creates a fresh editor with standard configuration (focused, prompt, placeholder, width).
+func (m AppModel) resetEditor() EditorModel {
+	e := NewEditorModel()
+	e = e.SetFocused(true)
+	e = e.SetPrompt("\u276f ")
+	e = e.SetPlaceholder("Try \"how does <filepath> work?\"")
+	e.width = m.width
+	return e
 }
 
 func (m AppModel) modelName() string {
