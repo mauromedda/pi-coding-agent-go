@@ -62,7 +62,13 @@ func (m AppModel) buildCommandContext() (*commands.CommandContext, *cmdSideEffec
 		},
 
 		CompactFn: func() string {
-			return "Compact not yet available."
+			if len(m.messages) == 0 {
+				return "Nothing to compact."
+			}
+			if m.sh.program != nil {
+				m.sh.program.Send(AutoCompactMsg{})
+			}
+			return "Compacting context..."
 		},
 
 		ToggleMode: func() {

@@ -77,6 +77,13 @@ type SubmitPromptMsg struct{ Text string }
 // AutoCompactMsg triggers automatic context compaction.
 type AutoCompactMsg struct{}
 
+// CompactDoneMsg carries the result of a completed compaction.
+type CompactDoneMsg struct {
+	Messages    []ai.Message // compacted message list
+	Summary     string       // generated summary text
+	TokensSaved int          // tokens freed
+}
+
 // ToggleImagesMsg signals all tool call models to show/hide images.
 type ToggleImagesMsg struct{ Show bool }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -100,6 +101,9 @@ type AppModel struct {
 	promptHistory []string // all submitted prompts (most recent last)
 	historyIndex  int      // -1 = composing new; 0+ = browsing history (0 = most recent)
 	savedDraft    string   // editor text saved before entering history mode
+
+	// Compaction state
+	compacting bool
 
 	// Cached separator string (recomputed only on WindowSizeMsg)
 	cachedSep string
@@ -383,6 +387,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionSavedMsg:
 		return m, nil
 
+	case AutoCompactMsg:
+		return m.autoCompact()
+
+	case CompactDoneMsg:
+		m.compacting = false
+		if len(msg.Messages) > 0 {
+			m.messages = msg.Messages
+		}
+		// Persist compaction to session if wired
+		if m.deps.Session != nil && m.deps.Session.Writer != nil {
+			_ = m.deps.Session.Writer.WriteCompaction(session.CompactionData{
+				Summary:      msg.Summary,
+				TokensBefore: msg.TokensSaved,
+			})
+		}
+		return m, nil
+
 	// --- Phase 8: TUI enhancement messages ---
 	case ModeTransitionMsg:
 		m.footer = m.footer.WithIntentLabel(msg.To)
@@ -427,6 +448,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		updated, _ := m.footer.Update(msg)
 		m.footer = updated.(FooterModel)
+
+		// Check if auto-compaction should trigger
+		threshold := m.deps.AutoCompactThreshold
+		if threshold > 0 && !m.compacting {
+			total := m.totalInputTokens + m.totalOutputTokens
+			if total > threshold {
+				return m, func() tea.Msg { return AutoCompactMsg{} }
+			}
+		}
 		return m, nil
 
 	case AgentErrorMsg:
@@ -771,6 +801,63 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 
 		// Return AgentDoneMsg with the updated conversation messages.
 		return AgentDoneMsg{Messages: llmCtx.Messages}
+	}
+}
+
+// --- Compaction ---
+
+// autoCompact starts an asynchronous compaction of the conversation context.
+// Returns a no-op if already compacting or there are no messages.
+func (m AppModel) autoCompact() (tea.Model, tea.Cmd) {
+	if m.compacting || len(m.messages) == 0 {
+		return m, nil
+	}
+	m.compacting = true
+
+	messages := make([]ai.Message, len(m.messages))
+	copy(messages, m.messages)
+
+	cfg := session.CompactionConfig{
+		ReserveTokens:    4096,
+		KeepRecentTokens: 2048,
+	}
+
+	return m, func() tea.Msg {
+		tokensBefore := session.EstimateMessagesTokens(messages)
+
+		// Use a simple extractive summarizer (no LLM call) for now.
+		// Future: inject LLM-based summarizer via deps.
+		result, err := session.CompactWithLLM(
+			context.Background(),
+			messages,
+			cfg,
+			func(_ context.Context, msgs []ai.Message, _ string) (string, error) {
+				// Simple extractive summary: concatenate first 500 chars of each message
+				var b strings.Builder
+				for _, msg := range msgs {
+					for _, c := range msg.Content {
+						if c.Type == "text" && c.Text != "" {
+							text := c.Text
+							if len(text) > 200 {
+								text = text[:200] + "..."
+							}
+							fmt.Fprintf(&b, "[%s] %s\n", msg.Role, text)
+						}
+					}
+				}
+				return b.String(), nil
+			},
+		)
+		if err != nil {
+			return AgentErrorMsg{Err: fmt.Errorf("compaction: %w", err)}
+		}
+
+		tokensAfter := session.EstimateMessagesTokens(result.Messages)
+		return CompactDoneMsg{
+			Messages:    result.Messages,
+			Summary:     result.Summary,
+			TokensSaved: tokensBefore - tokensAfter,
+		}
 	}
 }
 
