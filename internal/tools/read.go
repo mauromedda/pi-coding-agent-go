@@ -54,10 +54,13 @@ func newReadTool(sb *permission.Sandbox) *agent.AgentTool {
 }
 
 func executeRead(sb *permission.Sandbox, _ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
-	path, err := requireStringParam(params, "path")
+	rawPath, err := requireStringParam(params, "path")
 	if err != nil {
 		return errResult(err), nil
 	}
+
+	cwd, _ := os.Getwd()
+	path := ResolveReadPath(rawPath, cwd)
 
 	if sb != nil {
 		if err := sb.ValidatePath(path); err != nil {

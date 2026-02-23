@@ -48,10 +48,12 @@ func newEditTool(sb *permission.Sandbox) *agent.AgentTool {
 }
 
 func executeEdit(sb *permission.Sandbox, _ context.Context, _ string, params map[string]any, _ func(agent.ToolUpdate)) (agent.ToolResult, error) {
-	path, err := requireStringParam(params, "path")
+	rawPath, err := requireStringParam(params, "path")
 	if err != nil {
 		return errResult(err), nil
 	}
+
+	path := ExpandPath(rawPath)
 
 	if sb != nil {
 		if err := sb.ValidatePath(path); err != nil {
