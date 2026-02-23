@@ -7,10 +7,20 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/changelog"
 )
+
+// parseInt parses a string as a positive integer.
+func parseInt(s string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("invalid step count: %q", s)
+	}
+	return n, nil
+}
 
 // Command represents a slash command.
 type Command struct {
@@ -70,6 +80,10 @@ type CommandContext struct {
 	GetSettings  func() string       // /settings: show current settings
 	ShareFn      func() string       // /share: share current session
 	ExportHTMLFn func(string) error  // /export <path>.html: HTML export handler
+
+	// Phase 5 callbacks
+	DiffFn   func() (string, error)    // /diff: show git diff
+	RevertFn func(steps int) (string, error) // /revert: revert file operations
 }
 
 // Registry holds all registered slash commands.
@@ -576,6 +590,49 @@ func (r *Registry) registerCoreCommands() {
 				}
 				ctx.ExitFn()
 				return "Goodbye.", nil
+			},
+		},
+		{
+			Name:        "diff",
+			Category:    "Session",
+			Description: "Show git diff of current changes",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.DiffFn == nil {
+					return "Diff not available.", nil
+				}
+				return ctx.DiffFn()
+			},
+		},
+		{
+			Name:        "revert",
+			Aliases:     []string{"rv"},
+			Category:    "Session",
+			Description: "Revert recent file operations",
+			Execute: func(ctx *CommandContext, args string) (string, error) {
+				if ctx.RevertFn == nil {
+					return "Revert not available.", nil
+				}
+				steps := 1
+				if args != "" {
+					n, err := parseInt(args)
+					if err != nil {
+						return "Usage: /revert [steps]", nil
+					}
+					steps = n
+				}
+				return ctx.RevertFn(steps)
+			},
+		},
+		{
+			Name:        "undo",
+			Aliases:     []string{"u"},
+			Category:    "Session",
+			Description: "Undo last file operation (alias for /revert 1)",
+			Execute: func(ctx *CommandContext, _ string) (string, error) {
+				if ctx.RevertFn == nil {
+					return "Undo not available.", nil
+				}
+				return ctx.RevertFn(1)
 			},
 		},
 	}

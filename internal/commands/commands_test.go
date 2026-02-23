@@ -108,9 +108,9 @@ func TestRegistry_AllCommandsRegistered(t *testing.T) {
 
 	expected := []string{
 		"changelog", "clear", "compact", "config", "context", "copy", "cost",
-		"exit", "export", "fork", "help", "hooks", "hotkeys", "init", "mcp", "memory",
-		"model", "new", "permissions", "plan", "quit", "reload", "rename", "resume", "sandbox",
-		"scoped-models", "settings", "share", "status", "tree", "vim",
+		"diff", "exit", "export", "fork", "help", "hooks", "hotkeys", "init", "mcp", "memory",
+		"model", "new", "permissions", "plan", "quit", "reload", "rename", "resume", "revert",
+		"sandbox", "scoped-models", "settings", "share", "status", "tree", "undo", "vim",
 	}
 	for _, name := range expected {
 		cmd, ok := reg.Get(name)
@@ -1231,6 +1231,167 @@ func TestDispatch_Quit_NilCallback(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(result), "not available") {
 		t.Errorf("expected 'not available' for nil callback, got %q", result)
+	}
+}
+
+func TestDispatch_Diff(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	diffCalled := false
+	ctx.DiffFn = func() (string, error) {
+		diffCalled = true
+		return "M app.go\nM editor.go", nil
+	}
+
+	result, err := reg.Dispatch(ctx, "/diff")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !diffCalled {
+		t.Error("DiffFn was not called")
+	}
+	if !strings.Contains(result, "app.go") {
+		t.Errorf("expected diff output, got %q", result)
+	}
+}
+
+func TestDispatch_Diff_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.DiffFn = nil
+
+	result, err := reg.Dispatch(ctx, "/diff")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available' for nil DiffFn, got %q", result)
+	}
+}
+
+func TestDispatch_Revert(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	var gotSteps int
+	ctx.RevertFn = func(steps int) (string, error) {
+		gotSteps = steps
+		return "Reverted 2 files.", nil
+	}
+
+	result, err := reg.Dispatch(ctx, "/revert 2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotSteps != 2 {
+		t.Errorf("expected steps=2, got %d", gotSteps)
+	}
+	if !strings.Contains(result, "Reverted") {
+		t.Errorf("expected revert result, got %q", result)
+	}
+}
+
+func TestDispatch_Revert_DefaultSteps(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	var gotSteps int
+	ctx.RevertFn = func(steps int) (string, error) {
+		gotSteps = steps
+		return "Reverted.", nil
+	}
+
+	_, err := reg.Dispatch(ctx, "/revert")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotSteps != 1 {
+		t.Errorf("expected default steps=1, got %d", gotSteps)
+	}
+}
+
+func TestDispatch_Undo(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	var gotSteps int
+	ctx.RevertFn = func(steps int) (string, error) {
+		gotSteps = steps
+		return "Undone.", nil
+	}
+
+	result, err := reg.Dispatch(ctx, "/undo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotSteps != 1 {
+		t.Errorf("expected steps=1 for undo, got %d", gotSteps)
+	}
+	if !strings.Contains(result, "Undone") {
+		t.Errorf("expected undo result, got %q", result)
+	}
+}
+
+func TestDispatch_Revert_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	ctx.RevertFn = nil
+
+	result, err := reg.Dispatch(ctx, "/revert")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(result), "not available") {
+		t.Errorf("expected 'not available', got %q", result)
+	}
+}
+
+func TestAlias_RevertAlias(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	called := false
+	ctx.RevertFn = func(_ int) (string, error) {
+		called = true
+		return "ok", nil
+	}
+
+	_, err := reg.Dispatch(ctx, "/rv")
+	if err != nil {
+		t.Fatalf("unexpected error via alias /rv: %v", err)
+	}
+	if !called {
+		t.Error("RevertFn not called via alias /rv")
+	}
+}
+
+func TestAlias_UndoAlias(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry()
+	ctx, _ := testContext()
+	called := false
+	ctx.RevertFn = func(_ int) (string, error) {
+		called = true
+		return "ok", nil
+	}
+
+	_, err := reg.Dispatch(ctx, "/u")
+	if err != nil {
+		t.Fatalf("unexpected error via alias /u: %v", err)
+	}
+	if !called {
+		t.Error("RevertFn not called via alias /u")
 	}
 }
 

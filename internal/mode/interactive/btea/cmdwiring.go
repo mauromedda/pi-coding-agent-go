@@ -6,12 +6,14 @@ package btea
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/export"
+	"github.com/mauromedda/pi-coding-agent-go/internal/revert"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/clipboard"
 )
@@ -202,6 +204,24 @@ func (m AppModel) buildCommandContext() (*commands.CommandContext, *cmdSideEffec
 			return fmt.Sprintf("Shared: %s", url)
 		},
 
+		// --- Diff / Revert ---
+
+		DiffFn: func() (string, error) {
+			return runGitDiff()
+		},
+
+		RevertFn: func(steps int) (string, error) {
+			ops := revert.FindFileOps(m.messages, steps)
+			if len(ops) == 0 {
+				return "No file operations found to revert.", nil
+			}
+			summary, err := revert.RevertOps(ops)
+			if err != nil {
+				return "", err
+			}
+			return revert.FormatSummary(summary), nil
+		},
+
 		// --- Reload ---
 
 		ReloadFn: func() (string, error) {
@@ -254,6 +274,26 @@ func (m AppModel) lastAssistantText() string {
 		}
 	}
 	return ""
+}
+
+// runGitDiff shells out to git diff and returns a truncated result.
+func runGitDiff() (string, error) {
+	stat, err := exec.Command("git", "diff", "--stat").Output()
+	if err != nil {
+		return "", fmt.Errorf("git diff --stat: %w", err)
+	}
+
+	diff, _ := exec.Command("git", "diff").Output()
+
+	const maxLines = 200
+	lines := strings.Split(string(diff), "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		lines = append(lines, fmt.Sprintf("\n... (truncated, %d lines omitted)", len(strings.Split(string(diff), "\n"))-maxLines))
+	}
+
+	result := string(stat) + "\n" + strings.Join(lines, "\n")
+	return strings.TrimSpace(result), nil
 }
 
 // formatMessagesAsMarkdown renders conversation messages as a markdown string.
