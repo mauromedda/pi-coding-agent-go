@@ -98,6 +98,9 @@ func (m PermDialogModel) View() string {
 	)
 
 	boxWidth := 50
+	if m.width > 0 {
+		boxWidth = min(50, max(m.width-4, 30))
+	}
 	innerWidth := boxWidth - 2
 	contentWidth := boxWidth - 4
 	border := bs.Render(vBorder)
