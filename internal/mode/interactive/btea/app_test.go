@@ -1091,6 +1091,28 @@ func TestAbortAgent_ConcurrentAccess(t *testing.T) {
 	<-done
 }
 
+func TestAppModel_ViewRendersBoundedContent(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 24
+
+	// Add many content models beyond maxVisibleContent
+	for i := range 100 {
+		m.content = append(m.content, NewUserMsgModel(fmt.Sprintf("message %d", i)))
+	}
+
+	// View should not panic and should produce output
+	view := m.View()
+	if view == "" {
+		t.Fatal("View() returned empty string with many content models")
+	}
+
+	// The last message should be visible
+	if !strings.Contains(view, "message 99") {
+		t.Error("View() should contain the most recent message")
+	}
+}
+
 func TestAppModel_WindowSizeMsgPropagatedToOverlay(t *testing.T) {
 	m := NewAppModel(testDeps())
 	ch := make(chan PermissionReply, 1)

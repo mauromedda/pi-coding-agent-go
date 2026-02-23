@@ -565,11 +565,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// maxVisibleContent is the maximum number of content models rendered in View().
+// Older models are skipped to bound string allocations in long sessions.
+const maxVisibleContent = 50
+
 // View renders the full TUI layout.
 func (m AppModel) View() string {
 	var sections []string
 
-	for _, c := range m.content {
+	// Only render the last N content models to avoid unbounded allocations.
+	start := max(len(m.content)-maxVisibleContent, 0)
+	for _, c := range m.content[start:] {
 		sections = append(sections, c.View())
 	}
 
