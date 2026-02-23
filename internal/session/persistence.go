@@ -85,6 +85,15 @@ type UsageData struct {
 	Output int `json:"output"`
 }
 
+// CompactionData holds compaction record metadata.
+type CompactionData struct {
+	Summary          string   `json:"summary"`
+	FirstKeptEntryID int      `json:"first_kept_entry_id"`
+	TokensBefore     int      `json:"tokens_before"`
+	FilesRead        []string `json:"files_read,omitempty"`
+	FilesWritten     []string `json:"files_written,omitempty"`
+}
+
 // Writer appends records to a session JSONL file.
 type Writer struct {
 	file *os.File

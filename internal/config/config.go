@@ -39,7 +39,11 @@ type Settings struct {
 	// Sandbox configuration
 	Sandbox SandboxSettings `json:"sandbox"`
 
+	// Compaction controls auto-compaction behavior
+	Compaction *CompactionSettings `json:"compaction,omitempty"`
+
 	// Auto-compact threshold (percentage 1-100; 0 means use default 80%)
+	// Deprecated: use Compaction.Enabled instead
 	AutoCompactThreshold int `json:"autoCompactThreshold,omitempty"`
 
 	// Theme name or path to a custom JSON theme file
@@ -66,6 +70,37 @@ type HookDef struct {
 	Matcher string `json:"matcher,omitempty"` // Tool name pattern (regex)
 	Type    string `json:"type,omitempty"`    // "command"
 	Command string `json:"command,omitempty"` // Shell command to run
+}
+
+// CompactionSettings controls when and how auto-compaction triggers.
+type CompactionSettings struct {
+	Enabled          *bool `json:"enabled,omitempty"`          // nil = true (default on)
+	ReserveTokens    int   `json:"reserveTokens,omitempty"`    // tokens reserved for response (default 16384)
+	KeepRecentTokens int   `json:"keepRecentTokens,omitempty"` // recent tokens to preserve (default 20000)
+}
+
+// IsEnabled returns whether compaction is enabled (default true).
+func (c *CompactionSettings) IsEnabled() bool {
+	if c == nil || c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
+// EffectiveReserveTokens returns ReserveTokens or the default (16384).
+func (c *CompactionSettings) EffectiveReserveTokens() int {
+	if c == nil || c.ReserveTokens == 0 {
+		return 16384
+	}
+	return c.ReserveTokens
+}
+
+// EffectiveKeepRecentTokens returns KeepRecentTokens or the default (20000).
+func (c *CompactionSettings) EffectiveKeepRecentTokens() int {
+	if c == nil || c.KeepRecentTokens == 0 {
+		return 20000
+	}
+	return c.KeepRecentTokens
 }
 
 // SandboxSettings configures the OS sandbox.
@@ -296,6 +331,22 @@ func merge(global, project *Settings) *Settings {
 	// AutoCompactThreshold: override if non-zero
 	if project.AutoCompactThreshold != 0 {
 		result.AutoCompactThreshold = project.AutoCompactThreshold
+	}
+
+	// Compaction: merge if present
+	if project.Compaction != nil {
+		if result.Compaction == nil {
+			result.Compaction = &CompactionSettings{}
+		}
+		if project.Compaction.Enabled != nil {
+			result.Compaction.Enabled = project.Compaction.Enabled
+		}
+		if project.Compaction.ReserveTokens != 0 {
+			result.Compaction.ReserveTokens = project.Compaction.ReserveTokens
+		}
+		if project.Compaction.KeepRecentTokens != 0 {
+			result.Compaction.KeepRecentTokens = project.Compaction.KeepRecentTokens
+		}
 	}
 
 	// Sandbox: override if present

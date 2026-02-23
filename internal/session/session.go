@@ -11,16 +11,16 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
-const compactionThreshold = 100 // Messages before auto-compaction
-
 // Session orchestrates a single agent interaction session.
 type Session struct {
-	ID       string
-	Model    *ai.Model
-	Provider ai.ApiProvider
-	Messages []ai.Message
-	Writer   *Writer
-	CWD      string
+	ID            string
+	Model         *ai.Model
+	Provider      ai.ApiProvider
+	Messages      []ai.Message
+	Writer        *Writer
+	CWD           string
+	ContextWindow int              // model's context window size in tokens
+	Compaction    CompactionConfig // compaction settings
 }
 
 // NewSession creates a new session with the given model and provider.
@@ -89,9 +89,13 @@ func (s *Session) BuildContext(systemPrompt string) *ai.Context {
 	}
 }
 
-// NeedsCompaction returns true if the session has exceeded the compaction threshold.
+// NeedsCompaction returns true if the session's token usage exceeds the
+// available budget (contextWindow - reserveTokens).
 func (s *Session) NeedsCompaction() bool {
-	return len(s.Messages) >= compactionThreshold
+	if s.ContextWindow == 0 {
+		return false // unknown context window; cannot determine
+	}
+	return ShouldCompact(s.Messages, s.ContextWindow, s.Compaction)
 }
 
 // Stream sends the current context to the LLM and returns an event stream.

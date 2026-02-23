@@ -446,3 +446,95 @@ func TestAuthStore_GetKey_CaseNormalization(t *testing.T) {
 		t.Errorf("GetKey(openai) = %q, want %q (should normalize to uppercase)", got, "from-env")
 	}
 }
+
+func TestCompactionSettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var cs *CompactionSettings // nil
+
+	if !cs.IsEnabled() {
+		t.Error("nil CompactionSettings should be enabled by default")
+	}
+	if cs.EffectiveReserveTokens() != 16384 {
+		t.Errorf("EffectiveReserveTokens = %d, want 16384", cs.EffectiveReserveTokens())
+	}
+	if cs.EffectiveKeepRecentTokens() != 20000 {
+		t.Errorf("EffectiveKeepRecentTokens = %d, want 20000", cs.EffectiveKeepRecentTokens())
+	}
+}
+
+func TestCompactionSettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	f := false
+	cs := &CompactionSettings{
+		Enabled:          &f,
+		ReserveTokens:    8192,
+		KeepRecentTokens: 10000,
+	}
+
+	if cs.IsEnabled() {
+		t.Error("should be disabled when Enabled=false")
+	}
+	if cs.EffectiveReserveTokens() != 8192 {
+		t.Errorf("EffectiveReserveTokens = %d, want 8192", cs.EffectiveReserveTokens())
+	}
+	if cs.EffectiveKeepRecentTokens() != 10000 {
+		t.Errorf("EffectiveKeepRecentTokens = %d, want 10000", cs.EffectiveKeepRecentTokens())
+	}
+}
+
+func TestMerge_Compaction(t *testing.T) {
+	t.Parallel()
+
+	f := false
+	global := &Settings{
+		Compaction: &CompactionSettings{ReserveTokens: 16384},
+	}
+	project := &Settings{
+		Compaction: &CompactionSettings{
+			Enabled:          &f,
+			KeepRecentTokens: 5000,
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Compaction == nil {
+		t.Fatal("Compaction should be set")
+	}
+	if result.Compaction.IsEnabled() {
+		t.Error("project should override Enabled to false")
+	}
+	if result.Compaction.ReserveTokens != 16384 {
+		t.Errorf("ReserveTokens = %d, want 16384 (from global)", result.Compaction.ReserveTokens)
+	}
+	if result.Compaction.KeepRecentTokens != 5000 {
+		t.Errorf("KeepRecentTokens = %d, want 5000 (from project)", result.Compaction.KeepRecentTokens)
+	}
+}
+
+func TestLoadFile_CompactionSettings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	data := `{"compaction":{"enabled":false,"reserveTokens":8192,"keepRecentTokens":10000}}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Compaction == nil {
+		t.Fatal("Compaction should be set")
+	}
+	if s.Compaction.IsEnabled() {
+		t.Error("should be disabled")
+	}
+	if s.Compaction.ReserveTokens != 8192 {
+		t.Errorf("ReserveTokens = %d, want 8192", s.Compaction.ReserveTokens)
+	}
+}
