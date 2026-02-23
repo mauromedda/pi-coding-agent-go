@@ -514,6 +514,95 @@ func TestMerge_Compaction(t *testing.T) {
 	}
 }
 
+func TestRetrySettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var rs *RetrySettings // nil
+	if rs.EffectiveMaxRetries() != 3 {
+		t.Errorf("EffectiveMaxRetries = %d, want 3", rs.EffectiveMaxRetries())
+	}
+	if rs.EffectiveBaseDelay() != 1000 {
+		t.Errorf("EffectiveBaseDelay = %d, want 1000", rs.EffectiveBaseDelay())
+	}
+	if rs.EffectiveMaxDelay() != 30000 {
+		t.Errorf("EffectiveMaxDelay = %d, want 30000", rs.EffectiveMaxDelay())
+	}
+}
+
+func TestRetrySettings_Custom(t *testing.T) {
+	t.Parallel()
+
+	rs := &RetrySettings{MaxRetries: 5, BaseDelay: 500, MaxDelay: 60000}
+	if rs.EffectiveMaxRetries() != 5 {
+		t.Errorf("EffectiveMaxRetries = %d, want 5", rs.EffectiveMaxRetries())
+	}
+	if rs.EffectiveBaseDelay() != 500 {
+		t.Errorf("EffectiveBaseDelay = %d, want 500", rs.EffectiveBaseDelay())
+	}
+}
+
+func TestMerge_RetrySettings(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{Retry: &RetrySettings{MaxRetries: 3, BaseDelay: 1000}}
+	project := &Settings{Retry: &RetrySettings{MaxRetries: 5}}
+
+	result := merge(global, project)
+	if result.Retry == nil {
+		t.Fatal("Retry should be set")
+	}
+	if result.Retry.MaxRetries != 5 {
+		t.Errorf("MaxRetries = %d, want 5 (from project)", result.Retry.MaxRetries)
+	}
+	if result.Retry.BaseDelay != 1000 {
+		t.Errorf("BaseDelay = %d, want 1000 (from global)", result.Retry.BaseDelay)
+	}
+}
+
+func TestMerge_Terminal(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{}
+	project := &Settings{Terminal: &TerminalSettings{LineWidth: 120, Pager: true}}
+
+	result := merge(global, project)
+	if result.Terminal == nil {
+		t.Fatal("Terminal should be set")
+	}
+	if result.Terminal.LineWidth != 120 {
+		t.Errorf("LineWidth = %d, want 120", result.Terminal.LineWidth)
+	}
+	if !result.Terminal.Pager {
+		t.Error("Pager should be true")
+	}
+}
+
+func TestMerge_ModelOverrides(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		ModelOverrides: map[string]ModelOverride{
+			"model-a": {BaseURL: "https://a.example.com"},
+		},
+	}
+	project := &Settings{
+		ModelOverrides: map[string]ModelOverride{
+			"model-b": {MaxOutputTokens: 8192},
+		},
+	}
+
+	result := merge(global, project)
+	if len(result.ModelOverrides) != 2 {
+		t.Errorf("ModelOverrides length = %d, want 2", len(result.ModelOverrides))
+	}
+	if result.ModelOverrides["model-a"].BaseURL != "https://a.example.com" {
+		t.Error("model-a override should be preserved from global")
+	}
+	if result.ModelOverrides["model-b"].MaxOutputTokens != 8192 {
+		t.Error("model-b override should be set from project")
+	}
+}
+
 func TestLoadFile_CompactionSettings(t *testing.T) {
 	t.Parallel()
 

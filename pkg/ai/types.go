@@ -90,14 +90,25 @@ const (
 
 // Model defines a model's metadata.
 type Model struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Api             Api    `json:"api"`
-	MaxTokens       int    `json:"max_tokens"`
-	MaxOutputTokens int    `json:"max_output_tokens"`
-	SupportsImages  bool   `json:"supports_images"`
-	SupportsTools   bool   `json:"supports_tools"`
-	SupportsThinking bool  `json:"supports_thinking"`
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+	Api              Api               `json:"api"`
+	MaxTokens        int               `json:"max_tokens"`
+	MaxOutputTokens  int               `json:"max_output_tokens"`
+	ContextWindow    int               `json:"context_window,omitempty"`
+	SupportsImages   bool              `json:"supports_images"`
+	SupportsTools    bool              `json:"supports_tools"`
+	SupportsThinking bool              `json:"supports_thinking"`
+	BaseURL          string            `json:"base_url,omitempty"`
+	CustomHeaders    map[string]string `json:"custom_headers,omitempty"`
+}
+
+// EffectiveContextWindow returns ContextWindow if set, otherwise MaxTokens.
+func (m *Model) EffectiveContextWindow() int {
+	if m.ContextWindow > 0 {
+		return m.ContextWindow
+	}
+	return m.MaxTokens
 }
 
 // Context holds the messages and tools for an LLM call.

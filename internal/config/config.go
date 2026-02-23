@@ -48,6 +48,60 @@ type Settings struct {
 
 	// Theme name or path to a custom JSON theme file
 	Theme string `json:"theme,omitempty"`
+
+	// ModelOverrides allows per-model customization of BaseURL, headers, etc.
+	ModelOverrides map[string]ModelOverride `json:"modelOverrides,omitempty"`
+
+	// Retry controls retry behavior for API calls
+	Retry *RetrySettings `json:"retry,omitempty"`
+
+	// Terminal controls terminal rendering behavior
+	Terminal *TerminalSettings `json:"terminal,omitempty"`
+}
+
+// ModelOverride allows per-model customization.
+type ModelOverride struct {
+	BaseURL          string            `json:"baseURL,omitempty"`
+	CustomHeaders    map[string]string `json:"customHeaders,omitempty"`
+	MaxOutputTokens  int               `json:"maxOutputTokens,omitempty"`
+	ContextWindow    int               `json:"contextWindow,omitempty"`
+}
+
+// RetrySettings controls retry behavior for API calls.
+type RetrySettings struct {
+	MaxRetries int `json:"maxRetries,omitempty"` // default 3
+	BaseDelay  int `json:"baseDelay,omitempty"`  // milliseconds; default 1000
+	MaxDelay   int `json:"maxDelay,omitempty"`   // milliseconds; default 30000
+}
+
+// EffectiveMaxRetries returns MaxRetries or default (3).
+func (r *RetrySettings) EffectiveMaxRetries() int {
+	if r == nil || r.MaxRetries == 0 {
+		return 3
+	}
+	return r.MaxRetries
+}
+
+// EffectiveBaseDelay returns BaseDelay or default (1000ms).
+func (r *RetrySettings) EffectiveBaseDelay() int {
+	if r == nil || r.BaseDelay == 0 {
+		return 1000
+	}
+	return r.BaseDelay
+}
+
+// EffectiveMaxDelay returns MaxDelay or default (30000ms).
+func (r *RetrySettings) EffectiveMaxDelay() int {
+	if r == nil || r.MaxDelay == 0 {
+		return 30000
+	}
+	return r.MaxDelay
+}
+
+// TerminalSettings controls terminal rendering.
+type TerminalSettings struct {
+	LineWidth int  `json:"lineWidth,omitempty"` // max line width; 0 = auto-detect
+	Pager     bool `json:"pager,omitempty"`     // enable pager for long output
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -355,6 +409,35 @@ func merge(global, project *Settings) *Settings {
 	}
 	if len(project.Sandbox.AllowedDomains) > 0 {
 		result.Sandbox.AllowedDomains = project.Sandbox.AllowedDomains
+	}
+
+	// ModelOverrides: merge by model ID
+	if len(project.ModelOverrides) > 0 {
+		if result.ModelOverrides == nil {
+			result.ModelOverrides = make(map[string]ModelOverride)
+		}
+		maps.Copy(result.ModelOverrides, project.ModelOverrides)
+	}
+
+	// Retry: override if present
+	if project.Retry != nil {
+		if result.Retry == nil {
+			result.Retry = &RetrySettings{}
+		}
+		if project.Retry.MaxRetries != 0 {
+			result.Retry.MaxRetries = project.Retry.MaxRetries
+		}
+		if project.Retry.BaseDelay != 0 {
+			result.Retry.BaseDelay = project.Retry.BaseDelay
+		}
+		if project.Retry.MaxDelay != 0 {
+			result.Retry.MaxDelay = project.Retry.MaxDelay
+		}
+	}
+
+	// Terminal: override if present
+	if project.Terminal != nil {
+		result.Terminal = project.Terminal
 	}
 
 	return &result

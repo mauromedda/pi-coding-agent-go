@@ -10,6 +10,44 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
+// ApplyModelOverrides applies per-model and global settings overrides to a model.
+func ApplyModelOverrides(m *ai.Model, settings *Settings) {
+	if settings == nil {
+		return
+	}
+
+	// Global BaseURL override
+	if settings.BaseURL != "" && m.BaseURL == "" {
+		m.BaseURL = settings.BaseURL
+	}
+
+	// Per-model overrides
+	if settings.ModelOverrides == nil {
+		return
+	}
+	override, ok := settings.ModelOverrides[m.ID]
+	if !ok {
+		return
+	}
+	if override.BaseURL != "" {
+		m.BaseURL = override.BaseURL
+	}
+	if override.MaxOutputTokens != 0 {
+		m.MaxOutputTokens = override.MaxOutputTokens
+	}
+	if override.ContextWindow != 0 {
+		m.ContextWindow = override.ContextWindow
+	}
+	if len(override.CustomHeaders) > 0 {
+		if m.CustomHeaders == nil {
+			m.CustomHeaders = make(map[string]string)
+		}
+		for k, v := range override.CustomHeaders {
+			m.CustomHeaders[k] = v
+		}
+	}
+}
+
 // ResolveModel finds a model by ID or alias.
 // Checks built-in models first, then handles provider-prefixed custom models.
 func ResolveModel(id string) (*ai.Model, error) {

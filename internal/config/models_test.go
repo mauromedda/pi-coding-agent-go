@@ -74,3 +74,100 @@ func TestResolveModel_UnknownBareModel(t *testing.T) {
 		t.Fatal("expected error for unknown bare model ID")
 	}
 }
+
+func TestApplyModelOverrides_GlobalBaseURL(t *testing.T) {
+	t.Parallel()
+
+	m := &ai.Model{ID: "test-model", MaxTokens: 100000}
+	settings := &Settings{BaseURL: "https://proxy.example.com"}
+
+	ApplyModelOverrides(m, settings)
+
+	if m.BaseURL != "https://proxy.example.com" {
+		t.Errorf("BaseURL = %q, want proxy URL", m.BaseURL)
+	}
+}
+
+func TestApplyModelOverrides_PerModel(t *testing.T) {
+	t.Parallel()
+
+	m := &ai.Model{ID: "test-model", MaxTokens: 100000, MaxOutputTokens: 4096}
+	settings := &Settings{
+		ModelOverrides: map[string]ModelOverride{
+			"test-model": {
+				BaseURL:         "https://custom.example.com",
+				MaxOutputTokens: 8192,
+				ContextWindow:   200000,
+				CustomHeaders:   map[string]string{"X-Custom": "value"},
+			},
+		},
+	}
+
+	ApplyModelOverrides(m, settings)
+
+	if m.BaseURL != "https://custom.example.com" {
+		t.Errorf("BaseURL = %q, want custom URL", m.BaseURL)
+	}
+	if m.MaxOutputTokens != 8192 {
+		t.Errorf("MaxOutputTokens = %d, want 8192", m.MaxOutputTokens)
+	}
+	if m.ContextWindow != 200000 {
+		t.Errorf("ContextWindow = %d, want 200000", m.ContextWindow)
+	}
+	if m.CustomHeaders["X-Custom"] != "value" {
+		t.Errorf("CustomHeaders[X-Custom] = %q, want 'value'", m.CustomHeaders["X-Custom"])
+	}
+}
+
+func TestApplyModelOverrides_PerModelOverridesGlobalBaseURL(t *testing.T) {
+	t.Parallel()
+
+	m := &ai.Model{ID: "test-model"}
+	settings := &Settings{
+		BaseURL: "https://global.example.com",
+		ModelOverrides: map[string]ModelOverride{
+			"test-model": {BaseURL: "https://specific.example.com"},
+		},
+	}
+
+	ApplyModelOverrides(m, settings)
+
+	// Per-model should win: global sets it first, then per-model overrides
+	if m.BaseURL != "https://specific.example.com" {
+		t.Errorf("BaseURL = %q, want specific URL", m.BaseURL)
+	}
+}
+
+func TestApplyModelOverrides_NilSettings(t *testing.T) {
+	t.Parallel()
+
+	m := &ai.Model{ID: "test-model", MaxTokens: 100000}
+	ApplyModelOverrides(m, nil) // should not panic
+
+	if m.MaxTokens != 100000 {
+		t.Error("model should be unchanged with nil settings")
+	}
+}
+
+func TestModel_EffectiveContextWindow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		contextWindow int
+		maxTokens     int
+		want          int
+	}{
+		{"uses ContextWindow when set", 200000, 128000, 200000},
+		{"falls back to MaxTokens", 0, 128000, 128000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &ai.Model{ContextWindow: tt.contextWindow, MaxTokens: tt.maxTokens}
+			if got := m.EffectiveContextWindow(); got != tt.want {
+				t.Errorf("EffectiveContextWindow() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
