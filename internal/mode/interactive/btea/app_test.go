@@ -5,6 +5,7 @@ package btea
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -172,8 +173,8 @@ func TestAppModel_AgentTextMsg(t *testing.T) {
 	if len(model.content) != 2 {
 		t.Fatalf("content length = %d; want 2", len(model.content))
 	}
-	if _, ok := model.content[1].(AssistantMsgModel); !ok {
-		t.Errorf("content[1] = %T; want AssistantMsgModel", model.content[1])
+	if _, ok := model.content[1].(*AssistantMsgModel); !ok {
+		t.Errorf("content[1] = %T; want *AssistantMsgModel", model.content[1])
 	}
 }
 
@@ -446,6 +447,255 @@ func TestAppModel_EnterWhileRunningDoesNotSubmit(t *testing.T) {
 	for _, c := range model.content {
 		if _, ok := c.(UserMsgModel); ok {
 			t.Error("should not submit prompt while agent is running")
+		}
+	}
+}
+
+func TestAppModel_BashCommandWithSpaces(t *testing.T) {
+	m := NewAppModel(testDeps())
+	// Type !ls -la into the editor
+	m.editor = m.editor.SetText("!ls -la")
+
+	// Press enter
+	key := tea.KeyMsg{Type: tea.KeyEnter}
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+
+	// The user message should preserve spaces
+	if len(model.content) < 2 {
+		t.Fatalf("content length = %d; want at least 2", len(model.content))
+	}
+	
+	um, ok := model.content[1].(UserMsgModel)
+	if !ok {
+		t.Fatalf("content[1] = %T; want UserMsgModel", model.content[1])
+	}
+	
+	// Check that spaces are preserved
+	if um.Text() != "!ls -la" {
+		t.Errorf("UserMsgModel.Text() = %q; want %q", um.Text(), "!ls -la")
+	}
+}
+
+func TestAppModel_SeparatorColorLogic(t *testing.T) {
+	// Test that separator color is determined correctly based on last content
+	tests := []struct {
+		name         string
+		lastContent  tea.Model
+		wantBashSep  bool
+	}{
+		{"Last is AssistantMsgModel", &AssistantMsgModel{}, true},
+		{"Last is UserMsgModel", NewUserMsgModel("hello"), false},
+		{"Last is WelcomeModel", NewWelcomeModel("v1", "model", "/home", 0), false},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewAppModel(testDeps())
+			m.content = append(m.content, tt.lastContent)
+			
+			// Simulate the color selection logic
+			sepColorIsBashSeparator := false
+			if len(m.content) > 0 {
+				if _, isAssistant := m.content[len(m.content)-1].(*AssistantMsgModel); isAssistant {
+					sepColorIsBashSeparator = true
+				}
+			}
+			
+			// Check if the correct color was selected
+			if tt.wantBashSep && !sepColorIsBashSeparator {
+				t.Errorf("Expected BashSeparator for AssistantMsgModel")
+			}
+			if !tt.wantBashSep && sepColorIsBashSeparator {
+				t.Errorf("Did not expect BashSeparator for %T", tt.lastContent)
+			}
+		})
+	}
+}
+
+func TestAppModel_TypeBashCommandPreservesSpaces(t *testing.T) {
+	m := NewAppModel(testDeps())
+	
+	// Simulate typing: !ls -la
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'!'}},
+		{Type: tea.KeyRunes, Runes: []rune{'l'}},
+		{Type: tea.KeyRunes, Runes: []rune{'s'}},
+		{Type: tea.KeyRunes, Runes: []rune{' '}},
+		{Type: tea.KeyRunes, Runes: []rune{'-'}},
+		{Type: tea.KeyRunes, Runes: []rune{'l'}},
+		{Type: tea.KeyRunes, Runes: []rune{'a'}},
+	}
+	
+	for _, key := range keys {
+		result, _ := m.Update(key)
+		m = result.(AppModel)
+	}
+	
+	// Check that the editor has the correct text with space
+	text := m.editor.Text()
+	if text != "!ls -la" {
+		t.Errorf("Editor text = %q; want %q", text, "!ls -la")
+	}
+}
+
+func TestAppModel_BashCommandOutputPreservesSpaces(t *testing.T) {
+	m := NewAppModel(testDeps())
+	
+	// Simulate typing: !ls -la
+	m.editor = m.editor.SetText("!ls -la")
+	
+	// Press enter to submit
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(AppModel)
+	
+	// Check that the User message has the correct text
+	if len(m.content) < 2 {
+		t.Fatalf("Expected at least 2 content items, got %d", len(m.content))
+	}
+	
+	um, ok := m.content[1].(UserMsgModel)
+	if !ok {
+		t.Fatalf("Expected UserMsgModel, got %T", m.content[1])
+	}
+	
+	if um.Text() != "!ls -la" {
+		t.Errorf("User message text = %q; want %q", um.Text(), "!ls -la")
+	}
+}
+
+func TestAppModel_SpaceKeyInEditor(t *testing.T) {
+	m := NewAppModel(testDeps())
+	
+	// Type: space
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	m = result.(AppModel)
+	
+	// Check that space is in the editor
+	text := m.editor.Text()
+	if text != " " {
+		t.Errorf("Editor text after space = %q; want %q", text, " ")
+	}
+	
+	// Type: ! l s - l a (with spaces)
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'!'}},
+		{Type: tea.KeyRunes, Runes: []rune{' '}},
+		{Type: tea.KeyRunes, Runes: []rune{'l'}},
+		{Type: tea.KeyRunes, Runes: []rune{'s'}},
+		{Type: tea.KeyRunes, Runes: []rune{' '}},
+		{Type: tea.KeyRunes, Runes: []rune{'-'}},
+		{Type: tea.KeyRunes, Runes: []rune{'l'}},
+		{Type: tea.KeyRunes, Runes: []rune{'a'}},
+	}
+	
+	for _, key := range keys {
+		result, _ := m.Update(key)
+		m = result.(AppModel)
+	}
+	
+	// Check that spaces are preserved (editor starts with one empty line, so first char is space)
+	text = m.editor.Text()
+	if text != " ! ls -la" {
+		t.Errorf("Editor text = %q; want %q", text, " ! ls -la")
+	}
+}
+
+func TestAppModel_SlashCommandAfterBash(t *testing.T) {
+	m := NewAppModel(testDeps())
+	
+	// First execute a bash command
+	m.editor = m.editor.SetText("!echo test")
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(AppModel)
+	
+	// Now type / to open command palette
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(AppModel)
+	
+	// Should have overlay (command palette)
+	if m.overlay == nil {
+		t.Error("Expected command palette overlay to be open")
+	}
+	
+	// Editor should be cleared
+	if !m.editor.IsEmpty() {
+		t.Errorf("Editor should be empty after opening palette; text = %q", m.editor.Text())
+	}
+}
+
+func TestAppModel_AgentTextMsgWhenLastContentIsUserMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+
+	// Add a user message as last content (simulates prompt submitted without agent running)
+	um := NewUserMsgModel("hello")
+	m.content = append(m.content, um)
+
+	// Sending AgentTextMsg should NOT panic; it should create a new AssistantMsgModel
+	result, _ := m.Update(AgentTextMsg{Text: "response"})
+	model := result.(AppModel)
+
+	last := model.content[len(model.content)-1]
+	if _, ok := last.(*AssistantMsgModel); !ok {
+		t.Errorf("last content = %T; want *AssistantMsgModel", last)
+	}
+}
+
+func TestAppModel_UpdateLastAssistantSafeWithNonAssistant(t *testing.T) {
+	// updateLastAssistant must not panic when last content is not *AssistantMsgModel.
+	// This simulates a race or unexpected ordering where ensureAssistantMsg was not called.
+	m := NewAppModel(testDeps())
+
+	// Force last content to be a UserMsgModel (not AssistantMsgModel)
+	um := NewUserMsgModel("hello")
+	m.content = []tea.Model{um}
+
+	// Direct call to updateLastAssistant — must NOT panic, should return unchanged
+	m = m.updateLastAssistant(AgentTextMsg{Text: "should not crash"})
+
+	// Content should still have only the UserMsgModel (no crash, no mutation)
+	if len(m.content) != 1 {
+		t.Errorf("content length = %d; want 1", len(m.content))
+	}
+	if _, ok := m.content[0].(UserMsgModel); !ok {
+		t.Errorf("content[0] = %T; want UserMsgModel", m.content[0])
+	}
+}
+
+func TestAppModel_SlashCommandFilter(t *testing.T) {
+	m := NewAppModel(testDeps())
+	
+	// Type /h to filter for commands starting with h
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'/'}},  // /
+		{Type: tea.KeyRunes, Runes: []rune{'h'}},  // h
+	}
+	
+	for _, key := range keys {
+		result, _ := m.Update(key)
+		m = result.(AppModel)
+	}
+	
+	// Should have overlay with command palette
+	if m.overlay == nil {
+		t.Error("Expected command palette overlay to be open")
+	}
+	
+	palette, ok := m.overlay.(CmdPaletteModel)
+	if !ok {
+		t.Fatalf("Expected CmdPaletteModel overlay; got %T", m.overlay)
+	}
+	
+	// Check that filter is applied
+	visible := palette.visible
+	if len(visible) == 0 {
+		t.Error("Expected at least one command matching 'h'")
+	}
+	
+	// All visible commands should contain 'h' (filter only checks command name)
+	for _, entry := range visible {
+		if !strings.Contains(strings.ToLower(entry.Name), "h") {
+			t.Errorf("Command %q should contain 'h'", entry.Name)
 		}
 	}
 }

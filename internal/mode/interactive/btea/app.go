@@ -286,13 +286,37 @@ func (m AppModel) View() string {
 		sections = append(sections, c.View())
 	}
 
-	sep := NewSeparatorModel()
-	sep.width = m.width
+	s := Styles()
+	sepWidth := m.width
 
+	// Determine separator color based on editor text and last content
+	// If editor starts with !, use orange separator
+	// Otherwise, if last content is bash output (AssistantMsgModel), use orange separator
+	// Otherwise, use grey (Border) separator
+	sepColor := s.Border
+	if !m.editor.IsEmpty() && strings.HasPrefix(m.editor.Text(), "!") {
+		sepColor = s.BashSeparator
+	} else if len(m.content) > 0 {
+		// Check if last content is AssistantMsgModel (which could contain bash output)
+		// or BashOutputModel (which displays bash command results)
+		if _, isAssistant := m.content[len(m.content)-1].(*AssistantMsgModel); isAssistant {
+			sepColor = s.BashSeparator
+		} else if _, isBashOutput := m.content[len(m.content)-1].(*BashOutputModel); isBashOutput {
+			sepColor = s.BashSeparator
+		}
+	}
+
+	// Add separator before editor
+	sep := strings.Repeat("─", sepWidth)
 	sections = append(sections,
-		sep.View(),
+		sepColor.Render(sep),
 		m.editor.View(),
-		sep.View(),
+	)
+
+	// Footer separator is always grey (Border color)
+	footerSep := strings.Repeat("─", sepWidth)
+	sections = append(sections,
+		s.Border.Render(footerSep),
 		m.footer.View(),
 	)
 
@@ -342,8 +366,16 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 			switch msg.Runes[0] {
 			case '/':
-				if !m.agentRunning && m.editor.IsEmpty() {
-					m.overlay = m.buildCmdPalette()
+				if !m.agentRunning {
+					// Build command palette with current editor text as filter
+					palette := m.buildCmdPalette()
+					editorText := m.editor.Text()
+					if editorText != "" {
+						palette = palette.SetFilter(editorText)
+					}
+					m.overlay = palette
+					// Clear the editor after opening palette
+					m.editor = NewEditorModel()
 					return m, nil
 				}
 			case '@':
@@ -376,14 +408,45 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 	// Add to conversation history
 	m.messages = append(m.messages, ai.NewTextMessage(ai.RoleUser, text))
 
-	// Check for slash commands
+	// Check for commands
 	if commands.IsCommand(text) {
+		// Handle bash commands (starting with !)
+		if text[0] == '!' {
+			return m.handleBashCommand(text[1:])
+		}
+		// Handle slash commands
 		return m.handleSlashCommand(text)
 	}
 
 	// Start agent
 	m.agentRunning = true
 	return m, m.startAgentCmd()
+}
+
+func (m AppModel) handleBashCommand(command string) (AppModel, tea.Cmd) {
+	// Run bash command synchronously and show result
+	result, err := runBashCommand(command)
+	if err != nil {
+		result = fmt.Sprintf("Error: %v", err)
+	}
+
+	// Create bash output model with proper styling
+	bom := NewBashOutputModel(command)
+	bom.AddOutput(result)
+	bom.width = m.width
+	m.content = append(m.content, bom)
+	return m, nil
+}
+
+func runBashCommand(command string) (string, error) {
+	// Use /bin/bash with full path to avoid PATH issues
+	cmd := exec.Command("/bin/bash", "-c", command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Include the actual bash output in the error message
+		return "", fmt.Errorf("command failed: %w\n%s", err, output)
+	}
+	return string(output), nil
 }
 
 func (m AppModel) handleSlashCommand(text string) (AppModel, tea.Cmd) {
@@ -408,7 +471,7 @@ func (m AppModel) handleSlashCommand(text string) (AppModel, tea.Cmd) {
 	if result != "" {
 		am := NewAssistantMsgModel()
 		updated, _ := am.Update(AgentTextMsg{Text: result})
-		m.content = append(m.content, updated)
+		m.content = append(m.content, updated.(*AssistantMsgModel))
 	}
 	return m, nil
 }
@@ -466,6 +529,7 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 func (m AppModel) propagateSize(msg tea.WindowSizeMsg) AppModel {
 	for i := range m.content {
 		updated, _ := m.content[i].Update(msg)
+		// Handle the case where Update returns a pointer (AssistantMsgModel)
 		m.content[i] = updated
 	}
 	updated, _ := m.editor.Update(msg)
@@ -477,11 +541,11 @@ func (m AppModel) propagateSize(msg tea.WindowSizeMsg) AppModel {
 
 func (m AppModel) ensureAssistantMsg() AppModel {
 	if len(m.content) == 0 {
-		m.content = append(m.content, NewAssistantMsgModel())
+		m.content = append(m.content, &AssistantMsgModel{})
 		return m
 	}
-	if _, ok := m.content[len(m.content)-1].(AssistantMsgModel); !ok {
-		m.content = append(m.content, NewAssistantMsgModel())
+	if _, ok := m.content[len(m.content)-1].(*AssistantMsgModel); !ok {
+		m.content = append(m.content, &AssistantMsgModel{})
 	}
 	return m
 }
@@ -491,8 +555,11 @@ func (m AppModel) updateLastAssistant(msg tea.Msg) AppModel {
 		return m
 	}
 	idx := len(m.content) - 1
+	if _, ok := m.content[idx].(*AssistantMsgModel); !ok {
+		return m
+	}
 	updated, _ := m.content[idx].Update(msg)
-	m.content[idx] = updated
+	m.content[idx] = updated.(*AssistantMsgModel)
 	return m
 }
 
