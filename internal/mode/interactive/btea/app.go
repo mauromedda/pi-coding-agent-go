@@ -248,7 +248,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ModelSelectedMsg:
 		m.overlay = nil
 		m.editor = m.editor.SetFocused(true)
-		// Placeholder: model switch will be wired in a later phase
+		// Apply model switch
+		if m.deps.Model == nil {
+			m.deps.Model = &ai.Model{}
+		}
+		m.deps.Model.Name = msg.Model.Name
+		m.deps.Model.ID = msg.Model.ID
+		m.footer = m.footer.WithModel(msg.Model.Name)
 		return m, nil
 
 	case ModelSelectorDismissMsg:
@@ -598,6 +604,11 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.footer.cost, 0, 0,
 			)
 		}
+		return m, nil
+
+	case "alt+m":
+		// Open model selector overlay
+		m.overlay = NewModelSelectorModel(m.deps.AvailableModels)
 		return m, nil
 
 	case "alt+i":

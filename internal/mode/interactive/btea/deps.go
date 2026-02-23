@@ -26,4 +26,5 @@ type AppDeps struct {
 	ScopedModels         *config.ScopedModelsConfig
 	PermissionMode       permission.Mode
 	Session              *session.Session
+	AvailableModels      []ModelEntry
 }
