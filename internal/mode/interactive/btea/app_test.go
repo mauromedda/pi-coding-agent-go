@@ -284,13 +284,17 @@ func TestAppModel_CmdPaletteSelectMsg(t *testing.T) {
 	if model.overlay != nil {
 		t.Error("overlay should be nil after CmdPaletteSelectMsg")
 	}
-	// Auto-submit: editor should be cleared, "/help" submitted as user message
-	if model.editor.Text() != "" {
-		t.Errorf("editor text = %q; want empty (auto-submitted)", model.editor.Text())
+	// Enter on palette places command text in editor (NOT auto-submit)
+	if got := model.editor.Text(); got != "/help" {
+		t.Errorf("editor text = %q; want %q", got, "/help")
 	}
-	// Content should have the welcome model + user message + command result
-	if len(model.content) < 2 {
-		t.Errorf("content length = %d; want >= 2 (user msg + result)", len(model.content))
+	// Content should NOT have new user message (only welcome)
+	if len(model.content) != 1 {
+		t.Errorf("content length = %d; want 1 (only welcome, no submit)", len(model.content))
+	}
+	// Editor should be focused
+	if !model.editor.focused {
+		t.Error("editor should be focused after palette select")
 	}
 }
 
@@ -659,9 +663,9 @@ func TestAppModel_SlashCommandAfterBash(t *testing.T) {
 		t.Error("Expected command palette overlay to be open")
 	}
 	
-	// Editor should be cleared
-	if !m.editor.IsEmpty() {
-		t.Errorf("Editor should be empty after opening palette; text = %q", m.editor.Text())
+	// Editor should have "/" (not cleared)
+	if got := m.editor.Text(); got != "/" {
+		t.Errorf("editor text = %q; want %q", got, "/")
 	}
 }
 
@@ -738,5 +742,59 @@ func TestAppModel_SlashCommandFilter(t *testing.T) {
 		if !strings.Contains(strings.ToLower(entry.Name), "h") {
 			t.Errorf("Command %q should contain 'h'", entry.Name)
 		}
+	}
+
+	// Editor should mirror the typed text: "/h"
+	if got := m.editor.Text(); got != "/h" {
+		t.Errorf("editor text = %q; want %q", got, "/h")
+	}
+}
+
+func TestAppModel_SlashKeyKeepsSlashInEditor(t *testing.T) {
+	m := NewAppModel(testDeps())
+	// Type / to open palette
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	model := result.(AppModel)
+
+	// Overlay should be open
+	if model.overlay == nil {
+		t.Fatal("overlay = nil; want CmdPaletteModel")
+	}
+	// Editor should contain the "/" character
+	if got := model.editor.Text(); got != "/" {
+		t.Errorf("editor text = %q; want %q", got, "/")
+	}
+}
+
+func TestAppModel_TabCompletesFromPalette(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+
+	// Open palette
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(AppModel)
+
+	// Get selected command name from palette
+	palette, ok := m.overlay.(CmdPaletteModel)
+	if !ok {
+		t.Fatal("expected CmdPaletteModel overlay")
+	}
+	selectedName := palette.Selected()
+	if selectedName == "" {
+		t.Fatal("no command selected in palette")
+	}
+
+	// Simulate CmdPaletteSelectMsg (sent by palette on Tab or Enter)
+	result, _ = m.Update(CmdPaletteSelectMsg{Name: selectedName})
+	m = result.(AppModel)
+
+	// Editor should have the command text
+	want := "/" + selectedName
+	if got := m.editor.Text(); got != want {
+		t.Errorf("editor text = %q; want %q", got, want)
+	}
+	// Overlay dismissed
+	if m.overlay != nil {
+		t.Error("overlay should be nil after tab completion")
 	}
 }

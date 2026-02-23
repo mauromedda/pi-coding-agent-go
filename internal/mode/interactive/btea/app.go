@@ -190,9 +190,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Overlay result messages (always handled by root, even when overlay is active) ---
 	case CmdPaletteSelectMsg:
 		m.overlay = nil
-		m.editor = m.editor.SetFocused(true)
-		// Auto-submit the selected command (matches competitor behavior)
-		return m.submitPrompt("/" + msg.Name)
+		// Place command text in editor for user to review/submit (not auto-submit)
+		m.editor = m.editor.SetFocused(true).SetText("/" + msg.Name)
+		return m, nil
 
 	case CmdPaletteDismissMsg:
 		m.overlay = nil
@@ -244,6 +244,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		// Route to overlay if active (key presses, etc.)
 		if m.overlay != nil {
+			// When command palette is active, mirror typed/deleted chars to editor
+			if _, isPalette := m.overlay.(CmdPaletteModel); isPalette {
+				if keyMsg, isKey := msg.(tea.KeyMsg); isKey {
+					if keyMsg.Type == tea.KeyRunes || keyMsg.Type == tea.KeyBackspace {
+						editorUpdated, _ := m.editor.Update(keyMsg)
+						m.editor = editorUpdated.(EditorModel)
+					}
+				}
+			}
 			return m.updateOverlay(msg)
 		}
 	}
@@ -413,15 +422,9 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch msg.Runes[0] {
 			case '/':
 				if !m.agentRunning {
-					// Build command palette with current editor text as filter
-					palette := m.buildCmdPalette()
-					editorText := m.editor.Text()
-					if editorText != "" {
-						palette = palette.SetFilter(editorText)
-					}
-					m.overlay = palette
-					// Clear editor but preserve configuration
-					m.editor = m.resetEditor()
+					// Keep "/" in editor and open command palette
+					m.editor = m.editor.SetText("/")
+					m.overlay = m.buildCmdPalette()
 					return m, nil
 				}
 			case '@':

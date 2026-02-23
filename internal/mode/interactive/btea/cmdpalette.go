@@ -72,7 +72,7 @@ func (m CmdPaletteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveUp()
 		case tea.KeyDown:
 			m.moveDown()
-		case tea.KeyEnter:
+		case tea.KeyEnter, tea.KeyTab:
 			name := m.Selected()
 			if name != "" {
 				return m, func() tea.Msg { return CmdPaletteSelectMsg{Name: name} }
