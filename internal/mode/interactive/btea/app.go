@@ -105,6 +105,10 @@ type AppModel struct {
 	// Compaction state
 	compacting bool
 
+	// Retry state
+	retryCount int       // number of retries attempted for current error
+	retryAt    time.Time // when to retry next
+
 	// Cached separator string (recomputed only on WindowSizeMsg)
 	cachedSep string
 }
@@ -460,9 +464,37 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case AgentErrorMsg:
+		// Check for rate-limit errors and auto-retry
+		if isRateLimited(msg.Err) && m.retryCount < maxRetries {
+			m.retryCount++
+			backoff := retryBackoff(m.retryCount)
+			m.retryAt = time.Now().Add(backoff)
+			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				remaining := time.Until(m.retryAt)
+				if remaining < 0 {
+					remaining = 0
+				}
+				return RetryTickMsg{Remaining: remaining}
+			})
+		}
 		m = m.ensureAssistantMsg()
 		m = m.updateLastAssistant(msg)
 		return m, nil
+
+	case RetryTickMsg:
+		if msg.Remaining > 0 {
+			// Keep ticking
+			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				remaining := time.Until(m.retryAt)
+				if remaining < 0 {
+					remaining = 0
+				}
+				return RetryTickMsg{Remaining: remaining}
+			})
+		}
+		// Timer expired; restart the agent
+		m.agentRunning = true
+		return m, m.startAgentCmd()
 
 	case AgentCancelMsg:
 		m = m.ensureAssistantMsg()
@@ -821,6 +853,33 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		// Return AgentDoneMsg with the updated conversation messages.
 		return AgentDoneMsg{Messages: llmCtx.Messages}
 	}
+}
+
+// --- Retry ---
+
+const maxRetries = 3
+
+// retryBackoff returns the backoff duration for the given retry attempt (1-based).
+func retryBackoff(attempt int) time.Duration {
+	switch attempt {
+	case 1:
+		return 2 * time.Second
+	case 2:
+		return 4 * time.Second
+	default:
+		return 8 * time.Second
+	}
+}
+
+// isRateLimited returns true if the error looks like a rate-limit or overload.
+func isRateLimited(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "rate limit") ||
+		strings.Contains(msg, "429") ||
+		strings.Contains(msg, "overloaded")
 }
 
 // --- Compaction ---

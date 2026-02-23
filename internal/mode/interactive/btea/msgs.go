@@ -4,6 +4,8 @@
 package btea
 
 import (
+	"time"
+
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/internal/types"
@@ -50,6 +52,11 @@ type AgentErrorMsg struct{ Err error }
 
 // AgentCancelMsg signals that the agent was cancelled by the user.
 type AgentCancelMsg struct{}
+
+// RetryTickMsg drives the retry countdown timer.
+type RetryTickMsg struct {
+	Remaining time.Duration
+}
 
 // --- Permission flow ---
 
