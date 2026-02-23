@@ -413,6 +413,70 @@ func TestMatchPath(t *testing.T) {
 	}
 }
 
+func TestLoad_Parallel_LevelOrderPreserved(t *testing.T) {
+	project := t.TempDir()
+	home := t.TempDir()
+
+	// Set up all 5 levels
+	rulesDir := filepath.Join(project, ".pi-go", "rules")
+	mkdirAll(t, rulesDir)
+	writeFile(t, filepath.Join(rulesDir, "rule1.md"), "project rule")
+
+	writeFile(t, filepath.Join(project, "CLAUDE.md"), "claude project")
+
+	claudeRulesDir := filepath.Join(project, ".claude", "rules")
+	mkdirAll(t, claudeRulesDir)
+	writeFile(t, filepath.Join(claudeRulesDir, "r1.md"), "claude rule")
+
+	mkdirAll(t, filepath.Join(home, ".claude"))
+	writeFile(t, filepath.Join(home, ".claude", "CLAUDE.md"), "user claude")
+
+	autoDir := AutoMemoryDir(project, home)
+	mkdirAll(t, autoDir)
+	writeFile(t, filepath.Join(autoDir, "auto.md"), "auto memory")
+
+	entries, err := Load(project, home)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(entries) < 5 {
+		t.Fatalf("expected at least 5 entries, got %d", len(entries))
+	}
+
+	// Verify strict level ordering is preserved after parallel load
+	for i := 1; i < len(entries); i++ {
+		if entries[i].Level < entries[i-1].Level {
+			t.Errorf("entries not sorted by level: [%d].Level=%d < [%d].Level=%d",
+				i, entries[i].Level, i-1, entries[i-1].Level)
+		}
+	}
+}
+
+func TestLoad_Parallel_RaceDetector(t *testing.T) {
+	project := t.TempDir()
+	home := t.TempDir()
+
+	// Set up files
+	rulesDir := filepath.Join(project, ".pi-go", "rules")
+	mkdirAll(t, rulesDir)
+	writeFile(t, filepath.Join(rulesDir, "rule1.md"), "rule content")
+	writeFile(t, filepath.Join(project, "CLAUDE.md"), "claude content")
+	mkdirAll(t, filepath.Join(home, ".claude"))
+	writeFile(t, filepath.Join(home, ".claude", "CLAUDE.md"), "user claude")
+
+	// Run 50 times; with -race flag this catches data races
+	for range 50 {
+		entries, err := Load(project, home)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if len(entries) == 0 {
+			t.Error("expected non-empty entries")
+		}
+	}
+}
+
 // Helpers
 
 func writeFile(t *testing.T, path, content string) {

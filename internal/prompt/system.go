@@ -155,25 +155,16 @@ func StyleInstructions(style string) string {
 }
 
 // LoadContextFiles reads context files from standard locations.
+// Note: CLAUDE.md is intentionally excluded here because it is already
+// loaded by memory.Load at the ClaudeCompat level.
 func LoadContextFiles(projectRoot string) []ContextFile {
 	var files []ContextFile
 
-	// Check for .pi-go/context
-	paths := []struct {
-		path string
-		name string
-	}{
-		{projectRoot + "/.pi-go/CONTEXT.md", "project-context"},
-		{projectRoot + "/CLAUDE.md", "claude-md"},
-	}
-
-	for _, p := range paths {
-		data, err := os.ReadFile(p.path)
-		if err != nil {
-			continue
-		}
+	path := projectRoot + "/.pi-go/CONTEXT.md"
+	data, err := os.ReadFile(path)
+	if err == nil {
 		files = append(files, ContextFile{
-			Name:    p.name,
+			Name:    "project-context",
 			Content: string(data),
 		})
 	}

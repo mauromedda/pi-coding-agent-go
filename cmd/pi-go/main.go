@@ -79,8 +79,6 @@ func run(args cliArgs) error {
 		pilog.SetLevel(pilog.LevelDebug)
 	}
 
-	registerProviders()
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
@@ -268,23 +266,7 @@ func run(args cliArgs) error {
 	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold)
 }
 
-// registerProviders registers all built-in AI provider factories with no auth.
-func registerProviders() {
-	ai.RegisterProvider(ai.ApiAnthropic, func(baseURL string) ai.ApiProvider {
-		return anthropic.New("", baseURL)
-	})
-	ai.RegisterProvider(ai.ApiOpenAI, func(baseURL string) ai.ApiProvider {
-		return openai.New("", baseURL)
-	})
-	ai.RegisterProvider(ai.ApiGoogle, func(baseURL string) ai.ApiProvider {
-		return google.New("", baseURL)
-	})
-	ai.RegisterProvider(ai.ApiVertex, func(baseURL string) ai.ApiProvider {
-		return vertex.New("", "", baseURL)
-	})
-}
-
-// registerProvidersWithAuth re-registers providers with auth keys from the store.
+// registerProvidersWithAuth registers providers with auth keys from the store.
 func registerProvidersWithAuth(auth *config.AuthStore, _ string) {
 	if key := auth.GetKey("anthropic"); key != "" {
 		ai.RegisterProvider(ai.ApiAnthropic, func(baseURL string) ai.ApiProvider {
@@ -311,6 +293,11 @@ func registerProvidersWithAuth(auth *config.AuthStore, _ string) {
 			return google.New(key, baseURL)
 		})
 	}
+
+	// Vertex uses env-based auth (VERTEX_PROJECT_ID, VERTEX_API_KEY); always register.
+	ai.RegisterProvider(ai.ApiVertex, func(baseURL string) ai.ApiProvider {
+		return vertex.New("", "", baseURL)
+	})
 }
 
 // buildCLIOverrides maps CLI flags to a Settings struct for LoadAll.

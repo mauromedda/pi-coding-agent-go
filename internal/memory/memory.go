@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Level represents the priority of a memory entry.
@@ -34,44 +35,69 @@ type Entry struct {
 	Paths   []string // Glob patterns for path-specific rules
 }
 
-// Load reads memory entries from all 5 levels, returning them sorted by level.
+// levelCount is the number of memory hierarchy levels.
+const levelCount = 5
+
+// Load reads memory entries from all 5 levels in parallel, returning them sorted by level.
+// Each level writes to its own slot in a fixed array; no mutex is needed.
 func Load(projectDir, homeDir string) ([]Entry, error) {
-	var entries []Entry
+	var levels [levelCount][]Entry
+
+	var g errgroup.Group
 
 	// Level 0: Project rules (.pi-go/rules/*.md)
-	rulesDir := filepath.Join(projectDir, ".pi-go", "rules")
-	if ruleEntries, err := loadRulesDir(rulesDir, ProjectRules); err == nil {
-		entries = append(entries, ruleEntries...)
-	}
+	g.Go(func() error {
+		rulesDir := filepath.Join(projectDir, ".pi-go", "rules")
+		if entries, err := loadRulesDir(rulesDir, ProjectRules); err == nil {
+			levels[0] = entries
+		}
+		return nil
+	})
 
 	// Level 1: Claude compat project (CLAUDE.md or .claude/CLAUDE.md)
-	if e, ok := loadFirstFile(projectDir, ClaudeCompat,
-		filepath.Join(projectDir, "CLAUDE.md"),
-		filepath.Join(projectDir, ".claude", "CLAUDE.md"),
-	); ok {
-		entries = append(entries, e)
-	}
+	g.Go(func() error {
+		if e, ok := loadFirstFile(projectDir, ClaudeCompat,
+			filepath.Join(projectDir, "CLAUDE.md"),
+			filepath.Join(projectDir, ".claude", "CLAUDE.md"),
+		); ok {
+			levels[1] = []Entry{e}
+		}
+		return nil
+	})
 
 	// Level 2: Claude rules (.claude/rules/*.md)
-	claudeRulesDir := filepath.Join(projectDir, ".claude", "rules")
-	if ruleEntries, err := loadRulesDir(claudeRulesDir, ClaudeRules); err == nil {
-		entries = append(entries, ruleEntries...)
-	}
+	g.Go(func() error {
+		claudeRulesDir := filepath.Join(projectDir, ".claude", "rules")
+		if entries, err := loadRulesDir(claudeRulesDir, ClaudeRules); err == nil {
+			levels[2] = entries
+		}
+		return nil
+	})
 
 	// Level 3: User Claude compat (~/.claude/CLAUDE.md)
-	if e, ok := loadSingleFile(filepath.Join(homeDir, ".claude", "CLAUDE.md"), UserClaudeCompat); ok {
-		entries = append(entries, e)
-	}
-
-	// Level 4: Auto-memory (load if directory exists)
-	autoDir := AutoMemoryDir(projectDir, homeDir)
-	if autoEntries, err := loadRulesDir(autoDir, AutoMemory); err == nil {
-		entries = append(entries, autoEntries...)
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Level < entries[j].Level
+	g.Go(func() error {
+		if e, ok := loadSingleFile(filepath.Join(homeDir, ".claude", "CLAUDE.md"), UserClaudeCompat); ok {
+			levels[3] = []Entry{e}
+		}
+		return nil
 	})
+
+	// Level 4: Auto-memory
+	g.Go(func() error {
+		autoDir := AutoMemoryDir(projectDir, homeDir)
+		if entries, err := loadRulesDir(autoDir, AutoMemory); err == nil {
+			levels[4] = entries
+		}
+		return nil
+	})
+
+	_ = g.Wait() // individual goroutines never return errors
+
+	// Flatten in level order (already sorted by array index)
+	var entries []Entry
+	for _, levelEntries := range levels {
+		entries = append(entries, levelEntries...)
+	}
 
 	return entries, nil
 }

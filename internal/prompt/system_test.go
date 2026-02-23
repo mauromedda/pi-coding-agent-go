@@ -4,6 +4,7 @@
 package prompt
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -229,6 +230,41 @@ func TestBuildSystem_LeanFalse_Unchanged(t *testing.T) {
 	}
 	if !strings.Contains(result, "# Memory") {
 		t.Error("non-lean prompt should include memory section")
+	}
+}
+
+func TestLoadContextFiles_NoDuplicateCLAUDEMD(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create both CLAUDE.md and .pi-go/CONTEXT.md
+	if err := os.WriteFile(dir+"/CLAUDE.md", []byte("claude content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir+"/.pi-go", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/.pi-go/CONTEXT.md", []byte("context content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := LoadContextFiles(dir)
+
+	// CLAUDE.md should NOT be in context files (it's loaded via memory.Load)
+	for _, f := range files {
+		if f.Name == "claude-md" {
+			t.Error("LoadContextFiles should not include claude-md; it is already loaded by memory.Load")
+		}
+	}
+
+	// .pi-go/CONTEXT.md should still be loaded
+	found := false
+	for _, f := range files {
+		if f.Name == "project-context" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("LoadContextFiles should still include project-context")
 	}
 }
 
