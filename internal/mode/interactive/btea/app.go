@@ -908,7 +908,11 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 			})
 		}
 
-		events := ag.Prompt(sh.ctx, llmCtx, opts)
+		// Per-agent child context: cancelled when agent completes to prevent goroutine leaks.
+		agCtx, agCancel := context.WithCancel(sh.ctx)
+		defer agCancel()
+
+		events := ag.Prompt(agCtx, llmCtx, opts)
 
 		// The bridge sends streaming events via program.Send; blocks until done.
 		RunAgentBridge(program, events)
