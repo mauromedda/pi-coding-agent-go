@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"io"
 	"strings"
+	"sync"
 )
 
 // Event represents a single Server-Sent Event.
@@ -19,16 +20,37 @@ type Event struct {
 // Reader parses Server-Sent Events from an io.Reader.
 type Reader struct {
 	scanner *bufio.Scanner
+	buf     []byte // pooled buffer, returned via Close()
 }
 
 const maxLineSize = 1024 * 1024 // 1MB max line size
+const initialBufSize = 64 * 1024 // 64KB initial scanner buffer
+
+// bufPool reuses 64KB scanner buffers across SSE streams.
+var bufPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 0, initialBufSize)
+	},
+}
 
 // NewReader creates a new SSE reader from the given io.Reader.
+// Call Close() when done to return the buffer to the pool.
 func NewReader(r io.Reader) *Reader {
+	buf := bufPool.Get().([]byte)
+	buf = buf[:0]
 	s := bufio.NewScanner(r)
-	s.Buffer(make([]byte, 0, 64*1024), maxLineSize)
+	s.Buffer(buf, maxLineSize)
 	return &Reader{
 		scanner: s,
+		buf:     buf,
+	}
+}
+
+// Close returns the internal buffer to the pool for reuse.
+func (r *Reader) Close() {
+	if r.buf != nil {
+		bufPool.Put(r.buf[:0])
+		r.buf = nil
 	}
 }
 

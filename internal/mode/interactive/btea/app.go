@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -162,6 +163,17 @@ func (m AppModel) Init() tea.Cmd {
 		if m.deps.Model == nil {
 			return nil
 		}
+
+		// Skip probe for known-remote APIs (always reachable, no localhost dial).
+		switch m.deps.Model.Api {
+		case ai.ApiAnthropic, ai.ApiGoogle:
+			profile := perf.BuildProfile(m.deps.Model, perf.ProbeResult{
+				TTFB:    300 * time.Millisecond,
+				Latency: perf.LatencyFast,
+			})
+			return ProbeResultMsg{Profile: profile}
+		}
+
 		baseURL := m.deps.Model.BaseURL
 		if baseURL == "" {
 			// Use a reasonable default; probe will classify as Slow on error.

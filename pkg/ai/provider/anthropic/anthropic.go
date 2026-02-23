@@ -60,7 +60,11 @@ func (p *Provider) Api() ai.Api {
 
 // Stream initiates a streaming call to the Anthropic Messages API.
 func (p *Provider) Stream(ctx context.Context, model *ai.Model, aiCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
-	stream := ai.NewEventStream(streamBufferSize)
+	bufSize := streamBufferSize
+	if opts != nil && opts.StreamBufferSize > 0 {
+		bufSize = opts.StreamBufferSize
+	}
+	stream := ai.NewEventStream(bufSize)
 
 	go p.runStream(ctx, stream, model, aiCtx, opts)
 
@@ -90,6 +94,7 @@ func (p *Provider) runStream(
 		return
 	}
 	defer resp.Body.Close()
+	defer reader.Close() // return pooled buffer
 	pilog.Debug("http: POST %s%s → %d", p.client.BaseURL(), messagesPath, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {

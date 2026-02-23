@@ -40,6 +40,33 @@ func BenchmarkReaderNext_MultiLineData(b *testing.B) {
 	}
 }
 
+func TestSSEReader_PoolRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Get a reader, use it, close it (returns buffer to pool), get another.
+	// This should not panic or produce incorrect results.
+	for range 10 {
+		r := NewReader(strings.NewReader("data: hello\n\n"))
+		ev, err := r.Next()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ev.Data != "hello" {
+			t.Errorf("data = %q; want %q", ev.Data, "hello")
+		}
+		r.Close()
+	}
+}
+
+func TestSSEReader_DoubleClose(t *testing.T) {
+	t.Parallel()
+
+	// Double close should not panic.
+	r := NewReader(strings.NewReader("data: test\n\n"))
+	r.Close()
+	r.Close() // should be a no-op
+}
+
 func TestReaderNext(t *testing.T) {
 	t.Parallel()
 

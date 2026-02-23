@@ -128,11 +128,12 @@ type Context struct {
 
 // StreamOptions configures streaming behavior.
 type StreamOptions struct {
-	MaxTokens    int     `json:"max_tokens,omitempty"`
-	Temperature  float64 `json:"temperature,omitempty"`
-	TopP         float64 `json:"top_p,omitempty"`
-	StopSequences []string `json:"stop_sequences,omitempty"`
-	Thinking     bool    `json:"thinking,omitempty"`
+	MaxTokens        int      `json:"max_tokens,omitempty"`
+	Temperature      float64  `json:"temperature,omitempty"`
+	TopP             float64  `json:"top_p,omitempty"`
+	StopSequences    []string `json:"stop_sequences,omitempty"`
+	Thinking         bool     `json:"thinking,omitempty"`
+	StreamBufferSize int      `json:"stream_buffer_size,omitempty"` // 0 = provider default
 }
 
 // AssistantMessage is the final result of a streaming response.

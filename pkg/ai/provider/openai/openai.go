@@ -53,9 +53,15 @@ func (p *Provider) Api() ai.Api {
 	return ai.ApiOpenAI
 }
 
+const defaultStreamBufferSize = 64
+
 // Stream initiates a streaming chat completion.
 func (p *Provider) Stream(ctx context.Context, model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
-	stream := ai.NewEventStream(64)
+	bufSize := defaultStreamBufferSize
+	if opts != nil && opts.StreamBufferSize > 0 {
+		bufSize = opts.StreamBufferSize
+	}
+	stream := ai.NewEventStream(bufSize)
 
 	go func() {
 		if err := p.doStream(ctx, model, llmCtx, opts, stream); err != nil {
@@ -79,6 +85,7 @@ func (p *Provider) doStream(ctx context.Context, model *ai.Model, llmCtx *ai.Con
 		return fmt.Errorf("sending request: %w", err)
 	}
 	defer resp.Body.Close()
+	defer reader.Close() // return pooled buffer
 	pilog.Debug("http: POST %s%s → %d", p.client.BaseURL(), chatCompletionPath, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {

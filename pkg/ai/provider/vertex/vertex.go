@@ -51,9 +51,15 @@ func (p *Provider) Api() ai.Api {
 	return ai.ApiVertex
 }
 
+const defaultStreamBufferSize = 64
+
 // Stream initiates a streaming generation request via Vertex AI.
 func (p *Provider) Stream(ctx context.Context, model *ai.Model, llmCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
-	stream := ai.NewEventStream(64)
+	bufSize := defaultStreamBufferSize
+	if opts != nil && opts.StreamBufferSize > 0 {
+		bufSize = opts.StreamBufferSize
+	}
+	stream := ai.NewEventStream(bufSize)
 
 	go func() {
 		if err := p.doStream(ctx, model, llmCtx, opts, stream); err != nil {
