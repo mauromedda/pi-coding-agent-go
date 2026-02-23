@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -446,6 +447,119 @@ func TestExtractToolCalls_ParseError(t *testing.T) {
 		if !errResults[0].Result.IsError {
 			t.Error("expected error result IsError = true")
 		}
+	}
+}
+
+// capturingProvider wraps mockProvider and records the StreamOptions from each call.
+type capturingProvider struct {
+	mockProvider
+	mu          sync.Mutex
+	capturedOpts []*ai.StreamOptions
+}
+
+func (c *capturingProvider) Stream(ctx context.Context, model *ai.Model, aiCtx *ai.Context, opts *ai.StreamOptions) *ai.EventStream {
+	c.mu.Lock()
+	// Copy opts to avoid mutation after capture.
+	cp := *opts
+	c.capturedOpts = append(c.capturedOpts, &cp)
+	c.mu.Unlock()
+	return c.mockProvider.Stream(ctx, model, aiCtx, opts)
+}
+
+func TestAgent_ApplyAdaptive_WiresStreamBufferSize(t *testing.T) {
+	t.Parallel()
+
+	provider := &capturingProvider{
+		mockProvider: mockProvider{
+			responses: []*ai.AssistantMessage{
+				{
+					Content:    []ai.Content{{Type: ai.ContentText, Text: "ok"}},
+					StopReason: ai.StopEndTurn,
+				},
+			},
+		},
+	}
+
+	model := &ai.Model{
+		ID:              "test-model",
+		Name:            "Test",
+		Api:             ai.ApiAnthropic,
+		MaxOutputTokens: 8192,
+		ContextWindow:   128000,
+	}
+
+	ag := New(provider, model, nil)
+	ag.SetAdaptive(&AdaptiveConfig{
+		Profile: perf.ModelProfile{
+			Latency:              perf.LatencyLocal,
+			ContextWindow:        128000,
+			MaxOutputTokens:      8192,
+			SupportsPromptCaching: true,
+		},
+	})
+
+	opts := &ai.StreamOptions{MaxTokens: 4096}
+	_ = collectEvents(ag.Prompt(context.Background(), newTestContext(), opts))
+
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+
+	if len(provider.capturedOpts) == 0 {
+		t.Fatal("no Stream() calls captured")
+	}
+
+	captured := provider.capturedOpts[0]
+	// LatencyLocal → StreamBufferSize = 4096
+	if captured.StreamBufferSize != 4096 {
+		t.Errorf("StreamBufferSize = %d; want 4096 (LatencyLocal)", captured.StreamBufferSize)
+	}
+}
+
+func TestAgent_ApplyAdaptive_WiresStreamBufferSize_Fast(t *testing.T) {
+	t.Parallel()
+
+	provider := &capturingProvider{
+		mockProvider: mockProvider{
+			responses: []*ai.AssistantMessage{
+				{
+					Content:    []ai.Content{{Type: ai.ContentText, Text: "ok"}},
+					StopReason: ai.StopEndTurn,
+				},
+			},
+		},
+	}
+
+	model := &ai.Model{
+		ID:              "test-model",
+		Name:            "Test",
+		Api:             ai.ApiAnthropic,
+		MaxOutputTokens: 8192,
+		ContextWindow:   200000,
+	}
+
+	ag := New(provider, model, nil)
+	ag.SetAdaptive(&AdaptiveConfig{
+		Profile: perf.ModelProfile{
+			Latency:         perf.LatencyFast,
+			ContextWindow:   200000,
+			MaxOutputTokens: 8192,
+		},
+	})
+
+	opts := &ai.StreamOptions{MaxTokens: 4096}
+	_ = collectEvents(ag.Prompt(context.Background(), newTestContext(), opts))
+
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+
+	if len(provider.capturedOpts) == 0 {
+		t.Fatal("no Stream() calls captured")
+	}
+
+	captured := provider.capturedOpts[0]
+	// LatencyFast → StreamBufferSize = 2048
+	if captured.StreamBufferSize != 2048 {
+		t.Errorf("StreamBufferSize = %d; want 2048 (LatencyFast)", captured.StreamBufferSize)
 	}
 }
 

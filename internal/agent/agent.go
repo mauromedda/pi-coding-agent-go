@@ -191,8 +191,9 @@ func (a *Agent) applyAdaptive(ctx context.Context, llmCtx *ai.Context, opts *ai.
 		}
 	}
 
-	// Adaptive MaxOutputTokens
+	// Adaptive parameters
 	opts.MaxTokens = params.MaxOutputTokens
+	opts.StreamBufferSize = params.StreamBufferSize
 
 	// Prompt caching
 	if params.UsePromptCaching {
