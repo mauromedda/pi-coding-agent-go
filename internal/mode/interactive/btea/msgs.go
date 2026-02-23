@@ -5,6 +5,7 @@ package btea
 
 import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -76,3 +77,8 @@ type AutoCompactMsg struct{}
 
 // SpinnerTickMsg drives the spinner animation.
 type SpinnerTickMsg struct{}
+
+// ProbeResultMsg carries the TTFB probe result from the background probe.
+type ProbeResultMsg struct {
+	Profile perf.ModelProfile
+}

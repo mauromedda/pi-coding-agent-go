@@ -78,10 +78,26 @@ func TestAppModel_Init(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Init() returned nil; want a command")
 	}
-	// Execute the command; it should return a gitBranchMsg
+	// Init returns a batch of commands (git branch + probe).
+	// Execute the batch and verify a gitBranchMsg is among the results.
 	msg := cmd()
-	if _, ok := msg.(gitBranchMsg); !ok {
-		t.Errorf("Init cmd returned %T; want gitBranchMsg", msg)
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init cmd returned %T; want tea.BatchMsg", msg)
+	}
+
+	var hasGitBranch bool
+	for _, batchCmd := range batch {
+		if batchCmd == nil {
+			continue
+		}
+		innerMsg := batchCmd()
+		if _, ok := innerMsg.(gitBranchMsg); ok {
+			hasGitBranch = true
+		}
+	}
+	if !hasGitBranch {
+		t.Error("Init batch does not contain a gitBranchMsg command")
 	}
 }
 

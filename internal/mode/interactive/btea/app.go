@@ -15,6 +15,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
@@ -85,6 +86,7 @@ type AppModel struct {
 	// Session metadata
 	gitBranch     string
 	thinkingLevel config.ThinkingLevel
+	modelProfile  *perf.ModelProfile
 
 	// Command handling
 	cmdRegistry *commands.Registry
@@ -142,11 +144,27 @@ func NewAppModel(deps AppDeps) AppModel {
 	}
 }
 
-// Init returns startup commands: detect git branch.
+// Init returns startup commands: detect git branch and probe model latency.
 func (m AppModel) Init() tea.Cmd {
-	return func() tea.Msg {
+	gitCmd := func() tea.Msg {
 		return gitBranchMsg{branch: detectGitBranch()}
 	}
+
+	probeCmd := func() tea.Msg {
+		if m.deps.Model == nil {
+			return nil
+		}
+		baseURL := m.deps.Model.BaseURL
+		if baseURL == "" {
+			// Use a reasonable default; probe will classify as Slow on error.
+			baseURL = "http://localhost:11434" // ollama default
+		}
+		probe := perf.ProbeTTFB(context.Background(), baseURL, "")
+		profile := perf.BuildProfile(m.deps.Model, probe)
+		return ProbeResultMsg{Profile: profile}
+	}
+
+	return tea.Batch(gitCmd, probeCmd)
 }
 
 // Update routes messages to the appropriate handler.
@@ -223,6 +241,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitBranchMsg:
 		m.gitBranch = msg.branch
 		m.footer = m.footer.WithGitBranch(msg.branch)
+		return m, nil
+
+	case ProbeResultMsg:
+		m.modelProfile = &msg.Profile
+		m.footer = m.footer.WithLatencyClass(msg.Profile.Latency.String())
 		return m, nil
 
 	// --- Agent streaming events ---
@@ -483,6 +506,7 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 	messages := make([]ai.Message, len(m.messages))
 	copy(messages, m.messages)
 	thinkingLevel := m.thinkingLevel
+	profile := m.modelProfile
 
 	return func() tea.Msg {
 		if program == nil {
@@ -517,6 +541,14 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		}
 
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
+
+		// Wire adaptive performance if probe has completed
+		if profile != nil {
+			ag.SetAdaptive(&agent.AdaptiveConfig{
+				Profile: *profile,
+			})
+		}
+
 		events := ag.Prompt(context.Background(), llmCtx, opts)
 
 		// The bridge sends streaming events via program.Send; blocks until done.

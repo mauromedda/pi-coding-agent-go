@@ -25,6 +25,7 @@ type FooterModel struct {
 	thinking       config.ThinkingLevel
 	permissionMode string
 	queuedCount    int
+	latencyClass   string
 	width          int
 }
 
@@ -111,6 +112,12 @@ func (m FooterModel) WithCost(c float64) FooterModel {
 	return m
 }
 
+// WithLatencyClass returns a FooterModel with the latency class indicator set.
+func (m FooterModel) WithLatencyClass(class string) FooterModel {
+	m.latencyClass = class
+	return m
+}
+
 // View renders the two-line footer.
 func (m FooterModel) View() string {
 	s := Styles()
@@ -126,6 +133,16 @@ func (m FooterModel) View() string {
 	}
 	if m.model != "" {
 		parts = append(parts, s.FooterModel.Render(m.model))
+	}
+	if m.latencyClass != "" {
+		latencyStyle := s.Info
+		switch m.latencyClass {
+		case "local":
+			latencyStyle = s.Success
+		case "slow":
+			latencyStyle = s.Warning
+		}
+		parts = append(parts, latencyStyle.Render("["+m.latencyClass+"]"))
 	}
 	if m.cost > 0 {
 		parts = append(parts, s.FooterCost.Render(fmt.Sprintf("$%.2f", m.cost)))

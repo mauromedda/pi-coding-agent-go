@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -19,8 +20,9 @@ type Session struct {
 	Messages      []ai.Message
 	Writer        *Writer
 	CWD           string
-	ContextWindow int              // model's context window size in tokens
-	Compaction    CompactionConfig // compaction settings
+	ContextWindow int                // model's context window size in tokens
+	Compaction    CompactionConfig   // compaction settings
+	Profile       *perf.ModelProfile // runtime model profile (set after probe)
 }
 
 // NewSession creates a new session with the given model and provider.
