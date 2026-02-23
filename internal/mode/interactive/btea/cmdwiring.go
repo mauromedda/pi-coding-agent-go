@@ -13,6 +13,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/export"
+	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/internal/revert"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/clipboard"
@@ -88,11 +89,28 @@ func (m AppModel) buildCommandContext() (*commands.CommandContext, *cmdSideEffec
 
 		// --- Session management ---
 
-		RenameSession: nil, // wired when session system is connected
-		ResumeSession: nil, // wired when session system is connected
-		ListSessionsFn: nil,
-		SessionTreeFn:  nil,
-		ForkSessionFn:  nil,
+		RenameSession: func(name string) {
+			// Session rename is a no-op placeholder; JSONL files are named by ID.
+			// Future: add metadata record with display name.
+		},
+		ResumeSession: nil, // requires overlay flow
+		ListSessionsFn: func() string {
+			sessions, err := session.ListSessions()
+			if err != nil {
+				return fmt.Sprintf("Error listing sessions: %v", err)
+			}
+			if len(sessions) == 0 {
+				return "No sessions found."
+			}
+			var b strings.Builder
+			b.WriteString("Sessions:\n")
+			for _, s := range sessions {
+				fmt.Fprintf(&b, "  %s (model: %s, cwd: %s)\n", s.ID, s.Model, s.CWD)
+			}
+			return b.String()
+		},
+		SessionTreeFn: nil,
+		ForkSessionFn: nil,
 
 		NewSessionFn: func() {
 			effects.clearTUI = true

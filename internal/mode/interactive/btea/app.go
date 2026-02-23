@@ -288,6 +288,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AgentDoneMsg:
 		m.agentRunning = false
 		if len(msg.Messages) > 0 {
+			// Persist new assistant messages to session
+			if m.deps.Session != nil {
+				for _, am := range msg.Messages {
+					if am.Role == ai.RoleAssistant {
+						m.deps.Session.AddAssistantMessage(&ai.AssistantMessage{
+							Content: am.Content,
+						})
+					}
+				}
+			}
 			m.messages = msg.Messages
 		}
 		// Drain next queued prompt; skip if queue overlay is open (user is editing)
@@ -340,6 +350,37 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProbeResultMsg:
 		m.modelProfile = &msg.Profile
 		m.footer = m.footer.WithLatencyClass(msg.Profile.Latency.String())
+		return m, nil
+
+	case SessionLoadedMsg:
+		m.messages = msg.Messages
+		// Rebuild content from loaded messages
+		for _, am := range msg.Messages {
+			switch am.Role {
+			case ai.RoleUser:
+				text := ""
+				for _, c := range am.Content {
+					if c.Type == "text" {
+						text += c.Text
+					}
+				}
+				m.content = append(m.content, NewUserMsgModel(text))
+			case ai.RoleAssistant:
+				assistantModel := NewAssistantMsgModel()
+				assistantModel.width = m.width
+				text := ""
+				for _, c := range am.Content {
+					if c.Type == "text" {
+						text += c.Text
+					}
+				}
+				updated, _ := assistantModel.Update(AgentTextMsg{Text: text})
+				m.content = append(m.content, updated.(*AssistantMsgModel))
+			}
+		}
+		return m, nil
+
+	case SessionSavedMsg:
 		return m, nil
 
 	// --- Phase 8: TUI enhancement messages ---
@@ -614,6 +655,11 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 
 	// Add to conversation history
 	m.messages = append(m.messages, ai.NewTextMessage(ai.RoleUser, text))
+
+	// Persist user message to session (if wired)
+	if m.deps.Session != nil {
+		_ = m.deps.Session.AddUserMessage(text)
+	}
 
 	// Check for commands
 	if commands.IsCommand(text) {

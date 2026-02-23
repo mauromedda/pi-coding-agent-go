@@ -119,3 +119,16 @@ type QueueEditMsg struct {
 	Text  string
 	Index int
 }
+
+// --- Session lifecycle messages ---
+
+// SessionLoadedMsg signals that a session was resumed and its history loaded.
+type SessionLoadedMsg struct {
+	SessionID string
+	Messages  []ai.Message
+}
+
+// SessionSavedMsg confirms that the session was persisted to disk.
+type SessionSavedMsg struct {
+	SessionID string
+}

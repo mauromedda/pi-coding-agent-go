@@ -7,6 +7,7 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/internal/statusline"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
@@ -24,4 +25,5 @@ type AppDeps struct {
 	Hooks                map[string][]config.HookDef
 	ScopedModels         *config.ScopedModelsConfig
 	PermissionMode       permission.Mode
+	Session              *session.Session
 }

@@ -117,6 +117,12 @@ type Writer struct {
 	file *os.File
 }
 
+// NewWriterFromFile wraps an existing file as a Writer.
+// Useful for testing without depending on config.SessionsDir().
+func NewWriterFromFile(f *os.File) *Writer {
+	return &Writer{file: f}
+}
+
 // NewWriter creates a Writer for the given session ID.
 func NewWriter(sessionID string) (*Writer, error) {
 	if !validSessionID.MatchString(sessionID) {
