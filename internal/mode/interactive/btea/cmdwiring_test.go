@@ -6,6 +6,8 @@ package btea
 import (
 	"testing"
 
+	"strings"
+
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -196,6 +198,40 @@ func TestLastAssistantText_FindsLastAssistant(t *testing.T) {
 	got := m.lastAssistantText()
 	if got != "hello world" {
 		t.Errorf("expected 'hello world', got %q", got)
+	}
+}
+
+func TestBuildCommandContext_ExportCallbacksWired(t *testing.T) {
+	t.Parallel()
+
+	m := newTestAppModel()
+	ctx, _ := m.buildCommandContext()
+
+	if ctx.ExportConversation == nil {
+		t.Error("ExportConversation should not be nil")
+	}
+	if ctx.ExportHTMLFn == nil {
+		t.Error("ExportHTMLFn should not be nil")
+	}
+	if ctx.ShareFn == nil {
+		t.Error("ShareFn should not be nil")
+	}
+}
+
+func TestFormatMessagesAsMarkdown(t *testing.T) {
+	t.Parallel()
+
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "hi there"),
+	}
+
+	result := formatMessagesAsMarkdown(msgs)
+	if !strings.Contains(result, "hello") {
+		t.Error("expected user message in markdown output")
+	}
+	if !strings.Contains(result, "hi there") {
+		t.Error("expected assistant message in markdown output")
 	}
 }
 

@@ -5,11 +5,14 @@ package btea
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/export"
+	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/clipboard"
 )
 
@@ -177,9 +180,27 @@ func (m AppModel) buildCommandContext() (*commands.CommandContext, *cmdSideEffec
 
 		// --- Export ---
 
-		ExportConversation: nil, // wired in Phase 3
-		ExportHTMLFn:       nil, // wired in Phase 3
-		ShareFn:            nil, // wired in Phase 3
+		ExportConversation: func(path string) error {
+			return exportMessagesAsMarkdown(m.messages, path)
+		},
+
+		ExportHTMLFn: func(path string) error {
+			f, err := os.Create(path)
+			if err != nil {
+				return fmt.Errorf("create file: %w", err)
+			}
+			defer f.Close()
+			return export.ExportHTML(m.messages, f)
+		},
+
+		ShareFn: func() string {
+			md := formatMessagesAsMarkdown(m.messages)
+			url, err := export.CreateGist(md, "Conversation export", false)
+			if err != nil {
+				return fmt.Sprintf("Share failed: %v", err)
+			}
+			return fmt.Sprintf("Shared: %s", url)
+		},
 
 		// --- Reload ---
 
@@ -233,4 +254,26 @@ func (m AppModel) lastAssistantText() string {
 		}
 	}
 	return ""
+}
+
+// formatMessagesAsMarkdown renders conversation messages as a markdown string.
+func formatMessagesAsMarkdown(messages []ai.Message) string {
+	var b strings.Builder
+	for _, msg := range messages {
+		fmt.Fprintf(&b, "## %s\n\n", msg.Role)
+		for _, ct := range msg.Content {
+			if ct.Type == "text" {
+				b.WriteString(ct.Text)
+				b.WriteByte('\n')
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// exportMessagesAsMarkdown writes conversation messages to a file as markdown.
+func exportMessagesAsMarkdown(messages []ai.Message, path string) error {
+	md := formatMessagesAsMarkdown(messages)
+	return os.WriteFile(path, []byte(md), 0o644)
 }
