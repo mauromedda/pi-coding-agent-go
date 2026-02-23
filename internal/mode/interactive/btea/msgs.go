@@ -77,6 +77,9 @@ type SubmitPromptMsg struct{ Text string }
 // AutoCompactMsg triggers automatic context compaction.
 type AutoCompactMsg struct{}
 
+// ToggleImagesMsg signals all tool call models to show/hide images.
+type ToggleImagesMsg struct{ Show bool }
+
 // SpinnerTickMsg drives the spinner animation.
 type SpinnerTickMsg struct{}
 

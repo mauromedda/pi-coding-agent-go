@@ -45,15 +45,17 @@ type ToolCallModel struct {
 	output   string
 	expanded bool
 	width    int
-	images   []ImageViewModel
+	images     []ImageViewModel
+	showImages bool
 }
 
 // NewToolCallModel creates a ToolCallModel for the given tool invocation.
 func NewToolCallModel(id, name, args string) ToolCallModel {
 	return ToolCallModel{
-		id:   id,
-		name: name,
-		args: args,
+		id:         id,
+		name:       name,
+		args:       args,
+		showImages: true,
 	}
 }
 
@@ -82,6 +84,9 @@ func (m ToolCallModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.images = append(m.images, vm)
 			}
 		}
+
+	case ToggleImagesMsg:
+		m.showImages = msg.Show
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -198,14 +203,19 @@ func (m ToolCallModel) View() string {
 	}
 
 	// Image blocks
-	for i := range m.images {
-		imgView := m.images[i].View()
-		if imgView != "" {
-			imgLines := strings.Split(imgView, "\n")
-			for _, il := range imgLines {
-				b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), il))
+	if m.showImages {
+		for i := range m.images {
+			imgView := m.images[i].View()
+			if imgView != "" {
+				imgLines := strings.Split(imgView, "\n")
+				for _, il := range imgLines {
+					b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), il))
+				}
 			}
 		}
+	} else if len(m.images) > 0 {
+		placeholder := fmt.Sprintf("[%d image(s) hidden - Alt+I to show]", len(m.images))
+		b.WriteString(fmt.Sprintf("%s %s\n", bs.Render(verticalBorder), s.Dim.Render(placeholder)))
 	}
 
 	// Error line

@@ -26,6 +26,7 @@ type FooterModel struct {
 	permissionMode string
 	queuedCount    int
 	latencyClass   string
+	showImages     bool
 	width          int
 }
 
@@ -118,6 +119,12 @@ func (m FooterModel) WithLatencyClass(class string) FooterModel {
 	return m
 }
 
+// WithShowImages returns a FooterModel with the image display indicator set.
+func (m FooterModel) WithShowImages(show bool) FooterModel {
+	m.showImages = show
+	return m
+}
+
 // View renders the two-line footer.
 func (m FooterModel) View() string {
 	s := Styles()
@@ -180,6 +187,10 @@ func (m FooterModel) View() string {
 
 	if m.queuedCount > 0 {
 		line2Parts = append(line2Parts, s.Warning.Render(fmt.Sprintf("[%d queued]", m.queuedCount)))
+	}
+
+	if m.showImages {
+		line2Parts = append(line2Parts, s.Info.Render("[img]"))
 	}
 
 	if m.thinking != config.ThinkingOff {

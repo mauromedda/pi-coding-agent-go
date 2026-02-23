@@ -88,6 +88,9 @@ type AppModel struct {
 	thinkingLevel config.ThinkingLevel
 	modelProfile  *perf.ModelProfile
 
+	// Image display
+	showImages bool
+
 	// Command handling
 	cmdRegistry *commands.Registry
 }
@@ -129,7 +132,8 @@ func NewAppModel(deps AppDeps) AppModel {
 		WithPath(cwd).
 		WithModel(modelName).
 		WithModeLabel(initialMode.String()).
-		WithPermissionMode(permLabel)
+		WithPermissionMode(permLabel).
+		WithShowImages(true)
 
 	welcome := NewWelcomeModel(deps.Version, modelName, cwd, toolCount)
 
@@ -141,6 +145,7 @@ func NewAppModel(deps AppDeps) AppModel {
 		content:     []tea.Model{welcome},
 		deps:        deps,
 		cmdRegistry: commands.NewRegistry(),
+		showImages:  true,
 	}
 }
 
@@ -372,6 +377,17 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "alt+t":
 		m = m.cycleThinking()
+		return m, nil
+
+	case "alt+i":
+		m.showImages = !m.showImages
+		m.footer = m.footer.WithShowImages(m.showImages)
+		// Propagate toggle to all content models
+		toggleMsg := ToggleImagesMsg{Show: m.showImages}
+		for i := range m.content {
+			updated, _ := m.content[i].Update(toggleMsg)
+			m.content[i] = updated
+		}
 		return m, nil
 
 	case "enter":
