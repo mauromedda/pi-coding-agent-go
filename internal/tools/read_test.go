@@ -4,7 +4,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,6 +181,120 @@ func TestReadTool_HugeFileUsesLimitReader(t *testing.T) {
 	// Output must not exceed maxReadOutput + truncation notice.
 	if len(result.Content) > maxReadOutput+100 {
 		t.Errorf("output too large: %d bytes", len(result.Content))
+	}
+}
+
+func TestReadTool_ImageFileReturnsImageBlock(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.png")
+
+	// Create a minimal valid PNG
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewReadTool()
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{"path": path}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "test.png") {
+		t.Errorf("expected filename in content, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "image/png") {
+		t.Errorf("expected mime type in content, got %q", result.Content)
+	}
+	if len(result.Images) != 1 {
+		t.Fatalf("expected 1 image block, got %d", len(result.Images))
+	}
+	if result.Images[0].MimeType != "image/png" {
+		t.Errorf("expected image/png, got %q", result.Images[0].MimeType)
+	}
+	if result.Images[0].Filename != "test.png" {
+		t.Errorf("expected test.png, got %q", result.Images[0].Filename)
+	}
+}
+
+func TestReadTool_NonImageBinaryStillErrors(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.bin")
+	data := []byte("hello\x00world")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewReadTool()
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{"path": path}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for non-image binary file")
+	}
+	if !strings.Contains(result.Content, "binary") {
+		t.Errorf("expected 'binary' in error message, got %q", result.Content)
+	}
+}
+
+func TestReadTool_ImageTooLarge(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.png")
+
+	// Create a PNG header followed by enough bytes to exceed maxImageFileSize
+	// We need a valid binary detection (has null bytes) and .png extension
+	data := make([]byte, maxImageFileSize+100)
+	copy(data, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}) // PNG signature
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewReadTool()
+	result, err := tool.Execute(context.Background(), "id1", map[string]any{"path": path}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError for oversized image")
+	}
+	if !strings.Contains(result.Content, "too large") {
+		t.Errorf("expected 'too large' in error, got %q", result.Content)
+	}
+}
+
+func TestImageExtMIME(t *testing.T) {
+	tests := []struct {
+		path string
+		mime string
+		ok   bool
+	}{
+		{"/foo/bar.png", "image/png", true},
+		{"/foo/bar.PNG", "image/png", true},
+		{"/foo/bar.jpg", "image/jpeg", true},
+		{"/foo/bar.jpeg", "image/jpeg", true},
+		{"/foo/bar.gif", "image/gif", true},
+		{"/foo/bar.webp", "image/webp", true},
+		{"/foo/bar.txt", "", false},
+		{"/foo/bar.bin", "", false},
+	}
+	for _, tt := range tests {
+		mime, ok := imageExtMIME(tt.path)
+		if ok != tt.ok || mime != tt.mime {
+			t.Errorf("imageExtMIME(%q) = (%q, %v), want (%q, %v)", tt.path, mime, ok, tt.mime, tt.ok)
+		}
 	}
 }
 

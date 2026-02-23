@@ -5,15 +5,18 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
+	"github.com/mauromedda/pi-coding-agent-go/internal/types"
 )
 
 const (
@@ -80,6 +83,9 @@ func executeRead(sb *permission.Sandbox, _ context.Context, _ string, params map
 	}
 
 	if isBinary(data) {
+		if mime, ok := imageExtMIME(path); ok {
+			return handleImageFile(data, path, mime), nil
+		}
 		return agent.ToolResult{Content: fmt.Sprintf("binary file detected: %s", path), IsError: true}, nil
 	}
 
@@ -137,4 +143,44 @@ func truncateOutput(s string, maxBytes int) string {
 		return s
 	}
 	return s[:maxBytes] + "\n... [output truncated]"
+}
+
+// imageExtensions maps file extensions to MIME types for supported image formats.
+var imageExtensions = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+}
+
+// imageExtMIME returns the MIME type if the file extension is a supported image format.
+func imageExtMIME(path string) (string, bool) {
+	ext := strings.ToLower(filepath.Ext(path))
+	mime, ok := imageExtensions[ext]
+	return mime, ok
+}
+
+const maxImageFileSize = 4_500_000 // 4.5 MB
+
+// handleImageFile returns a ToolResult with base64-encoded image data and an ImageBlock.
+func handleImageFile(data []byte, path, mime string) agent.ToolResult {
+	if len(data) > maxImageFileSize {
+		return agent.ToolResult{
+			Content: fmt.Sprintf("image file too large: %s (%d bytes, max %d)", path, len(data), maxImageFileSize),
+			IsError: true,
+		}
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	content := fmt.Sprintf("[Image: %s %s (%d bytes)]\nbase64:%s", filepath.Base(path), mime, len(data), encoded)
+	return agent.ToolResult{
+		Content: content,
+		Images: []types.ImageBlock{
+			{
+				Data:     data,
+				MimeType: mime,
+				Filename: filepath.Base(path),
+			},
+		},
+	}
 }

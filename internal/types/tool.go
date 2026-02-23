@@ -9,11 +9,20 @@ import (
 	"time"
 )
 
+// ImageBlock carries image data through the tool result pipeline.
+// Not serialized to JSON; used only for in-process rendering.
+type ImageBlock struct {
+	Data     []byte // Raw image bytes
+	MimeType string // e.g. "image/png"
+	Filename string
+}
+
 // ToolResult holds the outcome of a single tool execution.
 type ToolResult struct {
 	Content  string
 	IsError  bool
 	Duration time.Duration
+	Images   []ImageBlock `json:"-"` // In-process only; not serialized
 }
 
 // ToolUpdate carries incremental output from a running tool.
