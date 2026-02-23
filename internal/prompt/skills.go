@@ -1,4 +1,4 @@
-// ABOUTME: SKILL.md parsing with YAML frontmatter support
+// ABOUTME: SKILL.md parsing with YAML frontmatter support and validation
 // ABOUTME: Loads skills from project, global, and Claude Code compat directories
 
 package prompt
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
@@ -73,6 +74,13 @@ func loadSkillsFromDir(dir string) ([]Skill, error) {
 	return skills, nil
 }
 
+// skillFrontmatter is the typed structure for YAML frontmatter in skill files.
+type skillFrontmatter struct {
+	Name         string   `yaml:"name"`
+	Description  string   `yaml:"description"`
+	AllowedTools []string `yaml:"allowed-tools"`
+}
+
 func parseSkillFile(path string) (Skill, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -82,56 +90,91 @@ func parseSkillFile(path string) (Skill, error) {
 	content := string(data)
 	skill := Skill{SourcePath: path}
 
-	// Parse YAML frontmatter (--- delimited)
-	if strings.HasPrefix(content, "---\n") {
-		endIdx := strings.Index(content[4:], "\n---")
-		if endIdx >= 0 {
-			frontmatter := content[4 : 4+endIdx]
-			skill.Content = strings.TrimSpace(content[4+endIdx+4:])
-			parseFrontmatter(frontmatter, &skill)
-		} else {
-			skill.Content = content
-		}
-	} else {
+	fm, body, err := config.ParseFrontmatter[skillFrontmatter](content)
+	if err != nil {
+		// Frontmatter parse error; use content as-is
 		skill.Content = content
+	} else {
+		skill.Name = fm.Name
+		skill.Description = fm.Description
+		skill.AllowedTools = fm.AllowedTools
+		skill.Content = strings.TrimSpace(body)
 	}
 
-	// Default name from filename if not in frontmatter
+	// Default name from parent directory or filename if not in frontmatter
 	if skill.Name == "" {
-		base := filepath.Base(path)
-		skill.Name = strings.TrimSuffix(base, filepath.Ext(base))
+		dir := filepath.Dir(path)
+		base := filepath.Base(dir)
+		if base == "." || base == "/" {
+			base = filepath.Base(path)
+			base = strings.TrimSuffix(base, filepath.Ext(base))
+		}
+		skill.Name = base
 	}
 
 	return skill, nil
 }
 
-// parseFrontmatter extracts key-value pairs from YAML frontmatter.
-// Simplified parser: handles name, description, allowed-tools.
-func parseFrontmatter(fm string, skill *Skill) {
-	for line := range strings.SplitSeq(fm, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
+// skillNameRe matches valid skill names: lowercase alphanumeric with single hyphens.
+var skillNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
+// ValidateSkillName checks a skill name against naming rules.
+// Returns a list of validation error messages (empty = valid).
+func ValidateSkillName(name, parentDir string) []string {
+	var errs []string
 
-		switch key {
-		case "name":
-			skill.Name = value
-		case "description":
-			skill.Description = value
-		case "allowed-tools":
-			tools := strings.Split(value, ",")
-			for i, t := range tools {
-				tools[i] = strings.TrimSpace(t)
-			}
-			skill.AllowedTools = tools
+	if name == "" {
+		return []string{"skill name is required"}
+	}
+	if len(name) > 64 {
+		errs = append(errs, fmt.Sprintf("skill name %q exceeds 64 characters", name))
+	}
+	if !skillNameRe.MatchString(name) {
+		errs = append(errs, fmt.Sprintf("skill name %q must match ^[a-z0-9]+(-[a-z0-9]+)*$", name))
+	}
+	if name != parentDir {
+		errs = append(errs, fmt.Sprintf("skill name %q must match parent directory %q", name, parentDir))
+	}
+	return errs
+}
+
+// ValidateSkillDescription checks a skill description against rules.
+func ValidateSkillDescription(desc string) []string {
+	var errs []string
+	if desc == "" {
+		errs = append(errs, "skill description is required")
+	}
+	if len(desc) > 1024 {
+		errs = append(errs, fmt.Sprintf("skill description exceeds 1024 characters (%d)", len(desc)))
+	}
+	return errs
+}
+
+// SkillSource identifies where a skill was loaded from.
+// Returns "user", "project", or "path".
+func SkillSource(sourcePath string) string {
+	home, _ := os.UserHomeDir()
+	if home != "" && strings.Contains(sourcePath, filepath.Join(home, ".claude", "skills")) {
+		return "user"
+	}
+	if strings.Contains(sourcePath, filepath.Join(".pi-go", "skills")) {
+		return "project"
+	}
+	return "path"
+}
+
+// DetectCollisions returns warnings for skills loaded from multiple sources.
+func DetectCollisions(skills []Skill) []string {
+	byName := make(map[string][]string) // name -> list of source paths
+	for _, s := range skills {
+		byName[s.Name] = append(byName[s.Name], s.SourcePath)
+	}
+
+	var warnings []string
+	for name, paths := range byName {
+		if len(paths) > 1 {
+			warnings = append(warnings, fmt.Sprintf("skill %q loaded from multiple sources: %v", name, paths))
 		}
 	}
+	return warnings
 }
