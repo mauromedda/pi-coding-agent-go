@@ -403,3 +403,47 @@ func TestChecker_NilAskFn_DeniesWriteInNormalMode(t *testing.T) {
 		t.Errorf("read should be allowed: %v", err)
 	}
 }
+
+func TestChecker_NilAskFn_ReturnsErrNeedsApproval(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeNormal, nil)
+
+	err := c.Check("bash", nil)
+	if err == nil {
+		t.Fatal("expected error for bash in normal mode with nil askFn")
+	}
+	if !IsNeedsApproval(err) {
+		t.Errorf("expected ErrNeedsApproval, got: %v", err)
+	}
+}
+
+func TestChecker_NilAskFn_GlobAsk_ReturnsErrNeedsApproval(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeYolo, nil)
+	c.globRules = append(c.globRules, GlobRule{Tool: "bash", Specifier: "*", Action: ActionAsk})
+
+	err := c.Check("bash", map[string]any{"command": "rm -rf /"})
+	if err == nil {
+		t.Fatal("expected error for bash with glob ask rule and nil askFn")
+	}
+	if !IsNeedsApproval(err) {
+		t.Errorf("expected ErrNeedsApproval from glob ask path, got: %v", err)
+	}
+}
+
+func TestChecker_DenyRule_DoesNotReturnNeedsApproval(t *testing.T) {
+	t.Parallel()
+
+	c := NewChecker(ModeNormal, nil)
+	c.AddDenyRule(Rule{Tool: "bash", Message: "blocked"})
+
+	err := c.Check("bash", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if IsNeedsApproval(err) {
+		t.Error("deny rule errors should NOT be ErrNeedsApproval")
+	}
+}

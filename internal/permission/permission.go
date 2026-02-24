@@ -4,9 +4,22 @@
 package permission
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
+
+// ErrNeedsApproval is returned by Check when the tool requires interactive
+// user approval but no AskFunc is configured. Callers (e.g. the TUI) can
+// detect this with IsNeedsApproval and present an approval dialog.
+var ErrNeedsApproval = errors.New("tool requires interactive approval")
+
+// IsNeedsApproval reports whether err (or any error in its chain) is
+// ErrNeedsApproval.
+func IsNeedsApproval(err error) bool {
+	return errors.Is(err, ErrNeedsApproval)
+}
 
 // Mode determines the permission checking behavior.
 type Mode int
@@ -73,7 +86,9 @@ type Rule struct {
 type AskFunc func(tool string, args map[string]any) (bool, error)
 
 // Checker validates tool execution permissions.
+// All exported methods are safe for concurrent use.
 type Checker struct {
+	mu         sync.RWMutex
 	mode       Mode
 	allowRules []Rule
 	denyRules  []Rule
@@ -91,27 +106,37 @@ func NewChecker(mode Mode, askFn AskFunc) *Checker {
 
 // SetMode updates the permission mode.
 func (c *Checker) SetMode(mode Mode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.mode = mode
 }
 
 // SetAskFn sets or replaces the interactive ask function.
 func (c *Checker) SetAskFn(fn AskFunc) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.askFn = fn
 }
 
 // Mode returns the current permission mode.
 func (c *Checker) Mode() Mode {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.mode
 }
 
 // AddAllowRule adds a rule that permits a tool.
 func (c *Checker) AddAllowRule(rule Rule) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	rule.Allow = true
 	c.allowRules = append(c.allowRules, rule)
 }
 
 // AddGlobAllowRule adds a glob-based allow rule for a tool with specifier.
 func (c *Checker) AddGlobAllowRule(tool, specifier string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.globRules = append(c.globRules, GlobRule{
 		Tool:      tool,
 		Specifier: specifier,
@@ -121,6 +146,8 @@ func (c *Checker) AddGlobAllowRule(tool, specifier string) {
 
 // AddDenyRule adds a rule that blocks a tool.
 func (c *Checker) AddDenyRule(rule Rule) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	rule.Allow = false
 	c.denyRules = append(c.denyRules, rule)
 }
@@ -132,10 +159,55 @@ var readOnlyTools = map[string]bool{
 
 // Check validates whether a tool can execute.
 // Returns nil if allowed, error with reason if blocked.
+// Returns an error wrapping ErrNeedsApproval when the tool requires
+// interactive approval but no AskFunc is configured.
 func (c *Checker) Check(tool string, args map[string]any) error {
+	// Evaluate rules under read lock; capture askFn for potential callback.
+	verdict, askFn := c.evaluate(tool, args)
+	switch verdict {
+	case verdictAllow:
+		return nil
+	case verdictAsk:
+		if askFn == nil {
+			return fmt.Errorf("tool %q: %w", tool, ErrNeedsApproval)
+		}
+		allowed, err := askFn(tool, args)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
+		if !allowed {
+			return fmt.Errorf("tool %q denied by user", tool)
+		}
+		return nil
+	default:
+		// verdictDeny carries the error message
+		return verdict.err
+	}
+}
+
+// verdict is the result of rule evaluation.
+type verdict struct {
+	kind int // 0=deny, 1=allow, 2=ask
+	err  error
+}
+
+var (
+	verdictAllow = verdict{kind: 1}
+	verdictAsk   = verdict{kind: 2}
+)
+
+func denyVerdict(err error) verdict { return verdict{kind: 0, err: err} }
+
+// evaluate checks rules under RLock and returns a verdict plus the askFn.
+// The caller invokes askFn (if needed) outside the lock to avoid blocking
+// while holding the mutex.
+func (c *Checker) evaluate(tool string, args map[string]any) (verdict, AskFunc) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	// Plan mode: only read-only tools
 	if c.mode == ModePlan && !readOnlyTools[tool] {
-		return fmt.Errorf("tool %q blocked in plan mode; switch to edit mode (Shift+Tab)", tool)
+		return denyVerdict(fmt.Errorf("tool %q blocked in plan mode; switch to edit mode (Shift+Tab)", tool)), nil
 	}
 
 	// Check deny rules first
@@ -145,14 +217,14 @@ func (c *Checker) Check(tool string, args map[string]any) error {
 			if msg == "" {
 				msg = fmt.Sprintf("tool %q denied by rule", tool)
 			}
-			return fmt.Errorf("%s", msg)
+			return denyVerdict(fmt.Errorf("%s", msg)), nil
 		}
 	}
 
 	// Check allow rules
 	for _, rule := range c.allowRules {
 		if matchTool(rule.Tool, tool) {
-			return nil
+			return verdictAllow, nil
 		}
 	}
 
@@ -161,57 +233,41 @@ func (c *Checker) Check(tool string, args map[string]any) error {
 		specifier := ExtractSpecifier(tool, args)
 		switch evaluateGlobRules(c.globRules, tool, specifier) {
 		case ActionDeny:
-			return fmt.Errorf("tool %q with specifier %q denied by glob rule", tool, specifier)
+			return denyVerdict(fmt.Errorf("tool %q with specifier %q denied by glob rule", tool, specifier)), nil
 		case ActionAllow:
-			return nil
+			return verdictAllow, nil
 		case ActionAsk:
-			if c.askFn != nil {
-				allowed, err := c.askFn(tool, args)
-				if err != nil {
-					return fmt.Errorf("permission check failed: %w", err)
-				}
-				if !allowed {
-					return fmt.Errorf("tool %q denied by user", tool)
-				}
-				return nil
-			}
+			return verdictAsk, c.askFn
 		}
 	}
 
 	// Yolo mode: allow everything
 	if c.mode == ModeYolo {
-		return nil
+		return verdictAllow, nil
 	}
 
 	// AcceptEdits mode: auto-allow edit/write tools, ask for others
 	if c.mode == ModeAcceptEdits && editWriteTools[tool] {
-		return nil
+		return verdictAllow, nil
 	}
 
 	// DontAsk mode: deny non-read-only tools without prompting
 	if c.mode == ModeDontAsk && !readOnlyTools[tool] {
-		return fmt.Errorf("tool %q denied in dont-ask mode", tool)
+		return denyVerdict(fmt.Errorf("tool %q denied in dont-ask mode", tool)), nil
 	}
 
-	// Normal + AcceptEdits for non-edit tools: ask user or deny if no askFn
+	// Normal + AcceptEdits for non-edit tools: ask user
 	if (c.mode == ModeNormal || c.mode == ModeAcceptEdits) && !readOnlyTools[tool] {
-		if c.askFn == nil {
-			return fmt.Errorf("tool %q denied: no interactive approval available", tool)
-		}
-		allowed, err := c.askFn(tool, args)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !allowed {
-			return fmt.Errorf("tool %q denied by user", tool)
-		}
+		return verdictAsk, c.askFn
 	}
 
-	return nil
+	return verdictAllow, nil
 }
 
 // Rules returns a combined slice of allow and deny rules.
 func (c *Checker) Rules() []Rule {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	rules := make([]Rule, 0, len(c.allowRules)+len(c.denyRules))
 	rules = append(rules, c.allowRules...)
 	rules = append(rules, c.denyRules...)
@@ -221,6 +277,8 @@ func (c *Checker) Rules() []Rule {
 // RemoveRule removes the first rule matching the given tool name from
 // either the allow or deny lists. Returns true if a rule was removed.
 func (c *Checker) RemoveRule(tool string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for i, r := range c.allowRules {
 		if r.Tool == tool {
 			c.allowRules = append(c.allowRules[:i], c.allowRules[i+1:]...)

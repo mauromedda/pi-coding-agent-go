@@ -1116,18 +1116,50 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 			opts.Thinking = true
 		}
 
+		// Per-agent child context: cancelled when agent completes to prevent goroutine leaks.
+		agCtx, agCancel := context.WithCancel(sh.ctx)
+		sh.taskCancels.Store(taskID, agCancel)
+		defer func() {
+			sh.taskCancels.Delete(taskID)
+			agCancel()
+		}()
+
 		// Create agent with permission checking.
 		// When the task is backgrounded (fgTaskID no longer matches),
-		// auto-deny all permission requests.
+		// auto-deny all permission requests. When the checker signals
+		// ErrNeedsApproval, bridge to the TUI permission dialog.
 		permCheckFn := func(tool string, args map[string]any) error {
 			currentFG, _ := sh.fgTaskID.Load().(string)
 			if currentFG != taskID {
 				return fmt.Errorf("permission denied: task running in background")
 			}
-			if deps.Checker != nil {
-				return deps.Checker.Check(tool, args)
+			if deps.Checker == nil {
+				return nil
 			}
-			return nil
+			err := deps.Checker.Check(tool, args)
+			if err == nil || !permission.IsNeedsApproval(err) {
+				return err
+			}
+
+			// Checker says "needs approval": ask the user via the TUI dialog.
+			replyCh := make(chan PermissionReply, 1)
+			program.Send(PermissionRequestMsg{
+				Tool:    tool,
+				Args:    args,
+				ReplyCh: replyCh,
+			})
+			select {
+			case reply := <-replyCh:
+				if !reply.Allowed {
+					return fmt.Errorf("tool %q denied by user", tool)
+				}
+				if reply.Always {
+					deps.Checker.AddAllowRule(permission.Rule{Tool: tool})
+				}
+				return nil
+			case <-agCtx.Done():
+				return fmt.Errorf("permission check cancelled")
+			}
 		}
 
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
@@ -1139,14 +1171,6 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 				Profile: *profile,
 			})
 		}
-
-		// Per-agent child context: cancelled when agent completes to prevent goroutine leaks.
-		agCtx, agCancel := context.WithCancel(sh.ctx)
-		sh.taskCancels.Store(taskID, agCancel)
-		defer func() {
-			sh.taskCancels.Delete(taskID)
-			agCancel()
-		}()
 
 		events := ag.Prompt(agCtx, llmCtx, opts)
 
