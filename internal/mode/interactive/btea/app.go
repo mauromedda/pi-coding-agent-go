@@ -406,7 +406,110 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	// --- Agent done (must be handled regardless of overlay) ---
+	// --- Async completions (must be handled regardless of overlay) ---
+	case BashDoneMsg:
+		m.bashRunning = false
+		bom := NewBashOutputModel(msg.Command)
+		bom.AddOutput(msg.Output)
+		bom.SetExitCode(msg.ExitCode)
+		bom.width = m.width
+		m.content = append(m.content, bom)
+		return m, nil
+
+	case AgentTextMsg:
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(msg)
+		return m, nil
+
+	case AgentThinkingMsg:
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(msg)
+		return m, nil
+
+	case AgentToolStartMsg:
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(msg)
+		return m, nil
+
+	case AgentToolUpdateMsg:
+		m = m.updateLastAssistant(msg)
+		return m, nil
+
+	case AgentToolEndMsg:
+		m = m.updateLastAssistant(msg)
+		return m, nil
+
+	case AgentUsageMsg:
+		if msg.Usage != nil {
+			m.totalInputTokens += msg.Usage.InputTokens
+			m.totalOutputTokens += msg.Usage.OutputTokens
+		}
+		updated, _ := m.footer.Update(msg)
+		m.footer = updated.(FooterModel)
+
+		// Update context window usage percentage
+		if m.deps.Model != nil {
+			ctxWindow := m.deps.Model.EffectiveContextWindow()
+			if ctxWindow > 0 {
+				pct := m.totalInputTokens * 100 / ctxWindow
+				if pct > 100 {
+					pct = 100
+				}
+				m.footer = m.footer.WithContextPct(pct)
+			}
+		}
+
+		// Check if auto-compaction should trigger
+		threshold := m.deps.AutoCompactThreshold
+		if threshold > 0 && !m.compacting {
+			total := m.totalInputTokens + m.totalOutputTokens
+			if total > threshold {
+				return m, func() tea.Msg { return AutoCompactMsg{} }
+			}
+		}
+		return m, nil
+
+	case AgentErrorMsg:
+		// Check for rate-limit errors and auto-retry
+		if isRateLimited(msg.Err) && m.retryCount < maxRetries {
+			m.retryCount++
+			backoff := retryBackoff(m.retryCount)
+			m.retryAt = time.Now().Add(backoff)
+			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				remaining := time.Until(m.retryAt)
+				if remaining < 0 {
+					remaining = 0
+				}
+				return RetryTickMsg{Remaining: remaining}
+			})
+		}
+		// Non-retriable or max-retries-exhausted error: stop the agent run
+		// so the editor unlocks and the user can type again.
+		m.agentRunning = false
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(msg)
+		return m, nil
+
+	case RetryTickMsg:
+		if msg.Remaining > 0 {
+			// Keep ticking
+			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				remaining := time.Until(m.retryAt)
+				if remaining < 0 {
+					remaining = 0
+				}
+				return RetryTickMsg{Remaining: remaining}
+			})
+		}
+		// Timer expired; restart the agent
+		m.agentRunning = true
+		return m, m.startAgentCmd()
+
+	case AgentCancelMsg:
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(AgentTextMsg{Text: "\n⏹ Agent cancelled."})
+		return m, nil
+
 	case AgentDoneMsg:
 		m.agentRunning = false
 		if len(msg.Messages) > 0 {
@@ -544,107 +647,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PlanGeneratedMsg:
 		m.overlay = NewPlanViewModel(msg.Plan)
-		return m, nil
-
-	// --- Agent streaming events ---
-	case AgentTextMsg:
-		m = m.ensureAssistantMsg()
-		m = m.updateLastAssistant(msg)
-		return m, nil
-
-	case AgentThinkingMsg:
-		m = m.ensureAssistantMsg()
-		m = m.updateLastAssistant(msg)
-		return m, nil
-
-	case AgentToolStartMsg:
-		m = m.ensureAssistantMsg()
-		m = m.updateLastAssistant(msg)
-		return m, nil
-
-	case AgentToolUpdateMsg:
-		m = m.updateLastAssistant(msg)
-		return m, nil
-
-	case AgentToolEndMsg:
-		m = m.updateLastAssistant(msg)
-		return m, nil
-
-	case AgentUsageMsg:
-		if msg.Usage != nil {
-			m.totalInputTokens += msg.Usage.InputTokens
-			m.totalOutputTokens += msg.Usage.OutputTokens
-		}
-		updated, _ := m.footer.Update(msg)
-		m.footer = updated.(FooterModel)
-
-		// Update context window usage percentage
-		if m.deps.Model != nil {
-			ctxWindow := m.deps.Model.EffectiveContextWindow()
-			if ctxWindow > 0 {
-				pct := m.totalInputTokens * 100 / ctxWindow
-				if pct > 100 {
-					pct = 100
-				}
-				m.footer = m.footer.WithContextPct(pct)
-			}
-		}
-
-		// Check if auto-compaction should trigger
-		threshold := m.deps.AutoCompactThreshold
-		if threshold > 0 && !m.compacting {
-			total := m.totalInputTokens + m.totalOutputTokens
-			if total > threshold {
-				return m, func() tea.Msg { return AutoCompactMsg{} }
-			}
-		}
-		return m, nil
-
-	case AgentErrorMsg:
-		// Check for rate-limit errors and auto-retry
-		if isRateLimited(msg.Err) && m.retryCount < maxRetries {
-			m.retryCount++
-			backoff := retryBackoff(m.retryCount)
-			m.retryAt = time.Now().Add(backoff)
-			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
-				remaining := time.Until(m.retryAt)
-				if remaining < 0 {
-					remaining = 0
-				}
-				return RetryTickMsg{Remaining: remaining}
-			})
-		}
-		m = m.ensureAssistantMsg()
-		m = m.updateLastAssistant(msg)
-		return m, nil
-
-	case RetryTickMsg:
-		if msg.Remaining > 0 {
-			// Keep ticking
-			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
-				remaining := time.Until(m.retryAt)
-				if remaining < 0 {
-					remaining = 0
-				}
-				return RetryTickMsg{Remaining: remaining}
-			})
-		}
-		// Timer expired; restart the agent
-		m.agentRunning = true
-		return m, m.startAgentCmd()
-
-	case BashDoneMsg:
-		m.bashRunning = false
-		bom := NewBashOutputModel(msg.Command)
-		bom.AddOutput(msg.Output)
-		bom.SetExitCode(msg.ExitCode)
-		bom.width = m.width
-		m.content = append(m.content, bom)
-		return m, nil
-
-	case AgentCancelMsg:
-		m = m.ensureAssistantMsg()
-		m = m.updateLastAssistant(AgentTextMsg{Text: "\n⏹ Agent cancelled."})
 		return m, nil
 
 	// --- Key routing ---

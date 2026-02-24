@@ -1344,3 +1344,71 @@ func TestAppModel_BackgroundTaskDoneMsg(t *testing.T) {
 		t.Errorf("task.Status = %v; want BGDone", task.Status)
 	}
 }
+
+func TestAppModel_AgentErrorMsg_ResetsAgentRunning(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+	m.agentRunning = true
+
+	result, _ := m.Update(AgentErrorMsg{Err: fmt.Errorf("connection refused")})
+	app := result.(AppModel)
+
+	if app.agentRunning {
+		t.Error("agentRunning should be false after non-retriable AgentErrorMsg")
+	}
+}
+
+func TestAppModel_AgentErrorMsg_HandledDuringOverlay(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+	m.agentRunning = true
+
+	// Open a centered overlay (cost view)
+	m.overlay = NewCostViewModel(100, 200, 0, 0.05, 0, 0)
+
+	result, _ := m.Update(AgentErrorMsg{Err: fmt.Errorf("connection refused")})
+	app := result.(AppModel)
+
+	if app.agentRunning {
+		t.Error("agentRunning should be false even with overlay active")
+	}
+}
+
+func TestAppModel_BashDoneMsg_HandledDuringOverlay(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+	m.bashRunning = true
+
+	// Open a centered overlay
+	m.overlay = NewCostViewModel(100, 200, 0, 0.05, 0, 0)
+
+	result, _ := m.Update(BashDoneMsg{Command: "ls", Output: "file.txt", ExitCode: 0})
+	app := result.(AppModel)
+
+	if app.bashRunning {
+		t.Error("bashRunning should be false even with overlay active")
+	}
+}
+
+func TestAppModel_AgentStreamingMsg_HandledDuringOverlay(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+	m.agentRunning = true
+
+	// Open a centered overlay
+	m.overlay = NewCostViewModel(100, 200, 0, 0.05, 0, 0)
+
+	contentBefore := len(m.content)
+
+	// Agent text should still be processed (not swallowed by overlay)
+	result, _ := m.Update(AgentTextMsg{Text: "Hello from agent"})
+	app := result.(AppModel)
+
+	if len(app.content) <= contentBefore {
+		t.Error("AgentTextMsg should create content even with overlay active")
+	}
+}
