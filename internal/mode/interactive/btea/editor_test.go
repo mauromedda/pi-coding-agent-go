@@ -543,3 +543,27 @@ func TestEditorModel_LineCount(t *testing.T) {
 		t.Errorf("LineCount() = %d; want 3 after SetText with 3 lines", got)
 	}
 }
+
+func TestEditorModel_DropsControlCharacters(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Send C0 control characters (0x01-0x1F except handled keys) via KeyRunes.
+	// These can leak from orphaned OSC terminal responses and should be dropped.
+	controlRunes := []rune{0x01, 0x02, 0x07, 0x0E, 0x1B, 0x7F}
+	for _, r := range controlRunes {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	if got := m.Text(); got != "" {
+		t.Errorf("Text() = %q; want empty after control character runes", got)
+	}
+
+	// Normal printable characters should still work.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if got := m.Text(); got != "a" {
+		t.Errorf("Text() = %q; want %q", got, "a")
+	}
+}

@@ -63,6 +63,9 @@ func newUndoStack[S any](maxSize int) *undoStack[S] {
 
 func (s *undoStack[S]) push(state S) {
 	if len(s.items) >= s.maxSize {
+		// Zero out the element before slicing to allow GC to reclaim memory
+		var zero S
+		s.items[0] = zero
 		s.items = s.items[1:]
 	}
 	s.items = append(s.items, state)
@@ -258,7 +261,14 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 	switch msg.Type {
 	case tea.KeyRunes:
 		if len(msg.Runes) > 0 {
-			m.insertRune(msg.Runes[0])
+			r := msg.Runes[0]
+			// Drop C0 control characters (except handled keys above) and
+			// DEL (0x7F). These can arrive when terminal OSC query responses
+			// leak into the input stream after ESC is consumed separately.
+			if r < 0x20 || r == 0x7F {
+				return
+			}
+			m.insertRune(r)
 		}
 	case tea.KeySpace:
 		m.insertRune(' ')

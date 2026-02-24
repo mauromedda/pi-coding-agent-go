@@ -8,6 +8,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/git"
 )
@@ -15,6 +16,11 @@ import (
 // Run starts the Bubble Tea interactive app. Blocks until the user exits.
 // The deps struct provides all external dependencies (provider, model, tools, etc.).
 func Run(deps AppDeps) error {
+	// Pre-set dark background to prevent Lipgloss from sending OSC 10/11
+	// terminal queries at runtime. Late-arriving responses leak into the
+	// Bubble Tea input parser and appear as garbled text in the editor.
+	lipgloss.SetHasDarkBackground(true)
+
 	m := NewAppModel(deps)
 
 	p := tea.NewProgram(
