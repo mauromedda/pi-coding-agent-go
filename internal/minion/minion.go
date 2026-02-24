@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -42,17 +43,24 @@ func New(cfg Config) *Distiller {
 // Returns: [SummaryMessage, ...recentMessages]. If there are fewer messages
 // than KeepRecent, returns the original messages unchanged.
 func (d *Distiller) Distill(ctx context.Context, msgs []ai.Message) ([]ai.Message, error) {
+	pilog.Debug("minion/singular: distilling %d messages (keep_recent=%d)", len(msgs), d.config.KeepRecent)
+
 	if len(msgs) <= d.config.KeepRecent {
+		pilog.Debug("minion/singular: skipping, only %d messages (threshold %d)", len(msgs), d.config.KeepRecent)
 		return msgs, nil
 	}
 
 	olderMsgs := msgs[:len(msgs)-d.config.KeepRecent]
 	recentMsgs := msgs[len(msgs)-d.config.KeepRecent:]
 
+	pilog.Debug("minion/singular: summarizing %d older messages, keeping %d recent", len(olderMsgs), len(recentMsgs))
+
 	summary, err := d.distillMessages(ctx, olderMsgs)
 	if err != nil {
 		return nil, fmt.Errorf("distill: %w", err)
 	}
+
+	pilog.Debug("minion/singular: summary length=%d chars", len(summary))
 
 	summaryContent := ai.Content{Type: ai.ContentText, Text: "[Prior conversation summary]\n" + summary}
 	return prependSummary(summaryContent, recentMsgs), nil
@@ -85,6 +93,8 @@ func prependSummary(summary ai.Content, recentMsgs []ai.Message) []ai.Message {
 // distillMessages calls the local model to produce a summary of the given messages.
 func (d *Distiller) distillMessages(ctx context.Context, msgs []ai.Message) (string, error) {
 	conversationText := formatMessages(msgs)
+	pilog.Debug("minion/singular: calling %s (prompt=%d chars, max_tokens=%d)",
+		d.config.Model.ID, len(conversationText), d.config.Model.MaxOutputTokens)
 
 	llmCtx := &ai.Context{
 		System: distillSystemPrompt,
@@ -119,6 +129,7 @@ func (d *Distiller) distillMessages(ctx context.Context, msgs []ai.Message) (str
 		return "", fmt.Errorf("local model returned empty distillation")
 	}
 
+	pilog.Debug("minion/singular: distillation complete (%d chars)", len(text))
 	return text, nil
 }
 
