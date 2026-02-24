@@ -6,53 +6,54 @@ package tools
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 // dangerousCommands lists shell commands that should be blocked or restricted
 var dangerousCommands = map[string]bool{
-	"rm":         true,
-	"rmdir":      true,
-	"delete":     true,
-	"del":        true,
-	"format":     true,
-	"fdisk":      true,
-	"mkfs":       true,
+	"rm":     true,
+	"rmdir":  true,
+	"delete": true,
+	"del":    true,
+	"format": true,
+	"fdisk":  true,
+	"mkfs":   true,
 	// dd: moved to allowedCommands (safe for read operations; dangerous only with of= to devices)
-	"shutdown":   true,
-	"reboot":     true,
-	"halt":       true,
-	"poweroff":   true,
-	"su":         true,
-	"sudo":       true,
-	"passwd":     true,
-	"chsh":       true,
-	"chfn":       true,
-	"usermod":    true,
-	"useradd":    true,
-	"userdel":    true,
-	"groupadd":   true,
-	"groupdel":   true,
-	"chmod":      true,  // Can be dangerous
-	"chown":      true,  // Can be dangerous
-	"mount":      true,
-	"umount":     true,
-	"crontab":    true,
-	"at":         true,
-	"batch":      true,
-	"nc":         true,  // netcat
-	"netcat":     true,
-	"ncat":       true,
-	"socat":      true,
-	"telnet":     true,
-	"ssh":        true,
-	"scp":        true,
-	"rsync":      true,
-	"curl":       true,  // Can be used for data exfiltration
-	"wget":       true,  // Can be used for data exfiltration
-	"lynx":       true,
-	"links":      true,
-	"w3m":        true,
+	"shutdown": true,
+	"reboot":   true,
+	"halt":     true,
+	"poweroff": true,
+	"su":       true,
+	"sudo":     true,
+	"passwd":   true,
+	"chsh":     true,
+	"chfn":     true,
+	"usermod":  true,
+	"useradd":  true,
+	"userdel":  true,
+	"groupadd": true,
+	"groupdel": true,
+	"chmod":    true, // Can be dangerous
+	"chown":    true, // Can be dangerous
+	"mount":    true,
+	"umount":   true,
+	"crontab":  true,
+	"at":       true,
+	"batch":    true,
+	"nc":       true, // netcat
+	"netcat":   true,
+	"ncat":     true,
+	"socat":    true,
+	"telnet":   true,
+	"ssh":      true,
+	"scp":      true,
+	"rsync":    true,
+	"curl":     true, // Can be used for data exfiltration
+	"wget":     true, // Can be used for data exfiltration
+	"lynx":     true,
+	"links":    true,
+	"w3m":      true,
 }
 
 // dangerousPatterns are regex patterns that indicate dangerous shell constructs.
@@ -60,20 +61,20 @@ var dangerousCommands = map[string]bool{
 // are intentionally NOT blocked: they are standard shell constructs used by
 // legitimate commands. Security comes from the command allowlist/blocklist.
 var dangerousPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\$\(`),                    // Command substitution $(...)
-	regexp.MustCompile("`[^`]*`"),                 // Command substitution `...`
-	regexp.MustCompile(`\${[^}]*}`),               // Variable expansion with complex expressions
-	regexp.MustCompile(`;\s*\w+`),                 // Command chaining with semicolon
-	regexp.MustCompile(`/etc/passwd`),             // Access to sensitive files
-	regexp.MustCompile(`/etc/shadow`),             // Access to sensitive files
-	regexp.MustCompile(`/etc/hosts`),              // Access to sensitive files
-	regexp.MustCompile(`/proc/`),                  // Access to proc filesystem
-	regexp.MustCompile(`/sys/`),                   // Access to sys filesystem
-	regexp.MustCompile(`\.\./`),                   // Directory traversal
-	regexp.MustCompile(`~[^/\s]*/`),               // Access to other users' home dirs
-	regexp.MustCompile(`\$HOME/\.\w+`),            // Access to hidden files in home
-	regexp.MustCompile(`exec\s+\d*[<>]`),          // File descriptor redirection via exec
-	regexp.MustCompile(`\{[^}]*;[^}]*\}`),         // Brace expansion with command execution
+	regexp.MustCompile(`\$\(`),            // Command substitution $(...)
+	regexp.MustCompile("`[^`]*`"),         // Command substitution `...`
+	regexp.MustCompile(`\${[^}]*}`),       // Variable expansion with complex expressions
+	regexp.MustCompile(`;\s*\w+`),         // Command chaining with semicolon
+	regexp.MustCompile(`/etc/passwd`),     // Access to sensitive files
+	regexp.MustCompile(`/etc/shadow`),     // Access to sensitive files
+	regexp.MustCompile(`/etc/hosts`),      // Access to sensitive files
+	regexp.MustCompile(`/proc/`),          // Access to proc filesystem
+	regexp.MustCompile(`/sys/`),           // Access to sys filesystem
+	regexp.MustCompile(`\.\./`),           // Directory traversal
+	regexp.MustCompile(`~[^/\s]*/`),       // Access to other users' home dirs
+	regexp.MustCompile(`\$HOME/\.\w+`),    // Access to hidden files in home
+	regexp.MustCompile(`exec\s+\d*[<>]`),  // File descriptor redirection via exec
+	regexp.MustCompile(`\{[^}]*;[^}]*\}`), // Brace expansion with command execution
 }
 
 // allowedCommands lists safe commands that are generally okay to run
@@ -256,12 +257,7 @@ func isShellBuiltin(cmd string) bool {
 		".", ":", "true", "false", "test", "[", "[[", "]]",
 	}
 
-	for _, builtin := range builtins {
-		if cmd == builtin {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(builtins, cmd)
 }
 
 // looksLikeSafeCommand uses heuristics to determine if an unknown command might be safe
