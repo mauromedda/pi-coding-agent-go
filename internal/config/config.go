@@ -72,6 +72,9 @@ type Settings struct {
 
 	// Safety configures safety guardrails
 	Safety *SafetySettings `json:"safety,omitempty"`
+
+	// Worktree configures default worktree isolation per session
+	Worktree *WorktreeSettings `json:"worktree,omitempty"`
 }
 
 // ModelOverride allows per-model customization.
@@ -220,6 +223,20 @@ func (s *TelemetrySettings) EffectiveWarnAtPct() int {
 type SafetySettings struct {
 	NeverModify []string `json:"neverModify,omitempty"` // glob patterns for files that must never be modified
 	LockedKeys  []string `json:"lockedKeys,omitempty"`  // config keys that cannot be overridden at lower levels
+}
+
+// WorktreeSettings configures default worktree isolation per session.
+type WorktreeSettings struct {
+	Enabled *bool `json:"enabled,omitempty"` // nil means default ON
+}
+
+// IsEnabled returns true if worktree isolation is enabled.
+// Defaults to true when the setting is nil or the Enabled field is nil.
+func (w *WorktreeSettings) IsEnabled() bool {
+	if w == nil || w.Enabled == nil {
+		return true
+	}
+	return *w.Enabled
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -632,6 +649,16 @@ func merge(global, project *Settings) *Settings {
 		}
 		if len(project.Safety.LockedKeys) > 0 {
 			result.Safety.LockedKeys = dedupStrings(result.Safety.LockedKeys, project.Safety.LockedKeys)
+		}
+	}
+
+	// Worktree: merge if present
+	if project.Worktree != nil {
+		if result.Worktree == nil {
+			result.Worktree = &WorktreeSettings{}
+		}
+		if project.Worktree.Enabled != nil {
+			result.Worktree.Enabled = project.Worktree.Enabled
 		}
 	}
 

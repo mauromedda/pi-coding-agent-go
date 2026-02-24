@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/git"
 	"github.com/mauromedda/pi-coding-agent-go/internal/intent"
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
@@ -99,6 +100,22 @@ func run(args cliArgs) error {
 	cfg, err := config.LoadAll(cwd, buildCLIOverrides(args))
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Set up session worktree if enabled (before theme/tools so cwd is correct).
+	var sessionWT *git.SessionWorktree
+	if cfg.Worktree.IsEnabled() && args.prompt == "" && !args.print {
+		sw, err := git.SetupSessionWorktree(cwd)
+		if err != nil {
+			pilog.Debug("worktree: %v", err)
+		}
+		if sw != nil {
+			sessionWT = sw
+			cwd = sw.Info.Path
+			if err := os.Chdir(cwd); err != nil {
+				pilog.Debug("worktree chdir: %v", err)
+			}
+		}
 	}
 
 	// Resolve and activate theme from config
@@ -263,7 +280,7 @@ func run(args cliArgs) error {
 	}
 
 	// Interactive mode (default)
-	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold)
+	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold, sessionWT)
 }
 
 // registerProvidersWithAuth registers providers with auth keys from the store.
@@ -315,6 +332,10 @@ func buildCLIOverrides(args cliArgs) *config.Settings {
 	if args.yolo {
 		s.Yolo = true
 	}
+	if args.noWorktree {
+		f := false
+		s.Worktree = &config.WorktreeSettings{Enabled: &f}
+	}
 	return s
 }
 
@@ -361,7 +382,7 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 }
 
 // runInteractive starts the Bubble Tea interactive TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int) error {
+func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int, sessionWT *git.SessionWorktree) error {
 	return btea.Run(btea.AppDeps{
 		Provider:             provider,
 		Model:                model,
@@ -372,6 +393,7 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 		StatusEngine:         statusEngine,
 		AutoCompactThreshold: autoCompactThreshold,
 		PermissionMode:       checker.Mode(),
+		WorktreeSession:      sessionWT,
 	})
 }
 

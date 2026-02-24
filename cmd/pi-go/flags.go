@@ -27,6 +27,7 @@ type cliArgs struct {
 	lean             bool   // --lean minimal system prompt
 	dangerouslySkip  bool   // --dangerously-skip-permissions
 	verbose          bool   // -v / --verbose debug output
+	noWorktree       bool   // --no-worktree disable session worktree
 }
 
 func parseFlags() cliArgs {
@@ -54,6 +55,7 @@ func parseFlags() cliArgs {
 	flag.BoolVar(&args.dangerouslySkip, "dangerously-skip-permissions", false, "Skip all permission checks (alias for bypassPermissions)")
 	flag.BoolVar(&args.verbose, "v", false, "Enable verbose debug output")
 	flag.BoolVar(&args.verbose, "verbose", false, "Enable verbose debug output")
+	flag.BoolVar(&args.noWorktree, "no-worktree", false, "Disable session worktree isolation")
 
 	flag.Parse()
 	return args

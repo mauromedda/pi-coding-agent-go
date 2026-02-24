@@ -1017,6 +1017,67 @@ func TestLoadFile_NewSettingsFields(t *testing.T) {
 	}
 }
 
+// --- WorktreeSettings tests ---
+
+func TestWorktreeSettings_IsEnabled_Default(t *testing.T) {
+	t.Parallel()
+	var ws *WorktreeSettings
+	if !ws.IsEnabled() {
+		t.Error("nil WorktreeSettings should default to enabled")
+	}
+}
+
+func TestWorktreeSettings_IsEnabled_NilEnabled(t *testing.T) {
+	t.Parallel()
+	ws := &WorktreeSettings{}
+	if !ws.IsEnabled() {
+		t.Error("WorktreeSettings{} should default to enabled")
+	}
+}
+
+func TestWorktreeSettings_IsEnabled_True(t *testing.T) {
+	t.Parallel()
+	ws := &WorktreeSettings{Enabled: boolPtr(true)}
+	if !ws.IsEnabled() {
+		t.Error("WorktreeSettings{Enabled: true} should be enabled")
+	}
+}
+
+func TestWorktreeSettings_IsEnabled_False(t *testing.T) {
+	t.Parallel()
+	ws := &WorktreeSettings{Enabled: boolPtr(false)}
+	if ws.IsEnabled() {
+		t.Error("WorktreeSettings{Enabled: false} should be disabled")
+	}
+}
+
+func TestMerge_Worktree(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(true)}}
+	project := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(false)}}
+
+	result := merge(global, project)
+	if result.Worktree == nil {
+		t.Fatal("Worktree should not be nil after merge")
+	}
+	if result.Worktree.IsEnabled() {
+		t.Error("project should override global: want disabled")
+	}
+}
+
+func TestMerge_Worktree_NilProject(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(true)}}
+	project := &Settings{}
+
+	result := merge(global, project)
+	if result.Worktree == nil || !result.Worktree.IsEnabled() {
+		t.Error("nil project worktree should preserve global")
+	}
+}
+
 // boolPtr is a test helper that returns a pointer to a bool value.
 func boolPtr(b bool) *bool {
 	return &b
