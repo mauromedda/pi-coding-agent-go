@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
@@ -152,7 +153,7 @@ func (a *Agent) loop(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOpt
 			results = append(results, execResults...)
 		}
 
-		llmCtx.Messages = append(llmCtx.Messages, toolResultMessage(results))
+		llmCtx.Messages = append(llmCtx.Messages, toolResultMessage(results, a.model.SupportsImages))
 	}
 
 	a.emitFinal(AgentEvent{Type: EventAgentEnd})
@@ -424,15 +425,28 @@ func assistantMessage(msg *ai.AssistantMessage) ai.Message {
 }
 
 // toolResultMessage builds a user message containing tool results.
-func toolResultMessage(results []toolExecResult) ai.Message {
+// When supportsImages is true, image data from tool results is base64-encoded
+// and attached to the content block so providers can forward it to the LLM.
+func toolResultMessage(results []toolExecResult, supportsImages bool) ai.Message {
 	contents := make([]ai.Content, 0, len(results))
 	for _, r := range results {
-		contents = append(contents, ai.Content{
-			Type:    ai.ContentToolResult,
-			ID:      r.ID,
+		c := ai.Content{
+			Type:       ai.ContentToolResult,
+			ID:         r.ID,
 			ResultText: r.Result.Content,
-			IsError: r.Result.IsError,
-		})
+			IsError:    r.Result.IsError,
+		}
+		if supportsImages && len(r.Result.Images) > 0 {
+			imgs := make([]ai.ImageContent, 0, len(r.Result.Images))
+			for _, img := range r.Result.Images {
+				imgs = append(imgs, ai.ImageContent{
+					MediaType: img.MimeType,
+					Data:      base64.StdEncoding.EncodeToString(img.Data),
+				})
+			}
+			c.Images = imgs
+		}
+		contents = append(contents, c)
 	}
 	return ai.Message{Role: ai.RoleUser, Content: contents}
 }
