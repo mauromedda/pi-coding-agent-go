@@ -145,15 +145,41 @@ func TestToolCallModel_ToggleExpand(t *testing.T) {
 	}
 }
 
-func TestToolCallModel_ToggleExpandIgnoredWhenNotDone(t *testing.T) {
+func TestToolCallModel_ToggleExpandWorksWhenNotDone(t *testing.T) {
 	m := NewToolCallModel("t1", "Read", "args")
 	m.width = 80
-	// Not done yet
+	m.output = "partial output"
+	// Not done yet — toggle should still work
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	tc := updated.(ToolCallModel)
-	if tc.expanded {
-		t.Error("expanded should remain false when tool is not done")
+	if !tc.expanded {
+		t.Error("Ctrl+O should toggle expand even when tool is not done")
+	}
+
+	// Toggle back
+	updated2, _ := tc.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	tc2 := updated2.(ToolCallModel)
+	if tc2.expanded {
+		t.Error("second Ctrl+O should collapse")
+	}
+}
+
+func TestToolCallModel_HintOnlyShownWhenDone(t *testing.T) {
+	m := NewToolCallModel("t1", "Read", `{"path":"/tmp"}`)
+	m.width = 80
+	m.output = "some output"
+	// Not done: hint should not appear
+	view := m.View()
+	if strings.Contains(view, "Ctrl+O") {
+		t.Error("hint should not appear when tool is not done")
+	}
+
+	// Done: hint should appear
+	m.done = true
+	view = m.View()
+	if !strings.Contains(view, "Ctrl+O") {
+		t.Error("hint should appear when tool is done")
 	}
 }
 

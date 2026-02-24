@@ -104,7 +104,7 @@ func (m ToolCallModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlO && m.done {
+		if msg.Type == tea.KeyCtrlO {
 			m.expanded = !m.expanded
 		}
 	}
@@ -272,11 +272,13 @@ func (m ToolCallModel) View() string {
 	b.WriteString(bs.Render(cornerBottomRight))
 	b.WriteByte('\n')
 
-	// Expand/collapse hint
-	if m.expanded {
-		b.WriteString(s.Dim.Render("  Press Ctrl+O to collapse"))
-	} else {
-		b.WriteString(s.Dim.Render("  Press Ctrl+O to expand output"))
+	// Expand/collapse hint (only shown when tool is done)
+	if m.done {
+		if m.expanded {
+			b.WriteString(s.Dim.Render("  Press Ctrl+O to collapse"))
+		} else {
+			b.WriteString(s.Dim.Render("  Press Ctrl+O to expand output"))
+		}
 	}
 
 	return b.String()
