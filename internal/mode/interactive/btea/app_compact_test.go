@@ -154,9 +154,11 @@ func TestAppModel_AgentUsage_TriggersAutoCompactWhenThresholdExceeded(t *testing
 		t.Errorf("totalInputTokens = %d; want 80", model.totalInputTokens)
 	}
 
-	// When threshold is exceeded, the Update should return a batch cmd
-	// that includes the auto-compact trigger
-	// (Implementation detail: may fire AutoCompactMsg or directly start compaction)
-	_ = cmd // cmd may or may not be set depending on implementation
+	// When threshold is exceeded, the Update should return a cmd that
+	// drives the auto-compact flow (either a batch including the trigger
+	// or a direct compaction start).
+	if cmd == nil {
+		t.Error("cmd = nil; want non-nil when usage exceeds auto-compact threshold")
+	}
 	_ = model
 }

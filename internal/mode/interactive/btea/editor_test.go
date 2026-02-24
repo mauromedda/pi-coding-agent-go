@@ -726,7 +726,8 @@ func TestEditorModel_DropsControlCharacters(t *testing.T) {
 	// These can leak from orphaned OSC terminal responses and should be dropped.
 	controlRunes := []rune{0x01, 0x02, 0x07, 0x0E, 0x1B, 0x7F}
 	for _, r := range controlRunes {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(EditorModel)
 	}
 
 	if got := m.Text(); got != "" {
@@ -734,7 +735,8 @@ func TestEditorModel_DropsControlCharacters(t *testing.T) {
 	}
 
 	// Normal printable characters should still work.
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = updated.(EditorModel)
 	if got := m.Text(); got != "a" {
 		t.Errorf("Text() = %q; want %q", got, "a")
 	}
@@ -1178,5 +1180,107 @@ func TestEditorModel_ChainedTimeoutClearsCooldown(t *testing.T) {
 
 	if m.IsOSCChainedCooldown() {
 		t.Error("chained timeout should clear cooldown")
+	}
+}
+
+func TestEditorModel_GuardArmedNonBackslashKeyNotDropped(t *testing.T) {
+	t.Parallel()
+
+	// When oscGuardArmed is true (ESC received during suppression) and the
+	// next key is NOT '\', the key must be processed normally instead of being
+	// silently dropped. This was a bug: both branches returned early.
+	m := NewEditorModel()
+	m.width = 80
+
+	// Enter OSC suppression via Alt+]
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// ESC during suppression arms the guard
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = updated.(EditorModel)
+	if !m.oscGuardArmed {
+		t.Fatal("oscGuardArmed should be true after ESC during suppression")
+	}
+
+	// Send 'a' (not '\'): should end suppression AND insert 'a'
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = updated.(EditorModel)
+
+	if m.IsOSCSuppressing() {
+		t.Error("suppression should have ended")
+	}
+	if got := m.Text(); got != "a" {
+		t.Errorf("Text() = %q; want %q (key after guard-armed ESC must not be dropped)", got, "a")
+	}
+	if cmd == nil {
+		t.Error("cmd should include chained cooldown tick from endOscSuppression")
+	}
+}
+
+func TestEditorModel_GuardArmedBackslashDropped(t *testing.T) {
+	t.Parallel()
+
+	// When oscGuardArmed is true and the next key IS '\', it completes the
+	// split ST and should be consumed (not inserted into the buffer).
+	m := NewEditorModel()
+	m.width = 80
+
+	// Enter OSC suppression via Alt+]
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// ESC during suppression arms the guard
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = updated.(EditorModel)
+
+	// Send '\': should end suppression and NOT insert '\'
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}})
+	m = updated.(EditorModel)
+
+	if m.IsOSCSuppressing() {
+		t.Error("suppression should have ended after split ST")
+	}
+	if got := m.Text(); got != "" {
+		t.Errorf("Text() = %q; want empty (backslash completing ST should be dropped)", got)
+	}
+	if cmd == nil {
+		t.Error("cmd should include chained cooldown tick from endOscSuppression")
+	}
+}
+
+func TestEditorModel_CtrlGOnlyForwardedDuringSuppression(t *testing.T) {
+	t.Parallel()
+
+	// Ctrl+G (BEL) should only be consumed by the OSC state machine
+	// when actively suppressing. When only escPending, Ctrl+G has no
+	// OSC role and should not be intercepted.
+	m := NewEditorModel()
+	m.width = 80
+
+	// Arm split-ESC pending (not suppressing)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = updated.(EditorModel)
+
+	if m.IsOSCSuppressing() {
+		t.Fatal("should not be suppressing; only escPending")
+	}
+	if !m.IsOSCEscPending() {
+		t.Fatal("escPending should be true after bare ESC")
+	}
+
+	// Ctrl+G while only escPending: should clear escPending and fall
+	// through to normal dispatch (Ctrl+G is not a special editor key,
+	// so it produces no visible effect, but it must NOT enter endOscSuppression).
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	m = updated.(EditorModel)
+
+	// escPending should be cleared by the first line of the pending block
+	if m.IsOSCEscPending() {
+		t.Error("escPending should be false after consuming the pending ESC")
+	}
+	// Should NOT have activated chained cooldown (that's endOscSuppression's job)
+	if m.IsOSCChainedCooldown() {
+		t.Error("chained cooldown should not be active; Ctrl+G during escPending is not an OSC termination")
 	}
 }

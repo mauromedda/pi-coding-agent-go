@@ -83,8 +83,8 @@ func TestEditor_ShiftTab_TogglesMode(t *testing.T) {
 	// Send Shift+Tab.
 	s.sendShiftTab(t)
 
-	// Footer should show Plan mode.
-	s.expectStringTimeout(t, "Plan", 5*time.Second)
+	// Footer should show auto-accept mode.
+	s.expectStringTimeout(t, "auto-accept", 5*time.Second)
 }
 
 func TestEditor_SlashOpensCommandPalette(t *testing.T) {
