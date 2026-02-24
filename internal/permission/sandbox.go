@@ -53,8 +53,12 @@ func (s *Sandbox) ValidatePath(path string) error {
 	}
 
 	// Check prefix against allowed directories with separator boundary
+	resolvedWithSep := resolved + string(filepath.Separator)
 	for _, allowed := range s.allowed {
-		if strings.HasPrefix(resolved+string(filepath.Separator), allowed) || resolved == strings.TrimSuffix(allowed, string(filepath.Separator)) {
+		if strings.HasPrefix(resolvedWithSep, allowed) {
+			return nil
+		}
+		if base, ok := strings.CutSuffix(allowed, string(filepath.Separator)); ok && resolved == base {
 			return nil
 		}
 	}
@@ -90,7 +94,7 @@ func resolvePathForValidation(path string) (string, error) {
 
 // containsTraversal checks for .. components in the path.
 func containsTraversal(path string) bool {
-	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+	for part := range strings.SplitSeq(filepath.ToSlash(path), "/") {
 		if part == ".." {
 			return true
 		}

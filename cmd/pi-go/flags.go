@@ -28,13 +28,17 @@ type cliArgs struct {
 	dangerouslySkip  bool   // --dangerously-skip-permissions
 	verbose          bool   // -v / --verbose debug output
 	noWorktree       bool   // --no-worktree disable session worktree
+	gateway          string // --gateway <url>
+	minion           bool   // --minion (singular distillation)
+	minions          bool   // --minions (parallel distillation)
+	minionModel      string // --minion-model <id>
 }
 
 func parseFlags() cliArgs {
 	var args cliArgs
 
 	flag.BoolVar(&args.yolo, "yolo", false, "Skip all permission prompts")
-	flag.StringVar(&args.model, "model", "", "Model to use (e.g., claude-sonnet-4-20250514)")
+	flag.StringVar(&args.model, "model", "", "Model to use (e.g., claude-sonnet-4-6)")
 	flag.BoolVar(&args.plan, "plan", false, "Start in plan mode")
 	flag.BoolVar(&args.print, "print", false, "Non-interactive print mode")
 	flag.BoolVar(&args.thinking, "thinking", false, "Enable thinking/reasoning")
@@ -56,6 +60,10 @@ func parseFlags() cliArgs {
 	flag.BoolVar(&args.verbose, "v", false, "Enable verbose debug output")
 	flag.BoolVar(&args.verbose, "verbose", false, "Enable verbose debug output")
 	flag.BoolVar(&args.noWorktree, "no-worktree", false, "Disable session worktree isolation")
+	flag.StringVar(&args.gateway, "gateway", "", "Route all traffic through gateway URL (e.g., http://localhost:8080)")
+	flag.BoolVar(&args.minion, "minion", false, "Enable minion protocol (singular distillation)")
+	flag.BoolVar(&args.minions, "minions", false, "Enable minion protocol (parallel distillation)")
+	flag.StringVar(&args.minionModel, "minion-model", "", "Model for minion distillation (default: from config or haiku)")
 
 	flag.Parse()
 	return args

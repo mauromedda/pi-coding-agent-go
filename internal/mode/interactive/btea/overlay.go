@@ -35,16 +35,10 @@ func overlayRender(background, overlay string, termWidth, termHeight int) string
 	}
 
 	// Center vertically
-	startRow := (termHeight - ovHeight) / 2
-	if startRow < 0 {
-		startRow = 0
-	}
+	startRow := max((termHeight-ovHeight)/2, 0)
 
 	// Center horizontally
-	startCol := (termWidth - ovWidth) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
+	startCol := max((termWidth-ovWidth)/2, 0)
 
 	// Splice overlay lines into background
 	for i, ovLine := range ovLines {

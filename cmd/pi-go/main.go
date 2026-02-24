@@ -16,11 +16,13 @@ import (
 	// async responses leak garbage into the editor.
 	_ "github.com/mauromedda/pi-coding-agent-go/internal/termfix"
 
+	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/git"
 	"github.com/mauromedda/pi-coding-agent-go/internal/intent"
 	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/memory"
+	"github.com/mauromedda/pi-coding-agent-go/internal/minion"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/interactive/btea"
 	"github.com/mauromedda/pi-coding-agent-go/internal/mode/print"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
@@ -137,9 +139,54 @@ func run(args cliArgs) error {
 	// W4: Register providers with auth keys
 	registerProvidersWithAuth(auth, baseURL)
 
-	provider := ai.GetProvider(model.Api, baseURL)
+	provider := ai.GetProvider(model.Api, resolveBaseURLForAPI(args, cfg, string(model.Api), model.BaseURL))
 	if provider == nil {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
+	}
+
+	// Build minion transform if requested via CLI flags or config
+	if args.minion && args.minions {
+		return fmt.Errorf("--minion and --minions are mutually exclusive")
+	}
+
+	var minionTransform agent.TransformContextFunc
+	useMinion := args.minion || args.minions || args.minionModel != "" || cfg.Minion.IsEnabled()
+	if useMinion {
+		// Mode: CLI flags override config
+		minionMode := minion.MinionMode(cfg.Minion.EffectiveMode())
+		if args.minions {
+			minionMode = minion.ModePlural
+		} else if args.minion || args.minionModel != "" {
+			minionMode = minion.ModeSingular
+		}
+
+		// Model: CLI flag overrides config
+		minionModelID := args.minionModel
+		if minionModelID == "" {
+			minionModelID = cfg.Minion.EffectiveModel()
+		}
+
+		minionModel, err := config.ResolveModel(minionModelID)
+		if err != nil {
+			pilog.Debug("minion: model %q not in catalog, assuming OpenAI-compatible: %v", minionModelID, err)
+			minionModel = &ai.Model{
+				ID:              minionModelID,
+				Api:             ai.ApiOpenAI,
+				MaxOutputTokens: 4096,
+			}
+		}
+
+		minionProvider := ai.GetProvider(minionModel.Api, resolveBaseURLForAPI(args, cfg, string(minionModel.Api), minionModel.BaseURL))
+		if minionProvider == nil {
+			return fmt.Errorf("no provider registered for minion model API %q", minionModel.Api)
+		}
+
+		minionTransform = minion.BuildTransform(minion.WireConfig{
+			Mode:     minionMode,
+			Model:    minionModel,
+			Provider: minionProvider,
+		})
+		pilog.Debug("minion: mode=%s model=%s", minionMode, minionModelID)
 	}
 
 	pathSandbox, err := permission.NewSandbox([]string{cwd})
@@ -251,9 +298,10 @@ func run(args cliArgs) error {
 			InputFormat:  args.inputFormat,
 			JSONSchema:   args.jsonSchema,
 		}, print.Deps{
-			Provider: provider,
-			Model:    model,
-			Tools:    toolRegistry.All(),
+			Provider:        provider,
+			Model:           model,
+			Tools:           toolRegistry.All(),
+			MinionTransform: minionTransform,
 		}, args.prompt)
 	}
 
@@ -273,9 +321,10 @@ func run(args cliArgs) error {
 			InputFormat:  args.inputFormat,
 			JSONSchema:   args.jsonSchema,
 		}, print.Deps{
-			Provider: provider,
-			Model:    model,
-			Tools:    toolRegistry.All(),
+			Provider:        provider,
+			Model:           model,
+			Tools:           toolRegistry.All(),
+			MinionTransform: minionTransform,
 		}, promptText)
 	}
 
@@ -286,7 +335,7 @@ func run(args cliArgs) error {
 	}
 
 	// Interactive mode (default)
-	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold, sessionWT)
+	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold, sessionWT, minionTransform)
 }
 
 // registerProvidersWithAuth registers providers with auth keys from the store.
@@ -342,6 +391,9 @@ func buildCLIOverrides(args cliArgs) *config.Settings {
 		f := false
 		s.Worktree = &config.WorktreeSettings{Enabled: &f}
 	}
+	if args.gateway != "" {
+		s.Gateway = &config.GatewaySettings{URL: args.gateway}
+	}
 	return s
 }
 
@@ -360,6 +412,36 @@ func resolveBaseURL(args cliArgs, cfg *config.Settings) string {
 		return args.baseURL
 	}
 	return cfg.BaseURL
+}
+
+// resolveBaseURLForAPI returns the base URL for a specific API type.
+// Priority: gateway > model-specific BaseURL > --base-url > config.base_url.
+func resolveBaseURLForAPI(args cliArgs, cfg *config.Settings, api, modelBaseURL string) string {
+	if gw := resolveGateway(args, cfg); gw != nil {
+		if resolved := gw.ResolveBaseURL(api); resolved != "" {
+			return resolved
+		}
+	}
+	if modelBaseURL != "" {
+		return modelBaseURL
+	}
+	return resolveBaseURL(args, cfg)
+}
+
+// resolveGateway builds the effective gateway settings from CLI flag + config.
+func resolveGateway(args cliArgs, cfg *config.Settings) *config.GatewaySettings {
+	gwURL := args.gateway
+	if gwURL == "" && cfg.Gateway != nil {
+		gwURL = cfg.Gateway.URL
+	}
+	if gwURL == "" {
+		return nil
+	}
+	gw := &config.GatewaySettings{URL: gwURL}
+	if cfg.Gateway != nil {
+		gw.Paths = cfg.Gateway.Paths
+	}
+	return gw
 }
 
 // resolvePermissionMode maps CLI flags and config to a permission.Mode.
@@ -388,7 +470,7 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 }
 
 // runInteractive starts the Bubble Tea interactive TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int, sessionWT *git.SessionWorktree) error {
+func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int, sessionWT *git.SessionWorktree, minionTransform agent.TransformContextFunc) error {
 	return btea.Run(btea.AppDeps{
 		Provider:             provider,
 		Model:                model,
@@ -400,6 +482,7 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 		AutoCompactThreshold: autoCompactThreshold,
 		PermissionMode:       checker.Mode(),
 		WorktreeSession:      sessionWT,
+		MinionTransform:      minionTransform,
 	})
 }
 

@@ -153,10 +153,9 @@ func (m QueueViewModel) View() string {
 	if len(m.items) == 0 {
 		writeBoxLine(&b, border, s.Dim.Render("(empty)"), contentWidth)
 	} else {
-		maxW := contentWidth - 6 // prefix + number
-		if maxW < 10 {
-			maxW = 10
-		}
+		maxW := max(
+			// prefix + number
+			contentWidth-6, 10)
 		for i, item := range m.items {
 			prefix := "  "
 			if i == m.cursor {

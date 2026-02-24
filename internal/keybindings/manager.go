@@ -5,6 +5,7 @@ package keybindings
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
@@ -159,9 +160,7 @@ func (m *Manager) buildLookup() {
 
 // mergeBindings overrides base bindings with overrides where present.
 func mergeBindings(base, overrides *config.Keybindings) {
-	for action, keys := range overrides.Bindings {
-		base.Bindings[action] = keys
-	}
+	maps.Copy(base.Bindings, overrides.Bindings)
 }
 
 // keyToString converts a key.Key to the string format used in keybinding configs.

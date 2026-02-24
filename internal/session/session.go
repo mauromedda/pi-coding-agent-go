@@ -114,25 +114,26 @@ func buildFromCompaction(records []Record, compactionIdx int) ([]ai.Message, err
 	}
 
 	// Build summary + file tracking text.
-	summaryText := fmt.Sprintf("[Context Summary]\n%s", cd.Summary)
+	var summaryText strings.Builder
+	summaryText.WriteString(fmt.Sprintf("[Context Summary]\n%s", cd.Summary))
 	if len(cd.FilesRead) > 0 {
-		summaryText += "\n\n<read-files>\n"
+		summaryText.WriteString("\n\n<read-files>\n")
 		for _, f := range cd.FilesRead {
-			summaryText += "- " + f + "\n"
+			summaryText.WriteString("- " + f + "\n")
 		}
-		summaryText += "</read-files>"
+		summaryText.WriteString("</read-files>")
 	}
 	if len(cd.FilesWritten) > 0 {
-		summaryText += "\n\n<modified-files>\n"
+		summaryText.WriteString("\n\n<modified-files>\n")
 		for _, f := range cd.FilesWritten {
-			summaryText += "- " + f + "\n"
+			summaryText.WriteString("- " + f + "\n")
 		}
-		summaryText += "</modified-files>"
+		summaryText.WriteString("</modified-files>")
 	}
-	summaryText += "\n[End Summary]"
+	summaryText.WriteString("\n[End Summary]")
 
 	msgs := []ai.Message{
-		ai.NewTextMessage(ai.RoleUser, summaryText),
+		ai.NewTextMessage(ai.RoleUser, summaryText.String()),
 		ai.NewTextMessage(ai.RoleAssistant, "I understand the context. Let me continue from where we left off."),
 	}
 

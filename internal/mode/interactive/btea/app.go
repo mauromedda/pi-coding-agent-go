@@ -373,13 +373,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if am.Role == ai.RoleAssistant {
 						aModel := NewAssistantMsgModel()
 						aModel.width = m.width
-						text := ""
+						var text strings.Builder
 						for _, c := range am.Content {
 							if c.Type == "text" {
-								text += c.Text
+								text.WriteString(c.Text)
 							}
 						}
-						updated, _ := aModel.Update(AgentTextMsg{Text: text})
+						updated, _ := aModel.Update(AgentTextMsg{Text: text.String()})
 						m.content = append(m.content, updated.(*AssistantMsgModel))
 					}
 				}
@@ -602,23 +602,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, am := range msg.Messages {
 			switch am.Role {
 			case ai.RoleUser:
-				text := ""
+				var text strings.Builder
 				for _, c := range am.Content {
 					if c.Type == "text" {
-						text += c.Text
+						text.WriteString(c.Text)
 					}
 				}
-				m.content = append(m.content, NewUserMsgModel(text))
+				m.content = append(m.content, NewUserMsgModel(text.String()))
 			case ai.RoleAssistant:
 				assistantModel := NewAssistantMsgModel()
 				assistantModel.width = m.width
-				text := ""
+				var text strings.Builder
 				for _, c := range am.Content {
 					if c.Type == "text" {
-						text += c.Text
+						text.WriteString(c.Text)
 					}
 				}
-				updated, _ := assistantModel.Update(AgentTextMsg{Text: text})
+				updated, _ := assistantModel.Update(AgentTextMsg{Text: text.String()})
 				m.content = append(m.content, updated.(*AssistantMsgModel))
 			}
 		}
@@ -1099,11 +1099,16 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
 		sh.activeAgent.Store(ag) // enable cancellation via abortAgent()
 
-		// Wire adaptive performance if probe has completed
-		if profile != nil {
-			ag.SetAdaptive(&agent.AdaptiveConfig{
-				Profile: *profile,
-			})
+		// Wire adaptive performance and/or minion transform
+		if profile != nil || deps.MinionTransform != nil {
+			adaptive := &agent.AdaptiveConfig{}
+			if profile != nil {
+				adaptive.Profile = *profile
+			}
+			if deps.MinionTransform != nil {
+				adaptive.TransformContext = deps.MinionTransform
+			}
+			ag.SetAdaptive(adaptive)
 		}
 
 		// Per-agent child context: cancelled when agent completes to prevent goroutine leaks.

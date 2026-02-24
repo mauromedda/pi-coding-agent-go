@@ -97,10 +97,7 @@ func (m CmdPaletteModel) View() string {
 	start := 0
 	end := total
 	if total > maxCmdPaletteVisible {
-		start = m.selected - maxCmdPaletteVisible/2
-		if start < 0 {
-			start = 0
-		}
+		start = max(m.selected-maxCmdPaletteVisible/2, 0)
 		end = start + maxCmdPaletteVisible
 		if end > total {
 			end = total

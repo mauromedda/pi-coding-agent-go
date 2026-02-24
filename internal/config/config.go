@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Settings holds the merged configuration.
@@ -75,6 +76,12 @@ type Settings struct {
 
 	// Worktree configures default worktree isolation per session
 	Worktree *WorktreeSettings `json:"worktree,omitempty"`
+
+	// Minion configures the local/cloud context distillation protocol
+	Minion *MinionSettings `json:"minion,omitempty"`
+
+	// Gateway routes LLM traffic through a proxy (e.g., hikma-mirsad)
+	Gateway *GatewaySettings `json:"gateway,omitempty"`
 }
 
 // ModelOverride allows per-model customization.
@@ -237,6 +244,71 @@ func (w *WorktreeSettings) IsEnabled() bool {
 		return true
 	}
 	return *w.Enabled
+}
+
+// MinionSettings configures the minion protocol (local/cloud context distillation).
+type MinionSettings struct {
+	Enabled *bool  `json:"enabled,omitempty"` // nil = false (opt-in)
+	Model   string `json:"model,omitempty"`   // any model ID; default "claude-haiku-4-5-20251001"
+	Mode    string `json:"mode,omitempty"`    // "singular", "plural"; default "singular"
+}
+
+// IsEnabled returns whether the minion protocol is enabled (default false).
+func (m *MinionSettings) IsEnabled() bool {
+	if m == nil || m.Enabled == nil {
+		return false
+	}
+	return *m.Enabled
+}
+
+// EffectiveModel returns Model or default ("claude-haiku-4-5-20251001").
+func (m *MinionSettings) EffectiveModel() string {
+	if m == nil || m.Model == "" {
+		return "claude-haiku-4-5-20251001"
+	}
+	return m.Model
+}
+
+// EffectiveMode returns Mode or default ("singular").
+func (m *MinionSettings) EffectiveMode() string {
+	if m == nil || m.Mode == "" {
+		return "singular"
+	}
+	return m.Mode
+}
+
+// GatewaySettings routes all LLM traffic through a proxy gateway (e.g., hikma-mirsad).
+type GatewaySettings struct {
+	URL   string            `json:"url"`             // e.g., "http://localhost:8080"
+	Paths map[string]string `json:"paths,omitempty"` // api -> path prefix override
+}
+
+// DefaultGatewayPaths maps API types to their default gateway path prefixes.
+// Includes version path segments that providers embed in their base URLs.
+var DefaultGatewayPaths = map[string]string{
+	"anthropic": "/anthropic",
+	"openai":    "/openai",
+	"google":    "/gemini/v1beta",
+	"vertex":    "/vertex/v1",
+}
+
+// ResolveBaseURL returns the effective base URL for an API type.
+// Returns empty string if gateway is not configured.
+func (g *GatewaySettings) ResolveBaseURL(api string) string {
+	if g == nil || g.URL == "" {
+		return ""
+	}
+	path := DefaultGatewayPaths[api]
+	if g.Paths != nil {
+		if override, has := g.Paths[api]; has {
+			path = override
+		}
+	}
+	base := strings.TrimRight(g.URL, "/")
+	if path != "" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -627,6 +699,9 @@ func merge(global, project *Settings) *Settings {
 	if project.Telemetry != nil {
 		if result.Telemetry == nil {
 			result.Telemetry = &TelemetrySettings{}
+		} else {
+			t := *result.Telemetry
+			result.Telemetry = &t
 		}
 		if project.Telemetry.Enabled != nil {
 			result.Telemetry.Enabled = project.Telemetry.Enabled
@@ -643,6 +718,9 @@ func merge(global, project *Settings) *Settings {
 	if project.Safety != nil {
 		if result.Safety == nil {
 			result.Safety = &SafetySettings{}
+		} else {
+			s := *result.Safety
+			result.Safety = &s
 		}
 		if len(project.Safety.NeverModify) > 0 {
 			result.Safety.NeverModify = dedupStrings(result.Safety.NeverModify, project.Safety.NeverModify)
@@ -656,10 +734,63 @@ func merge(global, project *Settings) *Settings {
 	if project.Worktree != nil {
 		if result.Worktree == nil {
 			result.Worktree = &WorktreeSettings{}
+		} else {
+			w := *result.Worktree
+			result.Worktree = &w
 		}
 		if project.Worktree.Enabled != nil {
 			result.Worktree.Enabled = project.Worktree.Enabled
 		}
+	}
+
+	// Minion: merge if present
+	if project.Minion != nil {
+		if result.Minion == nil {
+			result.Minion = &MinionSettings{}
+		} else {
+			m := *result.Minion
+			result.Minion = &m
+		}
+		if project.Minion.Enabled != nil {
+			result.Minion.Enabled = project.Minion.Enabled
+		}
+		if project.Minion.Model != "" {
+			result.Minion.Model = project.Minion.Model
+		}
+		if project.Minion.Mode != "" {
+			result.Minion.Mode = project.Minion.Mode
+		}
+	}
+
+	// Gateway: merge if present (deep-copy to prevent mutation)
+	if project.Gateway != nil {
+		if result.Gateway == nil {
+			result.Gateway = &GatewaySettings{}
+		} else {
+			g := *result.Gateway
+			if result.Gateway.Paths != nil {
+				g.Paths = make(map[string]string, len(result.Gateway.Paths))
+				maps.Copy(g.Paths, result.Gateway.Paths)
+			}
+			result.Gateway = &g
+		}
+		if project.Gateway.URL != "" {
+			result.Gateway.URL = project.Gateway.URL
+		}
+		if project.Gateway.Paths != nil {
+			if result.Gateway.Paths == nil {
+				result.Gateway.Paths = make(map[string]string)
+			}
+			maps.Copy(result.Gateway.Paths, project.Gateway.Paths)
+		}
+	} else if result.Gateway != nil {
+		// Deep-copy global gateway to avoid shared map mutation
+		g := *result.Gateway
+		if result.Gateway.Paths != nil {
+			g.Paths = make(map[string]string, len(result.Gateway.Paths))
+			maps.Copy(g.Paths, result.Gateway.Paths)
+		}
+		result.Gateway = &g
 	}
 
 	return &result

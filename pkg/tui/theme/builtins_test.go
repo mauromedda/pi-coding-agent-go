@@ -40,7 +40,7 @@ func TestBuiltinThemes_AllPalettesPopulated(t *testing.T) {
 		v := reflect.ValueOf(th.Palette)
 		for i := range v.NumField() {
 			f := v.Field(i)
-			if f.Type() != reflect.TypeOf(Color{}) {
+			if f.Type() != reflect.TypeFor[Color]() {
 				continue
 			}
 			c := f.Interface().(Color)

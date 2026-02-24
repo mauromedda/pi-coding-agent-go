@@ -79,11 +79,17 @@ func executeBash(ctx context.Context, _ string, params map[string]any, onUpdate 
 		return errResult(err), nil
 	}
 
+	// Sanitize and validate the command for security
+	sanitizedCommand := sanitizeBashCommand(command)
+	if err := validateBashCommand(sanitizedCommand); err != nil {
+		return errResult(fmt.Errorf("command validation failed: %w", err)), nil
+	}
+
 	timeoutMs := intParam(params, "timeout_ms", defaultBashTimeoutMs)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
-	result, err := runBashCommand(ctx, command)
+	result, err := runBashCommand(ctx, sanitizedCommand)
 	if err != nil {
 		return errResult(fmt.Errorf("executing command: %w", err)), nil
 	}
@@ -104,6 +110,9 @@ func runBashCommand(ctx context.Context, command string) (string, error) {
 		return "", fmt.Errorf("bash not found on PATH: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, bashPath, "-c", command)
+
+	// Set restricted environment for security
+	cmd.Env = restrictedEnvironment()
 
 	var buf bytes.Buffer
 	lw := &limitedWriter{w: &buf, limit: maxBashOutput}

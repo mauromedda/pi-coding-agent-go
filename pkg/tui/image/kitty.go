@@ -31,10 +31,7 @@ func EncodeKitty(pngData []byte, cols, rows int) string {
 
 	// Multi-chunk transmission
 	for i := 0; i < len(encoded); i += kittyChunkSize {
-		end := i + kittyChunkSize
-		if end > len(encoded) {
-			end = len(encoded)
-		}
+		end := min(i+kittyChunkSize, len(encoded))
 		chunk := encoded[i:end]
 		more := 1
 		if end == len(encoded) {

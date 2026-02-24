@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -718,13 +719,13 @@ func TestPersonalityCheck_IsEnabled(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		check   PersonalityCheck
-		want    bool
+		name  string
+		check PersonalityCheck
+		want  bool
 	}{
 		{"nil enabled defaults to true", PersonalityCheck{}, true},
-		{"enabled true", PersonalityCheck{Enabled: boolPtr(true)}, true},
-		{"enabled false", PersonalityCheck{Enabled: boolPtr(false)}, false},
+		{"enabled true", PersonalityCheck{Enabled: new(true)}, true},
+		{"enabled false", PersonalityCheck{Enabled: new(false)}, false},
 	}
 
 	for _, tt := range tests {
@@ -1037,7 +1038,7 @@ func TestWorktreeSettings_IsEnabled_NilEnabled(t *testing.T) {
 
 func TestWorktreeSettings_IsEnabled_True(t *testing.T) {
 	t.Parallel()
-	ws := &WorktreeSettings{Enabled: boolPtr(true)}
+	ws := &WorktreeSettings{Enabled: new(true)}
 	if !ws.IsEnabled() {
 		t.Error("WorktreeSettings{Enabled: true} should be enabled")
 	}
@@ -1045,7 +1046,7 @@ func TestWorktreeSettings_IsEnabled_True(t *testing.T) {
 
 func TestWorktreeSettings_IsEnabled_False(t *testing.T) {
 	t.Parallel()
-	ws := &WorktreeSettings{Enabled: boolPtr(false)}
+	ws := &WorktreeSettings{Enabled: new(false)}
 	if ws.IsEnabled() {
 		t.Error("WorktreeSettings{Enabled: false} should be disabled")
 	}
@@ -1054,8 +1055,8 @@ func TestWorktreeSettings_IsEnabled_False(t *testing.T) {
 func TestMerge_Worktree(t *testing.T) {
 	t.Parallel()
 
-	global := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(true)}}
-	project := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(false)}}
+	global := &Settings{Worktree: &WorktreeSettings{Enabled: new(true)}}
+	project := &Settings{Worktree: &WorktreeSettings{Enabled: new(false)}}
 
 	result := merge(global, project)
 	if result.Worktree == nil {
@@ -1069,7 +1070,7 @@ func TestMerge_Worktree(t *testing.T) {
 func TestMerge_Worktree_NilProject(t *testing.T) {
 	t.Parallel()
 
-	global := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(true)}}
+	global := &Settings{Worktree: &WorktreeSettings{Enabled: new(true)}}
 	project := &Settings{}
 
 	result := merge(global, project)
@@ -1079,6 +1080,344 @@ func TestMerge_Worktree_NilProject(t *testing.T) {
 }
 
 // boolPtr is a test helper that returns a pointer to a bool value.
+//
+//go:fix inline
 func boolPtr(b bool) *bool {
-	return &b
+	return new(b)
+}
+
+// --- MinionSettings tests ---
+
+func TestMinionSettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var ms *MinionSettings // nil
+
+	if ms.IsEnabled() {
+		t.Error("nil MinionSettings should be disabled by default")
+	}
+	if ms.EffectiveModel() != "claude-haiku-4-5-20251001" {
+		t.Errorf("EffectiveModel = %q, want %q", ms.EffectiveModel(), "claude-haiku-4-5-20251001")
+	}
+	if ms.EffectiveMode() != "singular" {
+		t.Errorf("EffectiveMode = %q, want %q", ms.EffectiveMode(), "singular")
+	}
+}
+
+func TestMinionSettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	tr := true
+	ms := &MinionSettings{
+		Enabled: &tr,
+		Model:   "llama3.2:8b",
+		Mode:    "plural",
+	}
+
+	if !ms.IsEnabled() {
+		t.Error("should be enabled")
+	}
+	if ms.EffectiveModel() != "llama3.2:8b" {
+		t.Errorf("EffectiveModel = %q, want %q", ms.EffectiveModel(), "llama3.2:8b")
+	}
+	if ms.EffectiveMode() != "plural" {
+		t.Errorf("EffectiveMode = %q, want %q", ms.EffectiveMode(), "plural")
+	}
+}
+
+func TestMerge_MinionSettings(t *testing.T) {
+	t.Parallel()
+
+	tr := true
+	global := &Settings{
+		Minion: &MinionSettings{
+			Enabled: &tr,
+			Model:   "claude-haiku-4-5-20251001",
+		},
+	}
+	project := &Settings{
+		Minion: &MinionSettings{
+			Mode: "plural",
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Minion == nil {
+		t.Fatal("Minion should be set")
+	}
+	if !result.Minion.IsEnabled() {
+		t.Error("Enabled should be preserved from global")
+	}
+	if result.Minion.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("Model = %q, want %q (from global)", result.Minion.Model, "claude-haiku-4-5-20251001")
+	}
+	if result.Minion.Mode != "plural" {
+		t.Errorf("Mode = %q, want %q (from project)", result.Minion.Mode, "plural")
+	}
+}
+
+func TestMerge_MinionSettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	global := &Settings{
+		Minion: &MinionSettings{
+			Enabled: &enabled,
+			Model:   "llama3:8b",
+		},
+	}
+	project := &Settings{
+		Minion: &MinionSettings{
+			Model: "mistral:7b",
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Minion.Model != "mistral:7b" {
+		t.Errorf("expected mistral:7b, got %s", result.Minion.Model)
+	}
+	// global must not be mutated
+	if global.Minion.Model != "llama3:8b" {
+		t.Errorf("global.Minion was mutated: Model = %s", global.Minion.Model)
+	}
+}
+
+func TestMerge_TelemetrySettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	global := &Settings{
+		Telemetry: &TelemetrySettings{
+			Enabled:   &enabled,
+			BudgetUSD: 10.0,
+		},
+	}
+	project := &Settings{
+		Telemetry: &TelemetrySettings{
+			BudgetUSD: 50.0,
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Telemetry.BudgetUSD != 50.0 {
+		t.Errorf("expected 50.0, got %f", result.Telemetry.BudgetUSD)
+	}
+	// global must not be mutated
+	if global.Telemetry.BudgetUSD != 10.0 {
+		t.Errorf("global.Telemetry was mutated: BudgetUSD = %f", global.Telemetry.BudgetUSD)
+	}
+}
+
+func TestMerge_SafetySettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Safety: &SafetySettings{
+			NeverModify: []string{"/etc/passwd"},
+		},
+	}
+	project := &Settings{
+		Safety: &SafetySettings{
+			NeverModify: []string{"/etc/shadow"},
+		},
+	}
+
+	result := merge(global, project)
+
+	if len(result.Safety.NeverModify) != 2 {
+		t.Errorf("expected 2 NeverModify entries, got %d", len(result.Safety.NeverModify))
+	}
+	// global must not be mutated
+	if len(global.Safety.NeverModify) != 1 || global.Safety.NeverModify[0] != "/etc/passwd" {
+		t.Errorf("global.Safety was mutated: NeverModify = %v", global.Safety.NeverModify)
+	}
+}
+
+func TestMerge_WorktreeSettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	global := &Settings{
+		Worktree: &WorktreeSettings{
+			Enabled: &enabled,
+		},
+	}
+	disabled := false
+	project := &Settings{
+		Worktree: &WorktreeSettings{
+			Enabled: &disabled,
+		},
+	}
+
+	result := merge(global, project)
+
+	if *result.Worktree.Enabled != false {
+		t.Error("expected Worktree.Enabled = false from project")
+	}
+	// global must not be mutated
+	if *global.Worktree.Enabled != true {
+		t.Error("global.Worktree was mutated: Enabled should still be true")
+	}
+}
+
+func TestLoadFile_MinionSettings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	data := `{"minion":{"enabled":true,"model":"claude-haiku-4-5-20251001","mode":"singular"}}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Minion == nil {
+		t.Fatal("Minion should be set")
+	}
+	if !s.Minion.IsEnabled() {
+		t.Error("should be enabled")
+	}
+	if s.Minion.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("Model = %q, want %q", s.Minion.Model, "claude-haiku-4-5-20251001")
+	}
+	if s.Minion.Mode != "singular" {
+		t.Errorf("Mode = %q, want %q", s.Minion.Mode, "singular")
+	}
+}
+
+func TestGatewaySettings_ResolveBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		gw   *GatewaySettings
+		api  string
+		want string
+	}{
+		{"nil gateway", nil, "anthropic", ""},
+		{"empty URL", &GatewaySettings{}, "anthropic", ""},
+		{"default anthropic", &GatewaySettings{URL: "http://localhost:8080"}, "anthropic", "http://localhost:8080/anthropic"},
+		{"default openai", &GatewaySettings{URL: "http://localhost:8080"}, "openai", "http://localhost:8080/openai"},
+		{"default google", &GatewaySettings{URL: "http://localhost:8080"}, "google", "http://localhost:8080/gemini/v1beta"},
+		{"default vertex", &GatewaySettings{URL: "http://localhost:8080"}, "vertex", "http://localhost:8080/vertex/v1"},
+		{"trailing slash stripped", &GatewaySettings{URL: "http://localhost:8080/"}, "anthropic", "http://localhost:8080/anthropic"},
+		{
+			"custom path override",
+			&GatewaySettings{URL: "http://gw:9090", Paths: map[string]string{"anthropic": "/api/claude"}},
+			"anthropic",
+			"http://gw:9090/api/claude",
+		},
+		{
+			"custom path without leading slash",
+			&GatewaySettings{URL: "http://gw:9090", Paths: map[string]string{"anthropic": "custom/api"}},
+			"anthropic",
+			"http://gw:9090/custom/api",
+		},
+		{"unknown api gets bare gateway URL", &GatewaySettings{URL: "http://localhost:8080"}, "bedrock", "http://localhost:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.gw.ResolveBaseURL(tt.api)
+			if got != tt.want {
+				t.Errorf("ResolveBaseURL(%q) = %q, want %q", tt.api, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGatewaySettings_JSON(t *testing.T) {
+	t.Parallel()
+
+	s := Settings{
+		Gateway: &GatewaySettings{
+			URL:   "http://localhost:8080",
+			Paths: map[string]string{"anthropic": "/custom"},
+		},
+	}
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded Settings
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Gateway == nil {
+		t.Fatal("Gateway should not be nil")
+	}
+	if decoded.Gateway.URL != "http://localhost:8080" {
+		t.Errorf("URL = %q", decoded.Gateway.URL)
+	}
+	if decoded.Gateway.Paths["anthropic"] != "/custom" {
+		t.Errorf("Paths = %v", decoded.Gateway.Paths)
+	}
+}
+
+func TestMerge_Gateway(t *testing.T) {
+	t.Parallel()
+
+	t.Run("project overrides global URL", func(t *testing.T) {
+		global := &Settings{Gateway: &GatewaySettings{URL: "http://global:8080"}}
+		project := &Settings{Gateway: &GatewaySettings{URL: "http://project:9090"}}
+		merged := merge(global, project)
+		if merged.Gateway == nil || merged.Gateway.URL != "http://project:9090" {
+			t.Errorf("Gateway.URL = %q, want http://project:9090", merged.Gateway.URL)
+		}
+	})
+
+	t.Run("project paths merge over global", func(t *testing.T) {
+		global := &Settings{Gateway: &GatewaySettings{
+			URL:   "http://gw:8080",
+			Paths: map[string]string{"anthropic": "/anthropic", "openai": "/openai"},
+		}}
+		project := &Settings{Gateway: &GatewaySettings{
+			Paths: map[string]string{"anthropic": "/custom-anthropic"},
+		}}
+		merged := merge(global, project)
+		if merged.Gateway.URL != "http://gw:8080" {
+			t.Errorf("URL = %q, want http://gw:8080 (preserved from global)", merged.Gateway.URL)
+		}
+		if merged.Gateway.Paths["anthropic"] != "/custom-anthropic" {
+			t.Errorf("anthropic = %q, want /custom-anthropic", merged.Gateway.Paths["anthropic"])
+		}
+		if merged.Gateway.Paths["openai"] != "/openai" {
+			t.Errorf("openai = %q, want /openai (preserved from global)", merged.Gateway.Paths["openai"])
+		}
+	})
+
+	t.Run("nil global + project gateway", func(t *testing.T) {
+		merged := merge(&Settings{}, &Settings{Gateway: &GatewaySettings{URL: "http://new:8080"}})
+		if merged.Gateway == nil || merged.Gateway.URL != "http://new:8080" {
+			t.Errorf("Gateway = %v, want URL http://new:8080", merged.Gateway)
+		}
+	})
+
+	t.Run("global gateway + nil project preserves global", func(t *testing.T) {
+		merged := merge(&Settings{Gateway: &GatewaySettings{URL: "http://global:8080"}}, &Settings{})
+		if merged.Gateway == nil || merged.Gateway.URL != "http://global:8080" {
+			t.Errorf("Gateway = %v, want URL http://global:8080", merged.Gateway)
+		}
+	})
+
+	t.Run("merge does not mutate original", func(t *testing.T) {
+		global := &Settings{Gateway: &GatewaySettings{
+			URL:   "http://gw:8080",
+			Paths: map[string]string{"anthropic": "/anthropic"},
+		}}
+		project := &Settings{Gateway: &GatewaySettings{
+			Paths: map[string]string{"openai": "/openai"},
+		}}
+		_ = merge(global, project)
+		if _, ok := global.Gateway.Paths["openai"]; ok {
+			t.Error("merge mutated global Gateway.Paths")
+		}
+	})
 }
