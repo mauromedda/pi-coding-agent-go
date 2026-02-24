@@ -137,6 +137,31 @@ type QueueEditMsg struct {
 	Index int
 }
 
+// --- Background task lifecycle ---
+
+// BackgroundTaskDoneMsg signals that a background task has completed.
+type BackgroundTaskDoneMsg struct {
+	TaskID   string
+	Prompt   string
+	Messages []ai.Message
+	Err      error
+}
+
+// BackgroundTaskReviewMsg requests that a completed background task be replayed into the content area.
+type BackgroundTaskReviewMsg struct {
+	TaskID string
+}
+
+// BackgroundTaskRemoveMsg requests removal of a background task from the manager.
+type BackgroundTaskRemoveMsg struct {
+	TaskID string
+}
+
+// BackgroundTaskCancelMsg requests cancellation of a running background task.
+type BackgroundTaskCancelMsg struct {
+	TaskID string
+}
+
 // --- Async I/O results ---
 
 // BashDoneMsg carries the result of an asynchronous bash command execution.

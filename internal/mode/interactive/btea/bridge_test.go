@@ -234,6 +234,24 @@ func TestRunAgentBridge_IgnoresUnknownEventTypes(t *testing.T) {
 	}
 }
 
+func TestBridgeEventToMsg_ReturnsNilForUnmapped(t *testing.T) {
+	msg := bridgeEventToMsg(agent.AgentEvent{Type: agent.EventAgentStart})
+	if msg != nil {
+		t.Errorf("bridgeEventToMsg(EventAgentStart) = %T; want nil", msg)
+	}
+}
+
+func TestBridgeEventToMsg_TextEvent(t *testing.T) {
+	msg := bridgeEventToMsg(agent.AgentEvent{Type: agent.EventAssistantText, Text: "hi"})
+	tm, ok := msg.(AgentTextMsg)
+	if !ok {
+		t.Fatalf("got %T; want AgentTextMsg", msg)
+	}
+	if tm.Text != "hi" {
+		t.Errorf("Text = %q; want %q", tm.Text, "hi")
+	}
+}
+
 // errTest is a sentinel error for testing.
 var errTest = &testError{msg: "test error"}
 

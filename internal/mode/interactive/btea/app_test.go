@@ -1189,3 +1189,87 @@ func TestAppModel_WindowSizeMsgPropagatedToOverlay(t *testing.T) {
 		t.Errorf("overlay width = %d; want 60", pd.width)
 	}
 }
+
+// --- Ctrl+B background task tests ---
+
+func TestAppModel_CtrlB_DetachRunningAgent(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.sh.bgManager = NewBackgroundManager(nil)
+	m.agentRunning = true
+	m.sh.fgTaskID.Store("bg-test123")
+	m.width = 80
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
+	model := result.(AppModel)
+
+	if model.agentRunning {
+		t.Error("agentRunning = true; want false after Ctrl+B detach")
+	}
+	if model.sh.bgManager.Count() != 1 {
+		t.Errorf("bgManager.Count() = %d; want 1", model.sh.bgManager.Count())
+	}
+}
+
+func TestAppModel_CtrlB_OpensOverlayWhenNotRunning(t *testing.T) {
+	m := NewAppModel(testDeps())
+	mgr := NewBackgroundManager(nil)
+	_ = mgr.Add(&BackgroundTask{
+		ID:     "bg-abc",
+		Prompt: "test",
+		Status: BGDone,
+	})
+	m.sh.bgManager = mgr
+	m.agentRunning = false
+	m.width = 80
+	m.height = 24
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
+	model := result.(AppModel)
+
+	if model.overlay == nil {
+		t.Fatal("overlay = nil; want BackgroundViewModel")
+	}
+	if _, ok := model.overlay.(BackgroundViewModel); !ok {
+		t.Errorf("overlay = %T; want BackgroundViewModel", model.overlay)
+	}
+}
+
+func TestAppModel_CtrlB_NoopWhenIdleAndEmpty(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.sh.bgManager = NewBackgroundManager(nil)
+	m.agentRunning = false
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
+	model := result.(AppModel)
+
+	if model.overlay != nil {
+		t.Errorf("overlay = %T; want nil when no bg tasks", model.overlay)
+	}
+}
+
+func TestAppModel_BackgroundTaskDoneMsg(t *testing.T) {
+	m := NewAppModel(testDeps())
+	mgr := NewBackgroundManager(nil)
+	_ = mgr.Add(&BackgroundTask{
+		ID:     "bg-done",
+		Prompt: "finished task",
+		Status: BGRunning,
+	})
+	m.sh.bgManager = mgr
+	m.width = 80
+
+	result, _ := m.Update(BackgroundTaskDoneMsg{
+		TaskID:   "bg-done",
+		Prompt:   "finished task",
+		Messages: []ai.Message{{Role: ai.RoleAssistant}},
+	})
+	model := result.(AppModel)
+
+	task := model.sh.bgManager.Get("bg-done")
+	if task == nil {
+		t.Fatal("task = nil after BackgroundTaskDoneMsg")
+	}
+	if task.Status != BGDone {
+		t.Errorf("task.Status = %v; want BGDone", task.Status)
+	}
+}

@@ -6,6 +6,7 @@ package btea
 import (
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/git"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/internal/session"
 	"github.com/mauromedda/pi-coding-agent-go/internal/statusline"
@@ -27,4 +28,5 @@ type AppDeps struct {
 	PermissionMode       permission.Mode
 	Session              *session.Session
 	AvailableModels      []ModelEntry
+	WorktreeSession      *git.SessionWorktree
 }

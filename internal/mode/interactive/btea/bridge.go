@@ -14,38 +14,48 @@ type ProgramSender interface {
 	Send(msg tea.Msg)
 }
 
+// bridgeEventToMsg converts a single agent event to its corresponding tea.Msg.
+// Returns nil for unmapped event types (e.g., EventAgentStart, EventAgentEnd).
+func bridgeEventToMsg(evt agent.AgentEvent) tea.Msg {
+	switch evt.Type {
+	case agent.EventAssistantText:
+		return AgentTextMsg{Text: evt.Text}
+	case agent.EventAssistantThinking:
+		return AgentThinkingMsg{Text: evt.Text}
+	case agent.EventToolStart:
+		return AgentToolStartMsg{
+			ToolID:   evt.ToolID,
+			ToolName: evt.ToolName,
+			Args:     evt.ToolArgs,
+		}
+	case agent.EventToolUpdate:
+		return AgentToolUpdateMsg{ToolID: evt.ToolID, Text: evt.Text}
+	case agent.EventToolEnd:
+		msg := AgentToolEndMsg{
+			ToolID: evt.ToolID,
+			Text:   evt.Text,
+			Result: evt.ToolResult,
+		}
+		if evt.ToolResult != nil {
+			msg.Images = evt.ToolResult.Images
+		}
+		return msg
+	case agent.EventUsageUpdate:
+		return AgentUsageMsg{Usage: evt.Usage}
+	case agent.EventError:
+		return AgentErrorMsg{Err: evt.Error}
+	default:
+		return nil
+	}
+}
+
 // RunAgentBridge reads agent events and sends them as tea.Msg to the program.
 // Blocks until the events channel is closed. The caller is responsible for
 // sending AgentDoneMsg with the final messages after the bridge returns.
 func RunAgentBridge(program ProgramSender, events <-chan agent.AgentEvent) {
 	for evt := range events {
-		switch evt.Type {
-		case agent.EventAssistantText:
-			program.Send(AgentTextMsg{Text: evt.Text})
-		case agent.EventAssistantThinking:
-			program.Send(AgentThinkingMsg{Text: evt.Text})
-		case agent.EventToolStart:
-			program.Send(AgentToolStartMsg{
-				ToolID:   evt.ToolID,
-				ToolName: evt.ToolName,
-				Args:     evt.ToolArgs,
-			})
-		case agent.EventToolUpdate:
-			program.Send(AgentToolUpdateMsg{ToolID: evt.ToolID, Text: evt.Text})
-		case agent.EventToolEnd:
-			msg := AgentToolEndMsg{
-				ToolID: evt.ToolID,
-				Text:   evt.Text,
-				Result: evt.ToolResult,
-			}
-			if evt.ToolResult != nil {
-				msg.Images = evt.ToolResult.Images
-			}
+		if msg := bridgeEventToMsg(evt); msg != nil {
 			program.Send(msg)
-		case agent.EventUsageUpdate:
-			program.Send(AgentUsageMsg{Usage: evt.Usage})
-		case agent.EventError:
-			program.Send(AgentErrorMsg{Err: evt.Error})
 		}
 	}
 }

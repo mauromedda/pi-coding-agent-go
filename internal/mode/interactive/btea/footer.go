@@ -27,9 +27,10 @@ type FooterModel struct {
 	queuedCount    int
 	latencyClass   string
 	showImages     bool
-	intentLabel    string   // Current intent name (e.g., "Plan", "Execute", "Debug")
-	activeChecks   []string // Abbreviations of active checks (e.g., ["SEC", "QUAL", "ARCH"])
-	width          int
+	intentLabel     string   // Current intent name (e.g., "Plan", "Execute", "Debug")
+	activeChecks    []string // Abbreviations of active checks (e.g., ["SEC", "QUAL", "ARCH"])
+	backgroundCount int      // Number of background tasks
+	width           int
 }
 
 // NewFooterModel creates an empty FooterModel.
@@ -145,6 +146,12 @@ func (m FooterModel) WithActiveChecks(checks []string) FooterModel {
 	return m
 }
 
+// WithBackgroundCount returns a FooterModel with the background task count set.
+func (m FooterModel) WithBackgroundCount(n int) FooterModel {
+	m.backgroundCount = n
+	return m
+}
+
 // View renders the two-line footer.
 func (m FooterModel) View() string {
 	s := Styles()
@@ -241,6 +248,10 @@ func (m FooterModel) View() string {
 
 	if m.queuedCount > 0 {
 		line2Parts = append(line2Parts, s.Warning.Render(fmt.Sprintf("[%d queued]", m.queuedCount)))
+	}
+
+	if m.backgroundCount > 0 {
+		line2Parts = append(line2Parts, s.Info.Render(fmt.Sprintf("[%d bg]", m.backgroundCount)))
 	}
 
 	if m.showImages {

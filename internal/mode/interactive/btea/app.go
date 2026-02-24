@@ -5,11 +5,14 @@ package btea
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -58,6 +61,9 @@ type shared struct {
 	activeAgent atomic.Pointer[agent.Agent]
 	ctx         context.Context
 	cancel      context.CancelFunc
+	bgManager   *BackgroundManager
+	fgTaskID    atomic.Value // string: current foreground task ID
+	taskCancels sync.Map     // map[string]context.CancelFunc: per-task cancellation
 }
 
 // AppModel is the root Bubble Tea model for the interactive TUI.
@@ -119,6 +125,9 @@ type AppModel struct {
 
 	// Cached separator string (recomputed only on WindowSizeMsg)
 	cachedSep string
+
+	// Worktree exit action (set by WorktreeExitMsg before tea.Quit)
+	worktreeExitAction WorktreeExitAction
 }
 
 // Compile-time interface assertion.
@@ -324,6 +333,73 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
 		m.editor = m.editor.SetFocused(true).SetText(msg.Text)
+		return m, nil
+
+	// --- Worktree exit ---
+	case WorktreeExitMsg:
+		m.overlay = nil
+		m.worktreeExitAction = msg.Action
+		return m, tea.Quit
+
+	// --- Background task lifecycle ---
+	case BackgroundTaskDoneMsg:
+		if m.sh.bgManager != nil {
+			m.sh.bgManager.MarkDone(msg.TaskID, msg.Messages, msg.Err)
+			m.footer = m.footer.WithBackgroundCount(m.sh.bgManager.Count())
+		}
+		// Inline notification
+		label := "✓"
+		if msg.Err != nil {
+			label = "✗"
+		}
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(AgentTextMsg{
+			Text: fmt.Sprintf("\n%s Background task [%s] completed", label, msg.TaskID),
+		})
+		return m, nil
+
+	case BackgroundTaskReviewMsg:
+		m.overlay = nil
+		if m.sh.bgManager != nil {
+			task := m.sh.bgManager.Get(msg.TaskID)
+			if task != nil && len(task.Messages) > 0 {
+				// Replay task messages into content as read-only
+				m.content = append(m.content, NewUserMsgModel("(bg) "+task.Prompt))
+				for _, am := range task.Messages {
+					if am.Role == ai.RoleAssistant {
+						aModel := NewAssistantMsgModel()
+						aModel.width = m.width
+						text := ""
+						for _, c := range am.Content {
+							if c.Type == "text" {
+								text += c.Text
+							}
+						}
+						updated, _ := aModel.Update(AgentTextMsg{Text: text})
+						m.content = append(m.content, updated.(*AssistantMsgModel))
+					}
+				}
+			}
+		}
+		return m, nil
+
+	case BackgroundTaskRemoveMsg:
+		if m.sh.bgManager != nil {
+			m.sh.bgManager.Remove(msg.TaskID)
+			m.footer = m.footer.WithBackgroundCount(m.sh.bgManager.Count())
+		}
+		// If bgview has no tasks left, dismiss overlay.
+		if m.sh.bgManager != nil && m.sh.bgManager.Count() == 0 {
+			m.overlay = nil
+		}
+		return m, nil
+
+	case BackgroundTaskCancelMsg:
+		if v, ok := m.sh.taskCancels.Load(msg.TaskID); ok {
+			if cancelFn, ok := v.(context.CancelFunc); ok {
+				cancelFn()
+			}
+		}
 		return m, nil
 
 	// --- Agent done (must be handled regardless of overlay) ---
@@ -643,9 +719,17 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.abortAgent()
 			return m, nil
 		}
+		if m.deps.WorktreeSession != nil {
+			m.overlay = NewWorktreeDialogModel(m.deps.WorktreeSession.Info.Branch, m.width)
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case "ctrl+d":
+		if m.deps.WorktreeSession != nil && !m.agentRunning {
+			m.overlay = NewWorktreeDialogModel(m.deps.WorktreeSession.Info.Branch, m.width)
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case "esc":
@@ -695,6 +779,15 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		for i := range m.content {
 			updated, _ := m.content[i].Update(toggleMsg)
 			m.content[i] = updated
+		}
+		return m, nil
+
+	case "ctrl+b":
+		if m.agentRunning {
+			return m.detachToBackground()
+		}
+		if m.sh.bgManager != nil && m.sh.bgManager.Count() > 0 {
+			m.overlay = NewBackgroundViewModel(m.sh.bgManager.List(), m.width, m.height)
 		}
 		return m, nil
 
@@ -892,6 +985,13 @@ func (m AppModel) handleSlashCommand(text string) (AppModel, tea.Cmd) {
 	return model.(AppModel), cmd
 }
 
+// generateTaskID returns a short random hex ID prefixed with "bg-".
+func generateTaskID() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return "bg-" + hex.EncodeToString(b[:])
+}
+
 func (m AppModel) startAgentCmd() tea.Cmd {
 	program := m.sh.program
 	sh := m.sh // shared pointer for agent assignment
@@ -900,6 +1000,24 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 	copy(messages, m.messages)
 	thinkingLevel := m.thinkingLevel
 	profile := m.modelProfile
+
+	// Generate a task ID and store it as the foreground task.
+	taskID := generateTaskID()
+	sh.fgTaskID.Store(taskID)
+
+	// Capture the prompt text for background task labeling.
+	promptText := ""
+	if len(messages) > 0 {
+		last := messages[len(messages)-1]
+		if last.Role == ai.RoleUser {
+			for _, c := range last.Content {
+				if c.Type == "text" {
+					promptText = c.Text
+					break
+				}
+			}
+		}
+	}
 
 	return func() tea.Msg {
 		if program == nil {
@@ -925,8 +1043,14 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 			opts.Thinking = true
 		}
 
-		// Create agent with permission checking
+		// Create agent with permission checking.
+		// When the task is backgrounded (fgTaskID no longer matches),
+		// auto-deny all permission requests.
 		permCheckFn := func(tool string, args map[string]any) error {
+			currentFG, _ := sh.fgTaskID.Load().(string)
+			if currentFG != taskID {
+				return fmt.Errorf("permission denied: task running in background")
+			}
 			if deps.Checker != nil {
 				return deps.Checker.Check(tool, args)
 			}
@@ -945,16 +1069,44 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 
 		// Per-agent child context: cancelled when agent completes to prevent goroutine leaks.
 		agCtx, agCancel := context.WithCancel(sh.ctx)
-		defer agCancel()
+		sh.taskCancels.Store(taskID, agCancel)
+		defer func() {
+			sh.taskCancels.Delete(taskID)
+			agCancel()
+		}()
 
 		events := ag.Prompt(agCtx, llmCtx, opts)
 
-		// The bridge sends streaming events via program.Send; blocks until done.
-		RunAgentBridge(program, events)
+		// Route events based on foreground/background state.
+		// If fgTaskID still matches, we're foreground: send to program.
+		// If it changed (detached via Ctrl+B), events are silently discarded.
+		// The agent still runs to completion; results come via BackgroundTaskDoneMsg.
+		for evt := range events {
+			msg := bridgeEventToMsg(evt)
+			if msg == nil {
+				continue
+			}
+			currentFG, _ := sh.fgTaskID.Load().(string)
+			if currentFG == taskID {
+				program.Send(msg)
+			}
+		}
 
 		sh.activeAgent.Store(nil) // clear agent reference after completion
-		// Return AgentDoneMsg with the updated conversation messages.
-		return AgentDoneMsg{Messages: llmCtx.Messages}
+
+		// Check if we're still foreground.
+		currentFG, _ := sh.fgTaskID.Load().(string)
+		if currentFG == taskID {
+			return AgentDoneMsg{Messages: llmCtx.Messages}
+		}
+
+		// We were backgrounded: notify via program.Send.
+		program.Send(BackgroundTaskDoneMsg{
+			TaskID:   taskID,
+			Prompt:   promptText,
+			Messages: llmCtx.Messages,
+		})
+		return nil // no foreground message
 	}
 }
 
@@ -1125,6 +1277,67 @@ func (m AppModel) abortAgent() {
 	if ag := m.sh.activeAgent.Load(); ag != nil {
 		ag.Abort()
 	}
+}
+
+// detachToBackground moves the currently running foreground agent into
+// the background task list so the user can continue typing.
+func (m AppModel) detachToBackground() (AppModel, tea.Cmd) {
+	if m.sh.bgManager == nil {
+		return m, nil
+	}
+
+	taskID, _ := m.sh.fgTaskID.Load().(string)
+	if taskID == "" {
+		return m, nil
+	}
+
+	// Extract prompt text from last user message.
+	promptText := ""
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		if m.messages[i].Role == ai.RoleUser {
+			for _, c := range m.messages[i].Content {
+				if c.Type == "text" {
+					promptText = c.Text
+					break
+				}
+			}
+			break
+		}
+	}
+
+	// Retrieve the cancel func for this task so background cancellation works.
+	var cancelFn context.CancelFunc
+	if v, ok := m.sh.taskCancels.Load(taskID); ok {
+		cancelFn = v.(context.CancelFunc)
+	}
+
+	task := &BackgroundTask{
+		ID:        taskID,
+		Prompt:    promptText,
+		StartedAt: time.Now(),
+		Status:    BGRunning,
+		Cancel:    cancelFn,
+	}
+	if err := m.sh.bgManager.Add(task); err != nil {
+		// At limit; append inline notification.
+		m = m.ensureAssistantMsg()
+		m = m.updateLastAssistant(AgentTextMsg{Text: "\n⚠ Cannot detach: " + err.Error()})
+		return m, nil
+	}
+
+	// Clear foreground state so agent events route to background.
+	m.sh.fgTaskID.Store("")
+	m.agentRunning = false
+	m.sh.activeAgent.Store(nil)
+
+	// Inline notification
+	m = m.ensureAssistantMsg()
+	m = m.updateLastAssistant(AgentTextMsg{Text: "\n⏎ Task detached to background [" + taskID + "]"})
+
+	// Update footer
+	m.footer = m.footer.WithBackgroundCount(m.sh.bgManager.Count())
+
+	return m, nil
 }
 
 // resetEditor creates a fresh editor with standard configuration (focused, prompt, placeholder, width).
