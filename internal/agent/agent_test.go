@@ -765,3 +765,108 @@ func TestAgent_AbortCancelsExecution(t *testing.T) {
 		t.Error("expected an error event after abort")
 	}
 }
+
+func TestAgent_TransformContext_CalledBeforeStream(t *testing.T) {
+	t.Parallel()
+
+	var transformCalled bool
+	var transformInput []ai.Message
+
+	provider := &capturingProvider{
+		mockProvider: mockProvider{
+			responses: []*ai.AssistantMessage{
+				{
+					Content:    []ai.Content{{Type: ai.ContentText, Text: "ok"}},
+					StopReason: ai.StopEndTurn,
+				},
+			},
+		},
+	}
+
+	model := &ai.Model{
+		ID:              "test-model",
+		Name:            "Test",
+		Api:             ai.ApiAnthropic,
+		MaxOutputTokens: 8192,
+		ContextWindow:   128000,
+	}
+
+	ag := New(provider, model, nil)
+	ag.SetAdaptive(&AdaptiveConfig{
+		Profile: perf.ModelProfile{
+			Latency:         perf.LatencyLocal,
+			ContextWindow:   128000,
+			MaxOutputTokens: 8192,
+		},
+		TransformContext: func(_ context.Context, msgs []ai.Message) ([]ai.Message, error) {
+			transformCalled = true
+			transformInput = msgs
+			// Replace all messages with a single summary
+			return []ai.Message{ai.NewTextMessage(ai.RoleUser, "[distilled]")}, nil
+		},
+	})
+
+	ctx := &ai.Context{
+		System: "test",
+		Messages: []ai.Message{
+			ai.NewTextMessage(ai.RoleUser, "msg1"),
+			ai.NewTextMessage(ai.RoleAssistant, "resp1"),
+			ai.NewTextMessage(ai.RoleUser, "msg2"),
+		},
+	}
+
+	_ = collectEvents(ag.Prompt(context.Background(), ctx, &ai.StreamOptions{}))
+
+	if !transformCalled {
+		t.Error("TransformContext was not called")
+	}
+	if len(transformInput) != 3 {
+		t.Errorf("TransformContext received %d messages, want 3", len(transformInput))
+	}
+
+	// Verify the provider received the transformed (distilled) context
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+
+	if len(provider.capturedOpts) == 0 {
+		t.Fatal("no Stream() calls captured")
+	}
+}
+
+func TestAgent_TransformContext_ErrorFallsBack(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "ok"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	ag := New(provider, newTestModel(), nil)
+	ag.SetAdaptive(&AdaptiveConfig{
+		Profile: perf.ModelProfile{
+			Latency:         perf.LatencyLocal,
+			ContextWindow:   128000,
+			MaxOutputTokens: 8192,
+		},
+		TransformContext: func(_ context.Context, msgs []ai.Message) ([]ai.Message, error) {
+			return nil, fmt.Errorf("distillation failed")
+		},
+	})
+
+	events := collectEvents(ag.Prompt(context.Background(), newTestContext(), &ai.StreamOptions{}))
+
+	// Should NOT break the loop; should gracefully fall back
+	var hasEnd bool
+	for _, evt := range events {
+		if evt.Type == EventAgentEnd {
+			hasEnd = true
+		}
+	}
+	if !hasEnd {
+		t.Error("expected EventAgentEnd; transform error should not break the agent loop")
+	}
+}

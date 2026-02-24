@@ -22,11 +22,16 @@ import (
 // Returns nil if allowed, error with reason if blocked.
 type PermCheckFunc func(tool string, args map[string]any) error
 
+// TransformContextFunc transforms messages before each LLM call.
+// Used by the minion protocol to distill context via a local model.
+type TransformContextFunc func(ctx context.Context, msgs []ai.Message) ([]ai.Message, error)
+
 // AdaptiveConfig holds optional adaptive performance parameters for the agent.
 type AdaptiveConfig struct {
-	Profile    perf.ModelProfile
-	Compaction session.CompactionConfig
-	Summarizer session.SummarizerFunc // optional; if nil, compaction is skipped
+	Profile          perf.ModelProfile
+	Compaction       session.CompactionConfig
+	Summarizer       session.SummarizerFunc    // optional; if nil, compaction is skipped
+	TransformContext TransformContextFunc       // optional; runs before compaction (e.g. minion distillation)
 }
 
 // Agent orchestrates the prompt-stream-tool loop against an LLM provider.
@@ -175,6 +180,17 @@ func (a *Agent) drainSteeringMessages(llmCtx *ai.Context) {
 func (a *Agent) applyAdaptive(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamOptions) {
 	if a.adaptive == nil {
 		return
+	}
+
+	// Context transformation (minion distillation) runs first;
+	// it may reduce token count enough to avoid compaction entirely.
+	if a.adaptive.TransformContext != nil {
+		transformed, err := a.adaptive.TransformContext(ctx, llmCtx.Messages)
+		if err != nil {
+			pilog.Debug("agent: context transform failed: %v", err)
+		} else {
+			llmCtx.Messages = transformed
+		}
 	}
 
 	inputTokens := session.EstimateMessagesTokens(llmCtx.Messages)
