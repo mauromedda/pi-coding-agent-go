@@ -18,6 +18,7 @@ const gitTimeout = 30 * time.Second
 
 // validName matches names containing only alphanumerics, hyphens, underscores, and dots
 // (no path separators, no shell-special chars, no consecutive dots).
+// DEPRECATED: Use isValidWorktreeName for enhanced security validation
 var validName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // WorktreeInfo holds metadata about a git worktree.
@@ -123,16 +124,10 @@ func RepoRoot(dir string) (string, error) {
 }
 
 // validateName checks that a worktree name is safe for use as a directory
-// and branch component.
+// and branch component. Uses enhanced security validation.
 func validateName(name string) error {
-	if name == "" {
-		return fmt.Errorf("invalid worktree name: must not be empty")
-	}
-	if strings.Contains(name, "..") {
-		return fmt.Errorf("invalid worktree name %q: must not contain '..'", name)
-	}
-	if !validName.MatchString(name) {
-		return fmt.Errorf("invalid worktree name %q: must contain only alphanumerics, hyphens, underscores, and dots", name)
+	if !isValidWorktreeName(name) {
+		return fmt.Errorf("invalid worktree name %q: must contain only alphanumerics, hyphens, underscores, and dots (max 64 chars, no consecutive dots)", name)
 	}
 	return nil
 }
@@ -140,7 +135,13 @@ func validateName(name string) error {
 // gitCmd runs a git command with the given context and working directory.
 // Returns combined stdout as a string.
 func gitCmd(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	// Validate and sanitize git arguments to prevent command injection
+	sanitizedArgs, err := sanitizeGitArgs(args)
+	if err != nil {
+		return "", fmt.Errorf("git command validation failed: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", sanitizedArgs...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
