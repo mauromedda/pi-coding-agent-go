@@ -756,14 +756,17 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "esc":
+		// Always forward ESC to editor first so the split-OSC guard
+		// can arm itself. If terminal sent \x1b]…\x1b\, BubbleTea
+		// delivers KeyEscape then plain ']'; the editor needs to see
+		// the ESC to suppress the ']' that follows.
+		editorUpdated, _ := m.editor.Update(msg)
+		m.editor = editorUpdated.(EditorModel)
+
 		if m.agentRunning {
 			m.abortAgent()
 			return m, func() tea.Msg { return AgentCancelMsg{} }
 		}
-		// Forward to editor so the split-ESC guard can detect \x1b]
-		// arriving as separate KeyEscape + ']' messages.
-		editorUpdated, _ := m.editor.Update(msg)
-		m.editor = editorUpdated.(EditorModel)
 		return m, nil
 
 	case "ctrl+l":

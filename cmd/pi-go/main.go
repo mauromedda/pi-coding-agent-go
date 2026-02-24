@@ -10,6 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	// termfix must be imported before any package that imports bubbletea.
+	// It sets lipgloss.SetHasDarkBackground(true) in its init(), preventing
+	// BubbleTea's tea_init.go from sending OSC 10/11 terminal queries whose
+	// async responses leak garbage into the editor.
+	_ "github.com/mauromedda/pi-coding-agent-go/internal/termfix"
+
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/git"
 	"github.com/mauromedda/pi-coding-agent-go/internal/intent"
