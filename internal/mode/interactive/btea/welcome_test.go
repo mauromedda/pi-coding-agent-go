@@ -79,6 +79,27 @@ func TestWelcomeModel_ViewContainsShortcuts(t *testing.T) {
 	}
 }
 
+func TestWelcomeModel_ViewShortcutDescriptionsAccurate(t *testing.T) {
+	m := NewWelcomeModel("1.0.0", "model", "/cwd", 1)
+	view := m.View()
+
+	// Bug fix: Ctrl+C description must say "clear" (first press clears)
+	// and "ctrl+c twice" must say "exit"
+	if !strings.Contains(view, "clear") {
+		t.Error("View() should describe ctrl+c as 'clear'")
+	}
+	if !strings.Contains(view, "exit") {
+		t.Error("View() should describe ctrl+c twice as 'exit'")
+	}
+	// Bug fix: escape should say "cancel agent" not just "interrupt"
+	if strings.Contains(view, "interrupt") {
+		t.Error("View() should describe escape as 'cancel agent', not 'interrupt'")
+	}
+	if !strings.Contains(view, "cancel agent") {
+		t.Error("View() missing 'cancel agent' description for escape")
+	}
+}
+
 func TestWelcomeModel_ViewContainsPiBox(t *testing.T) {
 	m := NewWelcomeModel("1.0.0", "model", "/cwd", 1)
 	view := m.View()

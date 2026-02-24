@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
+	"github.com/mauromedda/pi-coding-agent-go/internal/ide"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
@@ -128,6 +129,9 @@ type AppModel struct {
 
 	// Worktree exit action (set by WorktreeExitMsg before tea.Quit)
 	worktreeExitAction WorktreeExitAction
+
+	// Ctrl+C double-press detection: first press clears, second within window exits
+	lastCtrlC time.Time
 }
 
 // Compile-time interface assertion.
@@ -723,7 +727,16 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.overlay = NewWorktreeDialogModel(m.deps.WorktreeSession.Info.Branch, m.width)
 			return m, nil
 		}
-		return m, tea.Quit
+		// Double-press detection: second Ctrl+C within 1s exits
+		if !m.lastCtrlC.IsZero() && time.Since(m.lastCtrlC) < time.Second {
+			return m, tea.Quit
+		}
+		// First press: clear conversation
+		m.lastCtrlC = time.Now()
+		m.content = m.content[:0]
+		welcome := NewWelcomeModel(m.deps.Version, m.modelName(), m.gitCWD, len(m.deps.Tools))
+		m.content = append(m.content, welcome)
+		return m, nil
 
 	case "ctrl+d":
 		if m.deps.WorktreeSession != nil && !m.agentRunning {
@@ -919,12 +932,24 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 	m.historyIndex = -1
 	m.savedDraft = ""
 
-	// Add user message to content
+	// Add user message to content (shows original text in UI)
 	um := NewUserMsgModel(text)
 	m.content = append(m.content, um)
 
-	// Add to conversation history
-	m.messages = append(m.messages, ai.NewTextMessage(ai.RoleUser, text))
+	// Expand @file mentions before sending to AI
+	expandedText := text
+	if strings.Contains(text, "@") {
+		workDir := m.gitCWD
+		if workDir == "" {
+			workDir, _ = os.Getwd()
+		}
+		if cleaned, _, err := ide.ParseMentions(text, workDir); err == nil {
+			expandedText = cleaned
+		}
+	}
+
+	// Add to conversation history (with expanded file content)
+	m.messages = append(m.messages, ai.NewTextMessage(ai.RoleUser, expandedText))
 
 	// Persist user message to session (if wired)
 	if m.deps.Session != nil {

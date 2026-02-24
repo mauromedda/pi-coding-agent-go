@@ -73,7 +73,7 @@ func (m WelcomeModel) View() string {
 		key  string
 		desc string
 	}{
-		{"escape", "interrupt"},
+		{"escape", "cancel agent"},
 		{"ctrl+c", "clear"},
 		{"ctrl+c twice", "exit"},
 		{"ctrl+d", "exit (empty)"},

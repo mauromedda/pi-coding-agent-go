@@ -5,6 +5,7 @@ package btea
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -153,18 +154,48 @@ func TestAppModel_ModeToggle(t *testing.T) {
 	}
 }
 
-func TestAppModel_CtrlCQuitsWhenIdle(t *testing.T) {
+func TestAppModel_CtrlC_FirstPressClearsConversation(t *testing.T) {
+	m := NewAppModel(testDeps())
+	// Add some content to clear
+	m.content = append(m.content, NewUserMsgModel("hello"))
+	m.messages = append(m.messages, ai.NewTextMessage(ai.RoleUser, "hello"))
+
+	key := tea.KeyMsg{Type: tea.KeyCtrlC}
+	result, cmd := m.Update(key)
+	model := result.(AppModel)
+
+	// First Ctrl+C should clear, not quit
+	if cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(tea.QuitMsg); ok {
+			t.Error("first Ctrl+C should clear conversation, not quit")
+		}
+	}
+	// Content should be reset to just welcome
+	if len(model.content) != 1 {
+		t.Errorf("content length = %d; want 1 (only welcome)", len(model.content))
+	}
+	if _, ok := model.content[0].(WelcomeModel); !ok {
+		t.Errorf("content[0] = %T; want WelcomeModel", model.content[0])
+	}
+}
+
+func TestAppModel_CtrlC_DoublePressClearsAndQuits(t *testing.T) {
 	m := NewAppModel(testDeps())
 	key := tea.KeyMsg{Type: tea.KeyCtrlC}
 
-	_, cmd := m.Update(key)
+	// First press: clears
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+
+	// Second press within window: quits
+	_, cmd := model.Update(key)
 	if cmd == nil {
-		t.Fatal("cmd = nil; want tea.Quit")
+		t.Fatal("cmd = nil; want tea.Quit on second Ctrl+C")
 	}
-	// Execute the cmd to get the quit message
 	msg := cmd()
 	if _, ok := msg.(tea.QuitMsg); !ok {
-		t.Errorf("cmd() = %T; want tea.QuitMsg", msg)
+		t.Errorf("cmd() = %T; want tea.QuitMsg on second Ctrl+C", msg)
 	}
 }
 
@@ -808,6 +839,46 @@ func TestAppModel_SlashCommandAfterBash(t *testing.T) {
 	// Editor should have "/" (not cleared)
 	if got := m.editor.Text(); got != "/" {
 		t.Errorf("editor text = %q; want %q", got, "/")
+	}
+}
+
+func TestAppModel_SubmitExpandsFileMentions(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.gitCWD = t.TempDir()
+
+	// Create a test file in the temp dir
+	testFile := m.gitCWD + "/hello.txt"
+	if err := os.WriteFile(testFile, []byte("file content here"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set editor text with @file mention
+	m.editor = m.editor.SetText("check @hello.txt please")
+
+	key := tea.KeyMsg{Type: tea.KeyEnter}
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+
+	// The message sent to AI should contain the expanded file content, not raw @hello.txt
+	if len(model.messages) == 0 {
+		t.Fatal("messages is empty; want at least 1")
+	}
+	lastMsg := model.messages[len(model.messages)-1]
+	if lastMsg.Role != ai.RoleUser {
+		t.Fatalf("last message role = %q; want user", lastMsg.Role)
+	}
+	text := ""
+	for _, c := range lastMsg.Content {
+		if c.Type == "text" {
+			text += c.Text
+		}
+	}
+	// Should contain the file content block, not the raw @mention
+	if strings.Contains(text, "@hello.txt") {
+		t.Error("message should not contain raw @hello.txt; ParseMentions should have expanded it")
+	}
+	if !strings.Contains(text, "file content here") {
+		t.Error("message should contain expanded file content")
 	}
 }
 
