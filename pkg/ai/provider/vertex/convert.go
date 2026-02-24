@@ -38,8 +38,31 @@ func buildVertexRequestBody(ctx *ai.Context, opts *ai.StreamOptions) vertexReque
 			Role: vertexRole(msg.Role),
 		}
 		for _, c := range msg.Content {
-			if c.Type == ai.ContentText {
+			switch c.Type {
+			case ai.ContentText:
 				content.Parts = append(content.Parts, gemini.Part{Text: c.Text})
+			case ai.ContentToolUse:
+				content.Parts = append(content.Parts, gemini.Part{
+					FunctionCall: &gemini.FunctionCall{
+						Name: c.Name,
+						Args: c.Input,
+					},
+				})
+			case ai.ContentToolResult:
+				content.Parts = append(content.Parts, gemini.Part{
+					FunctionResponse: &gemini.FunctionResponse{
+						Name:     c.Name,
+						Response: map[string]string{"result": c.ResultText},
+					},
+				})
+				for _, img := range c.Images {
+					content.Parts = append(content.Parts, gemini.Part{
+						InlineData: &gemini.InlineData{
+							MimeType: img.MediaType,
+							Data:     img.Data,
+						},
+					})
+				}
 			}
 		}
 		req.Contents = append(req.Contents, content)
