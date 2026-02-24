@@ -18,6 +18,7 @@ type Watcher struct {
 	stopCh   chan struct{}
 	mu       sync.Mutex
 	running  bool
+	stopOnce sync.Once
 }
 
 // NewWatcher creates a watcher that calls onChange when any monitored file changes.
@@ -52,15 +53,14 @@ func (w *Watcher) Start() {
 	go w.loop()
 }
 
-// Stop halts the polling goroutine.
+// Stop halts the polling goroutine. Safe to call multiple times and concurrently.
 func (w *Watcher) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if !w.running {
-		return
-	}
-	w.running = false
-	close(w.stopCh)
+	w.stopOnce.Do(func() {
+		w.mu.Lock()
+		w.running = false
+		w.mu.Unlock()
+		close(w.stopCh)
+	})
 }
 
 // ForceCheck triggers an immediate check outside the polling cycle.

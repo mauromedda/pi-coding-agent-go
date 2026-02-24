@@ -52,6 +52,17 @@ type BackgroundTask struct {
 	Cancel    context.CancelFunc
 }
 
+// Snapshot returns a shallow copy of the task with a copied Messages slice.
+// Safe to read without holding the manager lock.
+func (t *BackgroundTask) Snapshot() BackgroundTask {
+	cp := *t
+	if t.Messages != nil {
+		cp.Messages = make([]ai.Message, len(t.Messages))
+		copy(cp.Messages, t.Messages)
+	}
+	return cp
+}
+
 // BackgroundManager manages the set of background tasks.
 // All methods are safe for concurrent use.
 type BackgroundManager struct {
@@ -88,21 +99,26 @@ func (m *BackgroundManager) Remove(id string) {
 	delete(m.tasks, id)
 }
 
-// Get returns the task with the given ID, or nil if not found.
+// Get returns a snapshot copy of the task with the given ID, or nil if not found.
 func (m *BackgroundManager) Get(id string) *BackgroundTask {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.tasks[id]
+	t, ok := m.tasks[id]
+	if !ok {
+		return nil
+	}
+	snap := t.Snapshot()
+	return &snap
 }
 
-// List returns a snapshot of all tasks, ordered by start time.
-func (m *BackgroundManager) List() []*BackgroundTask {
+// List returns snapshot copies of all tasks. Safe to read after the lock is released.
+func (m *BackgroundManager) List() []BackgroundTask {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	result := make([]*BackgroundTask, 0, len(m.tasks))
+	result := make([]BackgroundTask, 0, len(m.tasks))
 	for _, t := range m.tasks {
-		result = append(result, t)
+		result = append(result, t.Snapshot())
 	}
 	return result
 }

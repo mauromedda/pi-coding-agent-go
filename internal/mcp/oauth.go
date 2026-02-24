@@ -72,33 +72,48 @@ func OAuthFlow(ctx context.Context, cfg OAuthConfig) (*OAuthToken, error) {
 		// Validate state to prevent CSRF.
 		if q.Get("state") != state {
 			http.Error(w, "invalid state parameter", http.StatusBadRequest)
-			resultCh <- callbackResult{err: fmt.Errorf("state mismatch: got %q", q.Get("state"))}
+			select {
+			case resultCh <- callbackResult{err: fmt.Errorf("state mismatch: got %q", q.Get("state"))}:
+			default:
+			}
 			return
 		}
 
 		if errParam := q.Get("error"); errParam != "" {
 			desc := q.Get("error_description")
 			http.Error(w, "Authorization failed: "+errParam, http.StatusBadRequest)
-			resultCh <- callbackResult{err: fmt.Errorf("authorization error: %s: %s", errParam, desc)}
+			select {
+			case resultCh <- callbackResult{err: fmt.Errorf("authorization error: %s: %s", errParam, desc)}:
+			default:
+			}
 			return
 		}
 
 		code := q.Get("code")
 		if code == "" {
 			http.Error(w, "missing code parameter", http.StatusBadRequest)
-			resultCh <- callbackResult{err: fmt.Errorf("callback missing code parameter")}
+			select {
+			case resultCh <- callbackResult{err: fmt.Errorf("callback missing code parameter")}:
+			default:
+			}
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, "<html><body><h1>Authorization successful</h1><p>You can close this window.</p></body></html>")
-		resultCh <- callbackResult{code: code}
+		select {
+		case resultCh <- callbackResult{code: code}:
+		default:
+		}
 	})
 
 	srv := &http.Server{Handler: mux}
 	go func() {
 		if serveErr := srv.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
-			resultCh <- callbackResult{err: fmt.Errorf("callback server: %w", serveErr)}
+			select {
+			case resultCh <- callbackResult{err: fmt.Errorf("callback server: %w", serveErr)}:
+			default:
+			}
 		}
 	}()
 	defer srv.Close()

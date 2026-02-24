@@ -6,6 +6,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -105,6 +107,50 @@ func TestAuthStore_GetKey_PriorityOrder(t *testing.T) {
 	got = store.GetKey("anthropic")
 	if got != "runtime" {
 		t.Errorf("with runtime: %q; want runtime", got)
+	}
+}
+
+func TestAuthStore_ResolveCommandKey_DeduplicatesConcurrentCalls(t *testing.T) {
+	t.Parallel()
+
+	// Use a command that increments an in-memory counter via a temp file.
+	// With singleflight, concurrent calls for the same command should only
+	// execute the command once.
+	counterFile := filepath.Join(t.TempDir(), "counter")
+	os.WriteFile(counterFile, []byte("0"), 0o644)
+
+	// Command: read counter, increment, write back, echo the new value.
+	cmd := "!" + `bash -c 'n=$(cat ` + counterFile + `); n=$((n+1)); echo $n > ` + counterFile + `; echo result-$n'`
+	store := &AuthStore{Keys: map[string]string{"provider": cmd}}
+
+	// Launch multiple goroutines concurrently.
+	const goroutines = 10
+	results := make([]string, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func() {
+			defer wg.Done()
+			results[i] = store.GetKey("provider")
+		}()
+	}
+	wg.Wait()
+
+	// All goroutines should get the same result (singleflight dedup).
+	for i, r := range results {
+		if r != results[0] {
+			t.Errorf("goroutine %d got %q; goroutine 0 got %q; want same result from dedup", i, r, results[0])
+		}
+	}
+
+	// The command should have been executed at most once (counter == 1).
+	counterData, err := os.ReadFile(counterFile)
+	if err != nil {
+		t.Fatalf("reading counter file: %v", err)
+	}
+	counterStr := strings.TrimSpace(string(counterData))
+	if counterStr != "1" {
+		t.Errorf("command executed %s times; want 1 (singleflight should deduplicate)", counterStr)
 	}
 }
 

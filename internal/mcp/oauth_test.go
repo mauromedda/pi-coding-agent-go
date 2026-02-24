@@ -422,6 +422,79 @@ func TestOAuthFlow_CallbackMissingCode(t *testing.T) {
 	}
 }
 
+func TestOAuthFlow_DoubleCallbackDoesNotBlock(t *testing.T) {
+	// Verify that a second browser callback (e.g. page refresh) does not
+	// block the handler goroutine forever due to a full resultCh.
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "tok",
+			"refresh_token": "rtok",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+		})
+	}))
+	defer tokenServer.Close()
+
+	cfg := OAuthConfig{
+		ClientID: "test-client",
+		AuthURL:  "http://example.com/authorize",
+		TokenURL: tokenServer.URL,
+		Scopes:   []string{"read"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	origOpenBrowser := openBrowserFunc
+	openBrowserFunc = func(u string) error {
+		parsed, err := url.Parse(u)
+		if err != nil {
+			return err
+		}
+		q := parsed.Query()
+		state := q.Get("state")
+		redirectURI := q.Get("redirect_uri")
+
+		callbackURL := redirectURI + "?code=auth-code&state=" + state
+
+		// First callback: succeeds, fills resultCh.
+		resp, err := http.Get(callbackURL) //nolint:gosec
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		// Second callback (browser refresh): must not block forever.
+		done := make(chan struct{})
+		go func() {
+			resp2, err2 := http.Get(callbackURL) //nolint:gosec
+			if err2 == nil {
+				resp2.Body.Close()
+			}
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// OK: second callback returned without blocking.
+		case <-time.After(2 * time.Second):
+			t.Error("second callback blocked; goroutine leak detected")
+		}
+
+		return nil
+	}
+	defer func() { openBrowserFunc = origOpenBrowser }()
+
+	token, err := OAuthFlow(ctx, cfg)
+	if err != nil {
+		t.Fatalf("OAuthFlow: %v", err)
+	}
+	if token.AccessToken != "tok" {
+		t.Errorf("AccessToken = %q; want %q", token.AccessToken, "tok")
+	}
+}
+
 func TestRefreshToken_ServerError(t *testing.T) {
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

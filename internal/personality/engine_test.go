@@ -129,6 +129,37 @@ func TestEngine_ComposePrompt_SecurityFocused(t *testing.T) {
 	}
 }
 
+func TestEngine_ComposeTraitInstructions_AcceptsTraitSetParam(t *testing.T) {
+	t.Parallel()
+	e, err := NewEngine("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Call composeTraitInstructions directly with a custom TraitSet to verify
+	// it uses the parameter, not e.active.Traits.
+	custom := TraitSet{
+		Verbosity:     "terse",
+		RiskTolerance: "aggressive",
+		Explanation:   "detailed",
+		AutoPlan:      "never",
+	}
+
+	result := e.composeTraitInstructions(custom)
+	if !strings.Contains(result, "concise") {
+		t.Errorf("expected terse instruction containing 'concise'; got %q", result)
+	}
+	if !strings.Contains(result, "speed and pragmatism") {
+		t.Errorf("expected aggressive risk instruction; got %q", result)
+	}
+	if !strings.Contains(result, "reasoning behind every") {
+		t.Errorf("expected detailed explanation instruction; got %q", result)
+	}
+	if !strings.Contains(result, "Do not generate plans") {
+		t.Errorf("expected never auto_plan instruction; got %q", result)
+	}
+}
+
 func TestEngine_ProfileNames(t *testing.T) {
 	t.Parallel()
 	e, err := NewEngine("")

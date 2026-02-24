@@ -559,6 +559,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						editorUpdated, _ := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
 					}
+					// Forward ESC/BEL to editor's OSC state machine when suppressing.
+					// This prevents split ST (ESC + '\') from being swallowed by the
+					// overlay, which would leave a stray backslash in the editor.
+					if m.editor.IsOSCSuppressing() && (keyMsg.Type == tea.KeyEscape || keyMsg.Type == tea.KeyCtrlG) {
+						editorUpdated, _ := m.editor.Update(keyMsg)
+						m.editor = editorUpdated.(EditorModel)
+						return m, nil // consume the key; don't forward to overlay
+					}
 				}
 			}
 			return m.updateOverlay(msg)

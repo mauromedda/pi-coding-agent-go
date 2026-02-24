@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Client communicates with a single MCP server.
@@ -20,11 +21,22 @@ type Client struct {
 
 	mu        sync.RWMutex
 	connected bool
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	// toolSem limits concurrent ListTools refreshes to 1.
+	toolSem chan struct{}
 }
 
 // NewClient creates a new MCP client with the given transport.
 func NewClient(transport Transport) *Client {
-	return &Client{transport: transport}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Client{
+		transport: transport,
+		ctx:       ctx,
+		cancel:    cancel,
+		toolSem:   make(chan struct{}, 1),
+	}
 }
 
 // Connect performs the MCP initialize handshake.
@@ -190,12 +202,20 @@ func (c *Client) ServerInfo() ServerInfo {
 
 // Close shuts down the client and transport.
 func (c *Client) Close() error {
+	c.cancel()
 	return c.transport.Close()
 }
 
 // handleNotifications processes incoming notifications.
+// Uses the client context for cancellation and a semaphore to prevent concurrent ListTools.
 func (c *Client) handleNotifications() {
 	for msg := range c.transport.Receive() {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+		}
+
 		var notif Notification
 		if err := json.Unmarshal(msg, &notif); err != nil {
 			continue
@@ -203,12 +223,17 @@ func (c *Client) handleNotifications() {
 
 		switch notif.Method {
 		case "notifications/tools/list_changed":
-			// Refresh tool list in background
+			// Acquire semaphore; skip if another refresh is already running.
+			select {
+			case c.toolSem <- struct{}{}:
+			default:
+				continue
+			}
 			go func() {
-				ctx := context.Background()
-				if _, err := c.ListTools(ctx); err != nil {
-					// Tool refresh failed; tools remain stale
-				}
+				defer func() { <-c.toolSem }()
+				ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+				defer cancel()
+				_, _ = c.ListTools(ctx)
 			}()
 		}
 	}

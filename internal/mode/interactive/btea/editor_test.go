@@ -6,6 +6,7 @@ package btea
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -544,6 +545,174 @@ func TestEditorModel_LineCount(t *testing.T) {
 	}
 }
 
+// --- OSC suppression tests ---
+//
+// BubbleTea v1.3.10's detectOneMsg parses unrecognized OSC responses
+// (\x1b]10;rgb:XX/XX/XX\x1b\) as:
+//   - Alt+]   (KeyRunes, Alt=true, Runes=[']'])
+//   - body    (KeyRunes, "10;rgb:ff/ff/ff")
+//   - Alt+\   (KeyRunes, Alt=true, Runes=['\'])
+//
+// These tests verify the editor's OSC suppression state machine.
+
+func TestEditorModel_SuppressesOSCResponse(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Alt+] starts OSC response
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// OSC body runes (no alt)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
+	m = updated.(EditorModel)
+
+	// Alt+\ terminates the OSC sequence
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "" {
+		t.Errorf("Text() = %q; want empty (OSC response should be suppressed)", got)
+	}
+}
+
+func TestEditorModel_OSCSuppressionEndsAtTerminator(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Alt+] → enter suppression
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// OSC body
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:aa/bb/cc")})
+	m = updated.(EditorModel)
+
+	// Alt+\ → end suppression
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// Normal typing after should work
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "a" {
+		t.Errorf("Text() = %q; want %q (typing after OSC termination should work)", got, "a")
+	}
+}
+
+func TestEditorModel_OSCSuppressionTimesOut(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Alt+] → enter suppression
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// Wait for suppression timeout (>50ms)
+	time.Sleep(60 * time.Millisecond)
+
+	// Runes after timeout should be inserted normally
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "x" {
+		t.Errorf("Text() = %q; want %q (runes after suppression timeout should insert)", got, "x")
+	}
+}
+
+func TestEditorModel_PlainBracketNotSuppressed(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Plain ']' without Alt should insert normally
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "]" {
+		t.Errorf("Text() = %q; want %q (plain bracket should insert normally)", got, "]")
+	}
+}
+
+func TestEditorModel_OSCSuppressionEndsAtBEL(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Alt+] → enter suppression
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// OSC body
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:aa/bb/cc")})
+	m = updated.(EditorModel)
+
+	// BEL (Ctrl+G) terminates OSC
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	m = updated.(EditorModel)
+
+	// Normal typing after should work
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "z" {
+		t.Errorf("Text() = %q; want %q (typing after BEL termination should work)", got, "z")
+	}
+}
+
+func TestEditorModel_OSCSuppressionSplitST(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Alt+] → enter suppression
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// OSC body
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("11;rgb:00/00/00")})
+	m = updated.(EditorModel)
+
+	// Split ST: ESC arrives as KeyEscape, then '\' as a plain rune
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = updated.(EditorModel)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}})
+	m = updated.(EditorModel)
+
+	// Normal typing after should work
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "b" {
+		t.Errorf("Text() = %q; want %q (typing after split ST should work)", got, "b")
+	}
+}
+
+func TestEditorModel_AltNonBracketNotSuppressed(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Alt+a (not ']') should insert normally
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true})
+	m = updated.(EditorModel)
+
+	if got := m.Text(); got != "a" {
+		t.Errorf("Text() = %q; want %q (alt+non-bracket should insert normally)", got, "a")
+	}
+}
+
 func TestEditorModel_DropsControlCharacters(t *testing.T) {
 	t.Parallel()
 
@@ -566,4 +735,41 @@ func TestEditorModel_DropsControlCharacters(t *testing.T) {
 	if got := m.Text(); got != "a" {
 		t.Errorf("Text() = %q; want %q", got, "a")
 	}
+}
+
+func TestEditorModel_IsOSCSuppressing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("false by default", func(t *testing.T) {
+		m := NewEditorModel()
+		if m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = true; want false on new editor")
+		}
+	})
+
+	t.Run("true after OSC start", func(t *testing.T) {
+		m := NewEditorModel()
+		// Alt+] starts OSC suppression
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+
+		if !m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = false; want true after Alt+]")
+		}
+	})
+
+	t.Run("false after OSC terminates", func(t *testing.T) {
+		m := NewEditorModel()
+		// Alt+] → body → Alt+\
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+		m = updated.(EditorModel)
+
+		if m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = true; want false after ST terminator")
+		}
+	})
 }

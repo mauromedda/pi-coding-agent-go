@@ -5,6 +5,7 @@ package personality
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -32,9 +33,7 @@ func NewEngine(profilesDir string) (*Engine, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load profiles: %w", err)
 		}
-		for name, p := range extra {
-			e.profiles[name] = p
-		}
+		maps.Copy(e.profiles, extra)
 	}
 
 	e.active = e.profiles["base"]
@@ -94,7 +93,7 @@ func (e *Engine) ComposePrompt(ctx checks.CheckContext) string {
 	}
 
 	// Trait instructions
-	sections = append(sections, e.composeTraitInstructions())
+	sections = append(sections, e.composeTraitInstructions(e.active.Traits))
 
 	// Run checks and collect results
 	for _, checkName := range checks.AllCheckNames() {
@@ -110,25 +109,25 @@ func (e *Engine) ComposePrompt(ctx checks.CheckContext) string {
 
 		result := c.Analyze(ctx)
 		if len(result.Instructions) > 0 {
-			section := fmt.Sprintf("### %s (%s)", result.Name, result.Level)
+			var section strings.Builder
+			section.WriteString(fmt.Sprintf("### %s (%s)", result.Name, result.Level))
 			for _, instr := range result.Instructions {
-				section += "\n- " + instr
+				section.WriteString("\n- " + instr)
 			}
 			if len(result.Warnings) > 0 {
-				section += "\n**Warnings:**"
+				section.WriteString("\n**Warnings:**")
 				for _, w := range result.Warnings {
-					section += "\n- ⚠ " + w
+					section.WriteString("\n- ⚠ " + w)
 				}
 			}
-			sections = append(sections, section)
+			sections = append(sections, section.String())
 		}
 	}
 
 	return strings.Join(sections, "\n\n")
 }
 
-func (e *Engine) composeTraitInstructions() string {
-	t := e.active.Traits
+func (e *Engine) composeTraitInstructions(t TraitSet) string {
 	var lines []string
 
 	switch t.Verbosity {

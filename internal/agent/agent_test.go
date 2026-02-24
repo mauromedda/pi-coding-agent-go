@@ -563,6 +563,56 @@ func TestAgent_ApplyAdaptive_WiresStreamBufferSize_Fast(t *testing.T) {
 	}
 }
 
+func TestAgent_Steer_ReturnsTrue_WhenBufferHasSpace(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "ok"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	ag := New(provider, newTestModel(), nil)
+
+	// Channel buffer is 8; first send should succeed.
+	ok := ag.Steer(ai.NewTextMessage(ai.RoleUser, "steer msg"))
+	if !ok {
+		t.Error("Steer() returned false; want true when buffer has space")
+	}
+}
+
+func TestAgent_Steer_ReturnsFalse_WhenBufferFull(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "ok"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	ag := New(provider, newTestModel(), nil)
+
+	// Fill the buffer (size 8).
+	for i := range 8 {
+		ok := ag.Steer(ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i)))
+		if !ok {
+			t.Fatalf("Steer() returned false on message %d; buffer should not be full yet", i)
+		}
+	}
+
+	// 9th message should be dropped; Steer returns false.
+	ok := ag.Steer(ai.NewTextMessage(ai.RoleUser, "overflow"))
+	if ok {
+		t.Error("Steer() returned true; want false when buffer is full")
+	}
+}
+
 func TestAgent_AbortCancelsExecution(t *testing.T) {
 	t.Parallel()
 

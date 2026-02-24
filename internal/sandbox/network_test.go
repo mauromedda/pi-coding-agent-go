@@ -200,6 +200,19 @@ func TestNetworkFilter_ProxyEnv(t *testing.T) {
 	}
 }
 
+func TestNetworkFilter_ConnectSemaphore(t *testing.T) {
+	t.Parallel()
+
+	// Verify that NewNetworkFilter initializes the connSem field.
+	nf := NewNetworkFilter([]string{"example.com"})
+	if nf.connSem == nil {
+		t.Fatal("connSem is nil; expected initialized semaphore channel")
+	}
+	if cap(nf.connSem) != maxConcurrentConns {
+		t.Errorf("connSem capacity = %d; want %d", cap(nf.connSem), maxConcurrentConns)
+	}
+}
+
 // startTestUpstream creates a local HTTP server returning the given body.
 // Returns the listener address (host:port).
 func startTestUpstream(t *testing.T, body string) string {

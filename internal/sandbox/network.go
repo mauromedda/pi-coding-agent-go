@@ -13,12 +13,16 @@ import (
 	"sync"
 )
 
+// maxConcurrentConns limits the number of simultaneous CONNECT tunnel goroutines.
+const maxConcurrentConns = 100
+
 // NetworkFilter is an HTTP proxy that only allows connections to allowlisted domains.
 // It handles both plain HTTP requests and HTTPS CONNECT tunnels.
 type NetworkFilter struct {
 	allowedDomains map[string]bool
 	listener       net.Listener
 	server         *http.Server
+	connSem        chan struct{} // semaphore limiting concurrent CONNECT tunnels
 
 	mu   sync.Mutex
 	addr string // filled after Start
@@ -31,7 +35,10 @@ func NewNetworkFilter(allowedDomains []string) *NetworkFilter {
 	for _, d := range allowedDomains {
 		m[strings.ToLower(d)] = true
 	}
-	return &NetworkFilter{allowedDomains: m}
+	return &NetworkFilter{
+		allowedDomains: m,
+		connSem:        make(chan struct{}, maxConcurrentConns),
+	}
 }
 
 // Start binds the proxy to localhost:0 and begins serving.
@@ -96,14 +103,24 @@ func (nf *NetworkFilter) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Acquire connection semaphore; reject if at capacity.
+	select {
+	case nf.connSem <- struct{}{}:
+	default:
+		http.Error(w, "too many concurrent connections", http.StatusServiceUnavailable)
+		return
+	}
+
 	targetConn, err := net.DialTimeout("tcp", r.Host, 10*1e9) // 10s
 	if err != nil {
+		<-nf.connSem
 		http.Error(w, "dial target: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
+		<-nf.connSem
 		targetConn.Close()
 		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
 		return
@@ -114,12 +131,26 @@ func (nf *NetworkFilter) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	clientConn, _, err := hj.Hijack()
 	if err != nil {
+		<-nf.connSem
 		targetConn.Close()
 		return
 	}
 
-	go transfer(targetConn, clientConn)
-	go transfer(clientConn, targetConn)
+	// Each direction gets a goroutine; release semaphore when both complete.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		transfer(targetConn, clientConn)
+	}()
+	go func() {
+		defer wg.Done()
+		transfer(clientConn, targetConn)
+	}()
+	go func() {
+		wg.Wait()
+		<-nf.connSem
+	}()
 }
 
 // handleHTTP forwards plain HTTP requests after domain check.

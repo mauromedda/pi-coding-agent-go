@@ -13,15 +13,15 @@ import (
 
 // BackgroundViewModel displays background tasks as a centered overlay.
 type BackgroundViewModel struct {
-	tasks  []*BackgroundTask
+	tasks  []BackgroundTask
 	cursor int
 	width  int
 	height int
 }
 
 // NewBackgroundViewModel creates the overlay from a snapshot of tasks.
-func NewBackgroundViewModel(tasks []*BackgroundTask, w, h int) BackgroundViewModel {
-	cp := make([]*BackgroundTask, len(tasks))
+func NewBackgroundViewModel(tasks []BackgroundTask, w, h int) BackgroundViewModel {
+	cp := make([]BackgroundTask, len(tasks))
 	copy(cp, tasks)
 	return BackgroundViewModel{
 		tasks:  cp,

@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -98,6 +99,22 @@ func TestWatcher_StopIsIdempotent(t *testing.T) {
 	w.Start()
 	w.Stop()
 	w.Stop() // should not panic
+}
+
+func TestWatcher_ConcurrentStop(t *testing.T) {
+	w := NewWatcher(nil, func() {})
+	w.Start()
+
+	// Multiple goroutines calling Stop concurrently must not panic.
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w.Stop()
+		}()
+	}
+	wg.Wait()
 }
 
 func TestWatcher_StartIsIdempotent(t *testing.T) {

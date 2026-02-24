@@ -5,6 +5,7 @@ package btea
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/image"
@@ -108,7 +109,10 @@ type EditorModel struct {
 	promptWidth int
 	placeholder string
 	width       int
-	ghostText   string // dimmed completion shown after cursor
+	ghostText      string    // dimmed completion shown after cursor
+	oscSuppressing bool      // true while dropping OSC response runes
+	oscGuardArmed  bool      // true after ESC during suppression, awaiting '\' for split ST
+	lastEscAt      time.Time // when OSC suppression started (for timeout)
 }
 
 // NewEditorModel creates a new empty editor.
@@ -240,6 +244,13 @@ func (m EditorModel) SetGhostText(g string) EditorModel {
 	return m
 }
 
+// IsOSCSuppressing returns true when the editor is actively suppressing
+// OSC terminal response characters. Used by the app layer to avoid
+// forwarding ESC/BEL to overlay dismissal while an OSC sequence is in flight.
+func (m EditorModel) IsOSCSuppressing() bool {
+	return m.oscSuppressing
+}
+
 // GhostText returns the current ghost text.
 func (m EditorModel) GhostText() string {
 	return m.ghostText
@@ -257,7 +268,67 @@ func (m EditorModel) LineCount() int {
 
 // --- Key dispatch ---
 
+// oscSuppressionTimeout is the maximum duration an OSC suppression state
+// remains active without receiving a terminator. Prevents stale state from
+// blocking normal input if the terminal response is truncated.
+const oscSuppressionTimeout = 50 * time.Millisecond
+
 func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
+	// --- OSC response suppression state machine ---
+	//
+	// BubbleTea v1.3.10's init() triggers OSC 10/11 terminal queries via
+	// lipgloss.HasDarkBackground(). The terminal response (\x1b]10;rgb:XX/XX/XX\x1b\)
+	// arrives asynchronously. BubbleTea's input parser doesn't recognize OSC
+	// sequences, so detectOneMsg() parses them as:
+	//   1. Alt+]  (KeyRunes with Alt=true, first rune ']')
+	//   2. body runes like "10;rgb:ff/ff/ff" (KeyRunes, no alt)
+	//   3. Alt+\  (KeyRunes with Alt=true, the ST terminator)
+	//
+	// We detect Alt+] as the OSC start and suppress all runes until the
+	// Alt+\ terminator (or a timeout).
+	if m.oscSuppressing {
+		if time.Since(m.lastEscAt) > oscSuppressionTimeout {
+			m.oscSuppressing = false
+			m.oscGuardArmed = false
+			// fall through to normal dispatch
+		} else if m.oscGuardArmed {
+			// Previous msg was ESC during suppression; check for split ST
+			m.oscGuardArmed = false
+			m.oscSuppressing = false
+			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
+				return // drop the '\' completing ESC+\ (ST)
+			}
+			// ESC wasn't followed by '\': suppression ended, process normally
+		} else {
+			switch msg.Type {
+			case tea.KeyRunes:
+				// Alt+\ is the ST (String Terminator) that ends OSC responses
+				if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
+					m.oscSuppressing = false
+				}
+				return // drop body or terminator runes
+			case tea.KeyCtrlG:
+				// BEL (0x07) also terminates OSC responses
+				m.oscSuppressing = false
+				return
+			case tea.KeyEscape:
+				// ESC during suppression: the ST might be split as ESC + '\'.
+				// Arm the guard so the next '\' rune completes termination.
+				m.oscGuardArmed = true
+				return
+			default:
+				// Other keys during suppression: drop them
+				return
+			}
+		}
+	}
+	// Detect OSC start: Alt+] (BubbleTea parses \x1b] as Alt+])
+	if msg.Type == tea.KeyRunes && msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
+		m.oscSuppressing = true
+		m.lastEscAt = time.Now()
+		return
+	}
+
 	switch msg.Type {
 	case tea.KeyRunes:
 		if len(msg.Runes) > 0 {

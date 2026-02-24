@@ -145,10 +145,9 @@ func (t *HTTPTransport) Close() error {
 		close(t.done)
 		t.sseWg.Wait()
 
-		// Safe to close now: the only other writer (readSSEResponse)
-		// runs synchronously inside Send, which cannot be called
-		// after Close returns.
-		close(t.incoming)
+		// Do NOT close t.incoming: trySendIncoming may race with Close.
+		// Consumers detect completion via the done channel.
+		// The incoming channel will be garbage collected.
 
 		// Send DELETE with session ID if we have one.
 		t.mu.RLock()

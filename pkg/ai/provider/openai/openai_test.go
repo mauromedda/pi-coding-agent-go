@@ -261,6 +261,58 @@ func TestConvertTools(t *testing.T) {
 	}
 }
 
+func TestConvertMessages_TextConcatenation(t *testing.T) {
+	t.Parallel()
+
+	// Message with multiple text content blocks should be concatenated correctly.
+	ctx := &ai.Context{
+		Messages: []ai.Message{
+			{
+				Role: ai.RoleAssistant,
+				Content: []ai.Content{
+					{Type: ai.ContentText, Text: "Hello "},
+					{Type: ai.ContentText, Text: "world"},
+					{Type: ai.ContentText, Text: "!"},
+				},
+			},
+		},
+	}
+
+	msgs := convertMessages(ctx)
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if got, ok := msgs[0].Content.(string); !ok || got != "Hello world!" {
+		t.Errorf("content = %v; want %q", msgs[0].Content, "Hello world!")
+	}
+}
+
+func TestConvertMessages_PreAllocatedCapacity(t *testing.T) {
+	t.Parallel()
+
+	// Verify convertMessages returns correct results with many messages.
+	// This exercises the pre-allocation path.
+	const n = 50
+	messages := make([]ai.Message, n)
+	for i := range n {
+		messages[i] = ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("msg %d", i))
+	}
+
+	ctx := &ai.Context{
+		System:   "system prompt",
+		Messages: messages,
+	}
+
+	msgs := convertMessages(ctx)
+	// 1 system + n user messages
+	if len(msgs) != n+1 {
+		t.Fatalf("got %d messages, want %d", len(msgs), n+1)
+	}
+	if msgs[0].Role != "system" {
+		t.Errorf("first message role = %q; want system", msgs[0].Role)
+	}
+}
+
 func TestMapFinishReason(t *testing.T) {
 	t.Parallel()
 

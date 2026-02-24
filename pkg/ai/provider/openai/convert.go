@@ -5,6 +5,7 @@ package openai
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
@@ -76,7 +77,7 @@ func buildRequestBody(model *ai.Model, ctx *ai.Context, opts *ai.StreamOptions) 
 }
 
 func convertMessages(ctx *ai.Context) []chatMessage {
-	var msgs []chatMessage
+	msgs := make([]chatMessage, 0, len(ctx.Messages)+2)
 
 	if ctx.System != "" {
 		msgs = append(msgs, chatMessage{Role: "system", Content: ctx.System})
@@ -94,11 +95,11 @@ func convertMessages(ctx *ai.Context) []chatMessage {
 
 		// Tool use content (assistant with tool calls)
 		var toolCalls []toolCallReq
-		var textContent string
+		var textBuilder strings.Builder
 		for _, c := range m.Content {
 			switch c.Type {
 			case ai.ContentText:
-				textContent += c.Text
+				textBuilder.WriteString(c.Text)
 			case ai.ContentToolUse:
 				toolCalls = append(toolCalls, toolCallReq{
 					ID:   c.ID,
@@ -118,6 +119,7 @@ func convertMessages(ctx *ai.Context) []chatMessage {
 			}
 		}
 
+		textContent := textBuilder.String()
 		if len(toolCalls) > 0 {
 			msg.Content = textContent
 			msg.ToolCalls = toolCalls

@@ -118,6 +118,43 @@ func TestEventStreamDoneChannel(t *testing.T) {
 	}
 }
 
+func TestEventStreamConcurrentSendAndFinish(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that concurrent Send and Finish calls do not panic.
+	// The race was: Finish closes events channel while Send writes to it.
+	for i := range 100 {
+		_ = i
+		stream := NewEventStream(1)
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for j := range 10 {
+				_ = j
+				stream.Send(StreamEvent{Type: EventContentDelta, Text: "delta"})
+			}
+		}()
+
+		// Finish concurrently; must not panic.
+		stream.Finish(nil)
+		<-done
+	}
+}
+
+func TestEventStreamSendReturnsFalseAfterFinish(t *testing.T) {
+	t.Parallel()
+
+	stream := NewEventStream(1)
+	stream.Finish(nil)
+
+	// After Finish, Send must return false without panic.
+	ok := stream.Send(StreamEvent{Type: EventContentDelta, Text: "late"})
+	if ok {
+		t.Error("Send returned true after Finish; want false")
+	}
+}
+
 func TestEventStreamDoubleFinish(t *testing.T) {
 	t.Parallel()
 

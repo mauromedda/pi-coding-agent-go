@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // AuthStore holds API keys and tokens.
@@ -18,6 +20,7 @@ type AuthStore struct {
 	mu         sync.Mutex
 	runtimeKey string            // CLI --api-key override; not persisted
 	cmdCache   map[string]string // per-process cache for !command resolutions
+	cmdGroup   singleflight.Group // deduplicates concurrent resolveCommandKey calls
 }
 
 // LoadAuth reads the auth file, or returns an empty store if it doesn't exist.
@@ -111,7 +114,8 @@ func (a *AuthStore) GetKey(provider string) string {
 }
 
 // resolveCommandKey executes a shell command and returns its trimmed output.
-// Results are cached per-process to avoid repeated executions.
+// Results are cached per-process. Concurrent calls for the same command are
+// deduplicated via singleflight to avoid the TOCTOU race on cache lookup.
 func (a *AuthStore) resolveCommandKey(cmd string) (string, error) {
 	a.mu.Lock()
 	if a.cmdCache != nil {
@@ -122,21 +126,39 @@ func (a *AuthStore) resolveCommandKey(cmd string) (string, error) {
 	}
 	a.mu.Unlock()
 
-	out, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	v, err, _ := a.cmdGroup.Do(cmd, func() (any, error) {
+		// Double-check cache inside singleflight to handle the case where a
+		// previous flight already populated the cache.
+		a.mu.Lock()
+		if a.cmdCache != nil {
+			if cached, ok := a.cmdCache[cmd]; ok {
+				a.mu.Unlock()
+				return cached, nil
+			}
+		}
+		a.mu.Unlock()
+
+		out, err := exec.Command("/bin/sh", "-c", cmd).Output()
+		if err != nil {
+			return "", fmt.Errorf("executing key command %q: %w", cmd, err)
+		}
+
+		result := strings.TrimSpace(string(out))
+
+		a.mu.Lock()
+		if a.cmdCache == nil {
+			a.cmdCache = make(map[string]string)
+		}
+		a.cmdCache[cmd] = result
+		a.mu.Unlock()
+
+		return result, nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("executing key command %q: %w", cmd, err)
+		return "", err
 	}
 
-	result := strings.TrimSpace(string(out))
-
-	a.mu.Lock()
-	if a.cmdCache == nil {
-		a.cmdCache = make(map[string]string)
-	}
-	a.cmdCache[cmd] = result
-	a.mu.Unlock()
-
-	return result, nil
+	return v.(string), nil
 }
 
 // SetKey stores an API key for a provider.

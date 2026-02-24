@@ -39,8 +39,15 @@ type StreamEvent struct {
 
 // EventStream provides channel-based access to streaming LLM events.
 // Consumers range over Events() and check Result() when done.
+//
+// Design: Send writes to an internal events channel that is never closed
+// externally. Finish closes only the done channel. A drainer goroutine
+// forwards events to the consumer-facing out channel, closing it when
+// done fires and all buffered events are drained. This eliminates the
+// send-on-closed-channel race between Send and Finish.
 type EventStream struct {
-	events chan StreamEvent
+	events chan StreamEvent // internal: producers write here via Send
+	out    chan StreamEvent // external: consumers read via Events()
 	done   chan struct{}
 	result atomic.Pointer[AssistantMessage]
 	once   sync.Once
@@ -48,20 +55,50 @@ type EventStream struct {
 
 // NewEventStream creates a new EventStream with the given buffer size.
 func NewEventStream(bufSize int) *EventStream {
-	return &EventStream{
+	s := &EventStream{
 		events: make(chan StreamEvent, bufSize),
+		out:    make(chan StreamEvent, bufSize),
 		done:   make(chan struct{}),
+	}
+	go s.drain()
+	return s
+}
+
+// drain forwards events from the internal channel to the consumer channel.
+// Closes out when done fires and all buffered events are forwarded.
+func (s *EventStream) drain() {
+	defer close(s.out)
+	for {
+		select {
+		case ev := <-s.events:
+			s.out <- ev
+		case <-s.done:
+			// Drain remaining buffered events.
+			for {
+				select {
+				case ev := <-s.events:
+					s.out <- ev
+				default:
+					return
+				}
+			}
+		}
 	}
 }
 
 // Events returns a read-only channel of stream events.
 // The channel is closed when the stream is complete.
 func (s *EventStream) Events() <-chan StreamEvent {
-	return s.events
+	return s.out
 }
 
-// Send sends an event to the stream. Returns false if the stream is closed.
+// Send sends an event to the stream. Returns false if the stream is finished.
 func (s *EventStream) Send(event StreamEvent) bool {
+	select {
+	case <-s.done:
+		return false
+	default:
+	}
 	select {
 	case s.events <- event:
 		return true
@@ -71,12 +108,14 @@ func (s *EventStream) Send(event StreamEvent) bool {
 }
 
 // Finish completes the stream with a final result.
+// Only closes the done channel; the events channel is never closed, preventing
+// send-on-closed-channel panics. The drainer goroutine closes the consumer
+// channel after draining remaining events.
 func (s *EventStream) Finish(msg *AssistantMessage) {
 	s.once.Do(func() {
 		if msg != nil {
 			s.result.Store(msg)
 		}
-		close(s.events)
 		close(s.done)
 	})
 }

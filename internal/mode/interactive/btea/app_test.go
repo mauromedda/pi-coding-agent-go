@@ -1446,3 +1446,124 @@ func TestAppModel_AgentStreamingMsg_HandledDuringOverlay(t *testing.T) {
 		t.Error("AgentTextMsg should create content even with overlay active")
 	}
 }
+
+// --- OSC suppression through dropdown overlay tests ---
+
+func TestAppModel_OSCSequenceFullySuppressedWithOverlay(t *testing.T) {
+	t.Parallel()
+
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+
+	// Open command palette by typing '/'
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(AppModel)
+
+	if m.overlay == nil {
+		t.Fatal("overlay = nil; want CmdPaletteModel")
+	}
+
+	// Simulate OSC response arriving while overlay is active:
+	// 1. Alt+] (OSC start) - forwarded as KeyRunes to editor
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = result.(AppModel)
+
+	// 2. Body runes - forwarded as KeyRunes to editor
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
+	m = result.(AppModel)
+
+	// 3. KeyEscape (first byte of split ST) - should be forwarded to editor, NOT dismiss overlay
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = result.(AppModel)
+
+	// Overlay must still be active (ESC was consumed by OSC state machine, not overlay)
+	if m.overlay == nil {
+		t.Fatal("overlay dismissed by ESC during OSC suppression; should remain active")
+	}
+
+	// 4. Backslash (second byte of split ST) - should complete ST in editor
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}})
+	m = result.(AppModel)
+
+	// Editor should be clean: only "/" from opening the palette
+	if got := m.editor.Text(); got != "/" {
+		t.Errorf("editor.Text() = %q; want %q (OSC garbage leaked into editor)", got, "/")
+	}
+}
+
+func TestAppModel_NormalEscapeDismissesOverlayWhenNotSuppressing(t *testing.T) {
+	t.Parallel()
+
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+
+	// Open command palette
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(AppModel)
+
+	if m.overlay == nil {
+		t.Fatal("overlay = nil; want CmdPaletteModel")
+	}
+
+	// Editor is NOT in OSC suppression mode
+	if m.editor.IsOSCSuppressing() {
+		t.Fatal("editor should not be in OSC suppression mode")
+	}
+
+	// Normal ESC: overlay returns a CmdPaletteDismissMsg command
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = result.(AppModel)
+
+	if cmd == nil {
+		t.Fatal("cmd = nil; overlay should return dismiss command on ESC")
+	}
+
+	// Process the dismiss message returned by the overlay
+	dismissMsg := cmd()
+	result, _ = m.Update(dismissMsg)
+	m = result.(AppModel)
+
+	if m.overlay != nil {
+		t.Error("overlay should be nil after processing dismiss from normal ESC")
+	}
+}
+
+func TestAppModel_BELTerminatorThroughOverlay(t *testing.T) {
+	t.Parallel()
+
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+
+	// Open command palette
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(AppModel)
+
+	if m.overlay == nil {
+		t.Fatal("overlay = nil; want CmdPaletteModel")
+	}
+
+	// OSC start
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = result.(AppModel)
+
+	// OSC body
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:00/00/00")})
+	m = result.(AppModel)
+
+	// BEL terminator (Ctrl+G) should be forwarded to editor's OSC state machine
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	m = result.(AppModel)
+
+	// Editor should NOT have OSC garbage
+	if got := m.editor.Text(); got != "/" {
+		t.Errorf("editor.Text() = %q; want %q (BEL should terminate OSC through overlay)", got, "/")
+	}
+
+	// Editor should no longer be suppressing
+	if m.editor.IsOSCSuppressing() {
+		t.Error("editor should not be suppressing after BEL terminator")
+	}
+}

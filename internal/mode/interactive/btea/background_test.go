@@ -188,6 +188,81 @@ func TestBackgroundStatus_String(t *testing.T) {
 	}
 }
 
+func TestBackgroundManager_ListReturnsValueCopies(t *testing.T) {
+	mgr := NewBackgroundManager(nil)
+	_ = mgr.Add(&BackgroundTask{
+		ID:        "bg-snap",
+		Prompt:    "snapshot test",
+		StartedAt: time.Now(),
+		Status:    BGRunning,
+	})
+
+	tasks := mgr.List()
+	if len(tasks) != 1 {
+		t.Fatalf("List() len = %d; want 1", len(tasks))
+	}
+
+	// Mutating the returned value must NOT affect the manager's internal state.
+	tasks[0].Status = BGDone
+	tasks[0].Prompt = "mutated"
+
+	got := mgr.Get("bg-snap")
+	if got.Status != BGRunning {
+		t.Errorf("internal Status changed to %v after mutating List() result; want BGRunning", got.Status)
+	}
+	if got.Prompt != "snapshot test" {
+		t.Errorf("internal Prompt changed to %q after mutating List() result; want %q", got.Prompt, "snapshot test")
+	}
+}
+
+func TestBackgroundManager_GetReturnsCopy(t *testing.T) {
+	mgr := NewBackgroundManager(nil)
+	_ = mgr.Add(&BackgroundTask{
+		ID:        "bg-copy",
+		Prompt:    "copy test",
+		StartedAt: time.Now(),
+		Status:    BGRunning,
+	})
+
+	got := mgr.Get("bg-copy")
+	got.Status = BGFailed
+	got.Prompt = "tampered"
+
+	original := mgr.Get("bg-copy")
+	if original.Status != BGRunning {
+		t.Errorf("internal Status changed to %v after mutating Get() result; want BGRunning", original.Status)
+	}
+	if original.Prompt != "copy test" {
+		t.Errorf("internal Prompt changed to %q after mutating Get() result; want %q", original.Prompt, "copy test")
+	}
+}
+
+func TestBackgroundTask_Snapshot(t *testing.T) {
+	task := &BackgroundTask{
+		ID:        "bg-orig",
+		Prompt:    "original",
+		StartedAt: time.Now(),
+		Status:    BGRunning,
+		Messages:  []ai.Message{{Role: ai.RoleAssistant}},
+	}
+
+	snap := task.Snapshot()
+	snap.Status = BGDone
+	snap.Prompt = "changed"
+	snap.Messages[0].Role = ai.RoleUser
+
+	if task.Status != BGRunning {
+		t.Errorf("original Status changed after Snapshot mutation")
+	}
+	if task.Prompt != "original" {
+		t.Errorf("original Prompt changed after Snapshot mutation")
+	}
+	// Messages slice is copied, so modifying snap.Messages should not affect original.
+	if task.Messages[0].Role != ai.RoleAssistant {
+		t.Errorf("original Messages changed after Snapshot mutation")
+	}
+}
+
 type bgTestError struct{ msg string }
 
 func (e *bgTestError) Error() string { return e.msg }

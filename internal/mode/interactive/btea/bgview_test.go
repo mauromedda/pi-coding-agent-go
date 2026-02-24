@@ -12,7 +12,7 @@ import (
 )
 
 func TestBackgroundViewModel_Navigation(t *testing.T) {
-	tasks := []*BackgroundTask{
+	tasks := []BackgroundTask{
 		{ID: "bg-1", Prompt: "first", Status: BGRunning, StartedAt: time.Now()},
 		{ID: "bg-2", Prompt: "second", Status: BGDone, StartedAt: time.Now()},
 		{ID: "bg-3", Prompt: "third", Status: BGFailed, StartedAt: time.Now()},
@@ -53,7 +53,7 @@ func TestBackgroundViewModel_Navigation(t *testing.T) {
 }
 
 func TestBackgroundViewModel_DismissCompleted(t *testing.T) {
-	tasks := []*BackgroundTask{
+	tasks := []BackgroundTask{
 		{ID: "bg-1", Prompt: "done task", Status: BGDone, StartedAt: time.Now()},
 		{ID: "bg-2", Prompt: "running task", Status: BGRunning, StartedAt: time.Now()},
 	}
@@ -83,7 +83,7 @@ func TestBackgroundViewModel_DismissCompleted(t *testing.T) {
 }
 
 func TestBackgroundViewModel_CannotDismissRunning(t *testing.T) {
-	tasks := []*BackgroundTask{
+	tasks := []BackgroundTask{
 		{ID: "bg-1", Prompt: "running task", Status: BGRunning, StartedAt: time.Now()},
 	}
 	m := NewBackgroundViewModel(tasks, 80, 24)
@@ -96,7 +96,7 @@ func TestBackgroundViewModel_CannotDismissRunning(t *testing.T) {
 }
 
 func TestBackgroundViewModel_CancelRunning(t *testing.T) {
-	tasks := []*BackgroundTask{
+	tasks := []BackgroundTask{
 		{ID: "bg-1", Prompt: "running task", Status: BGRunning, StartedAt: time.Now()},
 	}
 	m := NewBackgroundViewModel(tasks, 80, 24)
@@ -116,7 +116,7 @@ func TestBackgroundViewModel_CancelRunning(t *testing.T) {
 }
 
 func TestBackgroundViewModel_ReviewCompleted(t *testing.T) {
-	tasks := []*BackgroundTask{
+	tasks := []BackgroundTask{
 		{ID: "bg-review", Prompt: "done", Status: BGDone, StartedAt: time.Now()},
 	}
 	m := NewBackgroundViewModel(tasks, 80, 24)
@@ -148,7 +148,7 @@ func TestBackgroundViewModel_EscCloses(t *testing.T) {
 }
 
 func TestBackgroundViewModel_View(t *testing.T) {
-	tasks := []*BackgroundTask{
+	tasks := []BackgroundTask{
 		{ID: "bg-1", Prompt: "hello world", Status: BGRunning, StartedAt: time.Now()},
 		{ID: "bg-2", Prompt: "done thing", Status: BGDone, StartedAt: time.Now()},
 	}

@@ -81,10 +81,13 @@ func (a *Agent) Prompt(ctx context.Context, llmCtx *ai.Context, opts *ai.StreamO
 }
 
 // Steer injects a steering message that will be appended before the next LLM call.
-func (a *Agent) Steer(msg ai.Message) {
+// Returns true if the message was accepted, false if the buffer is full.
+func (a *Agent) Steer(msg ai.Message) bool {
 	select {
 	case a.steerCh <- msg:
+		return true
 	default:
+		return false
 	}
 }
 
