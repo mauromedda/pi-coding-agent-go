@@ -1313,6 +1313,12 @@ func TestGatewaySettings_ResolveBaseURL(t *testing.T) {
 			"anthropic",
 			"http://gw:9090/api/claude",
 		},
+		{
+			"custom path without leading slash",
+			&GatewaySettings{URL: "http://gw:9090", Paths: map[string]string{"anthropic": "custom/api"}},
+			"anthropic",
+			"http://gw:9090/custom/api",
+		},
 		{"unknown api gets bare gateway URL", &GatewaySettings{URL: "http://localhost:8080"}, "bedrock", "http://localhost:8080"},
 	}
 	for _, tt := range tests {

@@ -246,18 +246,19 @@ func validatePipelineCommands(command string) error {
 // Alternatives are ordered longest-first so && is consumed before &.
 var pipelineSplitter = regexp.MustCompile(`\s*(?:\|{1,2}|&&|&)\s*`)
 
+// shellBuiltins lists shell builtins recognized as safe primary commands.
+var shellBuiltins = []string{
+	"cd", "pwd", "echo", "printf", "read", "exit", "return",
+	"break", "continue", "if", "then", "else", "elif", "fi",
+	"for", "while", "until", "do", "done", "case", "esac",
+	"function", "local", "export", "unset", "readonly",
+	"declare", "typeset", "let", "eval", "exec", "source",
+	".", ":", "true", "false", "test", "[", "[[", "]]",
+}
+
 // isShellBuiltin checks if a command is a shell builtin
 func isShellBuiltin(cmd string) bool {
-	builtins := []string{
-		"cd", "pwd", "echo", "printf", "read", "exit", "return",
-		"break", "continue", "if", "then", "else", "elif", "fi",
-		"for", "while", "until", "do", "done", "case", "esac",
-		"function", "local", "export", "unset", "readonly",
-		"declare", "typeset", "let", "eval", "exec", "source",
-		".", ":", "true", "false", "test", "[", "[[", "]]",
-	}
-
-	return slices.Contains(builtins, cmd)
+	return slices.Contains(shellBuiltins, cmd)
 }
 
 // looksLikeSafeCommand uses heuristics to determine if an unknown command might be safe

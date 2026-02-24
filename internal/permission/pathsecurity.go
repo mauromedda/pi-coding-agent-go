@@ -109,27 +109,27 @@ func (v *SecurePathValidator) validatePath(path, operation string) error {
 	return nil
 }
 
+// traversalPatterns lists path traversal sequences to block.
+var traversalPatterns = []string{
+	"../",
+	"..\\",
+	"/..",
+	"\\..",
+	"..%2f",
+	"..%2F",
+	"..%5c",
+	"..%5C",
+	"%2e%2e%2f",
+	"%2e%2e%5c",
+}
+
 // checkTraversalPatterns checks for various path traversal patterns
 func checkTraversalPatterns(path string) error {
 	// Normalize path separators for consistent checking
 	normalizedPath := filepath.ToSlash(path)
 
-	// Check for various traversal patterns
-	dangerousPatterns := []string{
-		"../",
-		"..\\",
-		"/..",
-		"\\..",
-		"..%2f",
-		"..%2F",
-		"..%5c",
-		"..%5C",
-		"%2e%2e%2f",
-		"%2e%2e%5c",
-	}
-
 	pathLower := strings.ToLower(normalizedPath)
-	for _, pattern := range dangerousPatterns {
+	for _, pattern := range traversalPatterns {
 		if strings.Contains(pathLower, pattern) {
 			return fmt.Errorf("contains dangerous pattern: %s", pattern)
 		}
@@ -209,6 +209,15 @@ func (v *SecurePathValidator) checkAllowedPrefix(resolvedPath string) error {
 	return fmt.Errorf("path %q is outside allowed directories", resolvedPath)
 }
 
+// reservedFilenames lists filenames that are unsafe or ambiguous on any platform.
+var reservedFilenames = []string{".", "..", "con", "prn", "aux", "nul"}
+
+// windowsReservedNames lists Windows device names that cannot be used as filenames.
+var windowsReservedNames = []string{
+	"com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+	"lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+}
+
 // ValidateFilename validates a filename for security issues
 func ValidateFilename(filename string) error {
 	if filename == "" {
@@ -221,18 +230,13 @@ func ValidateFilename(filename string) error {
 	}
 
 	// Check for dangerous filenames
-	dangerous := []string{".", "..", "con", "prn", "aux", "nul"}
 	filenameLower := strings.ToLower(filename)
 
-	if slices.Contains(dangerous, filenameLower) {
+	if slices.Contains(reservedFilenames, filenameLower) {
 		return fmt.Errorf("reserved filename: %s", filename)
 	}
 
-	// Check for Windows reserved names
-	windowsReserved := []string{"com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
-		"lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"}
-
-	if slices.Contains(windowsReserved, filenameLower) {
+	if slices.Contains(windowsReservedNames, filenameLower) {
 		return fmt.Errorf("Windows reserved filename: %s", filename)
 	}
 
