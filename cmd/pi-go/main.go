@@ -139,7 +139,7 @@ func run(args cliArgs) error {
 	// W4: Register providers with auth keys
 	registerProvidersWithAuth(auth, baseURL)
 
-	provider := ai.GetProvider(model.Api, baseURL)
+	provider := ai.GetProvider(model.Api, resolveBaseURLForAPI(args, cfg, string(model.Api)))
 	if provider == nil {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
 	}
@@ -176,7 +176,7 @@ func run(args cliArgs) error {
 			}
 		}
 
-		minionProvider := ai.GetProvider(minionModel.Api, minionModel.BaseURL)
+		minionProvider := ai.GetProvider(minionModel.Api, resolveBaseURLForAPI(args, cfg, string(minionModel.Api)))
 		if minionProvider == nil {
 			return fmt.Errorf("no provider registered for minion model API %q", minionModel.Api)
 		}
@@ -391,6 +391,9 @@ func buildCLIOverrides(args cliArgs) *config.Settings {
 		f := false
 		s.Worktree = &config.WorktreeSettings{Enabled: &f}
 	}
+	if args.gateway != "" {
+		s.Gateway = &config.GatewaySettings{URL: args.gateway}
+	}
 	return s
 }
 
@@ -409,6 +412,33 @@ func resolveBaseURL(args cliArgs, cfg *config.Settings) string {
 		return args.baseURL
 	}
 	return cfg.BaseURL
+}
+
+// resolveBaseURLForAPI returns the base URL for a specific API type.
+// Priority: gateway (CLI or config) > --base-url > config.base_url.
+func resolveBaseURLForAPI(args cliArgs, cfg *config.Settings, api string) string {
+	if gw := resolveGateway(args, cfg); gw != nil {
+		if resolved := gw.ResolveBaseURL(api); resolved != "" {
+			return resolved
+		}
+	}
+	return resolveBaseURL(args, cfg)
+}
+
+// resolveGateway builds the effective gateway settings from CLI flag + config.
+func resolveGateway(args cliArgs, cfg *config.Settings) *config.GatewaySettings {
+	gwURL := args.gateway
+	if gwURL == "" && cfg.Gateway != nil {
+		gwURL = cfg.Gateway.URL
+	}
+	if gwURL == "" {
+		return nil
+	}
+	gw := &config.GatewaySettings{URL: gwURL}
+	if cfg.Gateway != nil {
+		gw.Paths = cfg.Gateway.Paths
+	}
+	return gw
 }
 
 // resolvePermissionMode maps CLI flags and config to a permission.Mode.

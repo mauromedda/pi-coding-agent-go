@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1288,4 +1289,129 @@ func TestLoadFile_MinionSettings(t *testing.T) {
 	if s.Minion.Mode != "singular" {
 		t.Errorf("Mode = %q, want %q", s.Minion.Mode, "singular")
 	}
+}
+
+func TestGatewaySettings_ResolveBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		gw   *GatewaySettings
+		api  string
+		want string
+	}{
+		{"nil gateway", nil, "anthropic", ""},
+		{"empty URL", &GatewaySettings{}, "anthropic", ""},
+		{"default anthropic", &GatewaySettings{URL: "http://localhost:8080"}, "anthropic", "http://localhost:8080/anthropic"},
+		{"default openai", &GatewaySettings{URL: "http://localhost:8080"}, "openai", "http://localhost:8080/openai"},
+		{"default google", &GatewaySettings{URL: "http://localhost:8080"}, "google", "http://localhost:8080/gemini/v1beta"},
+		{"default vertex", &GatewaySettings{URL: "http://localhost:8080"}, "vertex", "http://localhost:8080/vertex/v1"},
+		{"trailing slash stripped", &GatewaySettings{URL: "http://localhost:8080/"}, "anthropic", "http://localhost:8080/anthropic"},
+		{
+			"custom path override",
+			&GatewaySettings{URL: "http://gw:9090", Paths: map[string]string{"anthropic": "/api/claude"}},
+			"anthropic",
+			"http://gw:9090/api/claude",
+		},
+		{"unknown api gets bare gateway URL", &GatewaySettings{URL: "http://localhost:8080"}, "bedrock", "http://localhost:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.gw.ResolveBaseURL(tt.api)
+			if got != tt.want {
+				t.Errorf("ResolveBaseURL(%q) = %q, want %q", tt.api, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGatewaySettings_JSON(t *testing.T) {
+	t.Parallel()
+
+	s := Settings{
+		Gateway: &GatewaySettings{
+			URL:   "http://localhost:8080",
+			Paths: map[string]string{"anthropic": "/custom"},
+		},
+	}
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded Settings
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Gateway == nil {
+		t.Fatal("Gateway should not be nil")
+	}
+	if decoded.Gateway.URL != "http://localhost:8080" {
+		t.Errorf("URL = %q", decoded.Gateway.URL)
+	}
+	if decoded.Gateway.Paths["anthropic"] != "/custom" {
+		t.Errorf("Paths = %v", decoded.Gateway.Paths)
+	}
+}
+
+func TestMerge_Gateway(t *testing.T) {
+	t.Parallel()
+
+	t.Run("project overrides global URL", func(t *testing.T) {
+		global := &Settings{Gateway: &GatewaySettings{URL: "http://global:8080"}}
+		project := &Settings{Gateway: &GatewaySettings{URL: "http://project:9090"}}
+		merged := merge(global, project)
+		if merged.Gateway == nil || merged.Gateway.URL != "http://project:9090" {
+			t.Errorf("Gateway.URL = %q, want http://project:9090", merged.Gateway.URL)
+		}
+	})
+
+	t.Run("project paths merge over global", func(t *testing.T) {
+		global := &Settings{Gateway: &GatewaySettings{
+			URL:   "http://gw:8080",
+			Paths: map[string]string{"anthropic": "/anthropic", "openai": "/openai"},
+		}}
+		project := &Settings{Gateway: &GatewaySettings{
+			Paths: map[string]string{"anthropic": "/custom-anthropic"},
+		}}
+		merged := merge(global, project)
+		if merged.Gateway.URL != "http://gw:8080" {
+			t.Errorf("URL = %q, want http://gw:8080 (preserved from global)", merged.Gateway.URL)
+		}
+		if merged.Gateway.Paths["anthropic"] != "/custom-anthropic" {
+			t.Errorf("anthropic = %q, want /custom-anthropic", merged.Gateway.Paths["anthropic"])
+		}
+		if merged.Gateway.Paths["openai"] != "/openai" {
+			t.Errorf("openai = %q, want /openai (preserved from global)", merged.Gateway.Paths["openai"])
+		}
+	})
+
+	t.Run("nil global + project gateway", func(t *testing.T) {
+		merged := merge(&Settings{}, &Settings{Gateway: &GatewaySettings{URL: "http://new:8080"}})
+		if merged.Gateway == nil || merged.Gateway.URL != "http://new:8080" {
+			t.Errorf("Gateway = %v, want URL http://new:8080", merged.Gateway)
+		}
+	})
+
+	t.Run("global gateway + nil project preserves global", func(t *testing.T) {
+		merged := merge(&Settings{Gateway: &GatewaySettings{URL: "http://global:8080"}}, &Settings{})
+		if merged.Gateway == nil || merged.Gateway.URL != "http://global:8080" {
+			t.Errorf("Gateway = %v, want URL http://global:8080", merged.Gateway)
+		}
+	})
+
+	t.Run("merge does not mutate original", func(t *testing.T) {
+		global := &Settings{Gateway: &GatewaySettings{
+			URL:   "http://gw:8080",
+			Paths: map[string]string{"anthropic": "/anthropic"},
+		}}
+		project := &Settings{Gateway: &GatewaySettings{
+			Paths: map[string]string{"openai": "/openai"},
+		}}
+		_ = merge(global, project)
+		if _, ok := global.Gateway.Paths["openai"]; ok {
+			t.Error("merge mutated global Gateway.Paths")
+		}
+	})
 }

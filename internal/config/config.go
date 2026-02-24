@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Settings holds the merged configuration.
@@ -78,6 +79,9 @@ type Settings struct {
 
 	// Minion configures the local/cloud context distillation protocol
 	Minion *MinionSettings `json:"minion,omitempty"`
+
+	// Gateway routes LLM traffic through a proxy (e.g., hikma-mirsad)
+	Gateway *GatewaySettings `json:"gateway,omitempty"`
 }
 
 // ModelOverride allows per-model customization.
@@ -271,6 +275,36 @@ func (m *MinionSettings) EffectiveMode() string {
 		return "singular"
 	}
 	return m.Mode
+}
+
+// GatewaySettings routes all LLM traffic through a proxy gateway (e.g., hikma-mirsad).
+type GatewaySettings struct {
+	URL   string            `json:"url"`             // e.g., "http://localhost:8080"
+	Paths map[string]string `json:"paths,omitempty"` // api -> path prefix override
+}
+
+// DefaultGatewayPaths maps API types to their default gateway path prefixes.
+// Includes version path segments that providers embed in their base URLs.
+var DefaultGatewayPaths = map[string]string{
+	"anthropic": "/anthropic",
+	"openai":    "/openai",
+	"google":    "/gemini/v1beta",
+	"vertex":    "/vertex/v1",
+}
+
+// ResolveBaseURL returns the effective base URL for an API type.
+// Returns empty string if gateway is not configured.
+func (g *GatewaySettings) ResolveBaseURL(api string) string {
+	if g == nil || g.URL == "" {
+		return ""
+	}
+	path := DefaultGatewayPaths[api]
+	if g.Paths != nil {
+		if override, has := g.Paths[api]; has {
+			path = override
+		}
+	}
+	return strings.TrimRight(g.URL, "/") + path
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -722,6 +756,37 @@ func merge(global, project *Settings) *Settings {
 		if project.Minion.Mode != "" {
 			result.Minion.Mode = project.Minion.Mode
 		}
+	}
+
+	// Gateway: merge if present (deep-copy to prevent mutation)
+	if project.Gateway != nil {
+		if result.Gateway == nil {
+			result.Gateway = &GatewaySettings{}
+		} else {
+			g := *result.Gateway
+			if result.Gateway.Paths != nil {
+				g.Paths = make(map[string]string, len(result.Gateway.Paths))
+				maps.Copy(g.Paths, result.Gateway.Paths)
+			}
+			result.Gateway = &g
+		}
+		if project.Gateway.URL != "" {
+			result.Gateway.URL = project.Gateway.URL
+		}
+		if project.Gateway.Paths != nil {
+			if result.Gateway.Paths == nil {
+				result.Gateway.Paths = make(map[string]string)
+			}
+			maps.Copy(result.Gateway.Paths, project.Gateway.Paths)
+		}
+	} else if result.Gateway != nil {
+		// Deep-copy global gateway to avoid shared map mutation
+		g := *result.Gateway
+		if result.Gateway.Paths != nil {
+			g.Paths = make(map[string]string, len(result.Gateway.Paths))
+			maps.Copy(g.Paths, result.Gateway.Paths)
+		}
+		result.Gateway = &g
 	}
 
 	return &result
