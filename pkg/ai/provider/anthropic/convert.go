@@ -53,9 +53,25 @@ func convertContentBlock(b ai.Content) map[string]any {
 		}
 	case ai.ContentToolResult:
 		result := map[string]any{
-			"type":       "tool_result",
+			"type":        "tool_result",
 			"tool_use_id": b.ID,
-			"content":    b.ResultText,
+		}
+		if len(b.Images) > 0 {
+			parts := make([]map[string]any, 0, 1+len(b.Images))
+			parts = append(parts, map[string]any{"type": "text", "text": b.ResultText})
+			for _, img := range b.Images {
+				parts = append(parts, map[string]any{
+					"type": "image",
+					"source": map[string]any{
+						"type":       "base64",
+						"media_type": img.MediaType,
+						"data":       img.Data,
+					},
+				})
+			}
+			result["content"] = parts
+		} else {
+			result["content"] = b.ResultText
 		}
 		if b.IsError {
 			result["is_error"] = true
