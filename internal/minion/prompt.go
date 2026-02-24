@@ -37,3 +37,22 @@ Output format:
 Be precise and concise. Only include information that would be needed to understand and continue the work.`
 
 const extractUserPromptPrefix = "Extract structured context from this conversation chunk:\n\n"
+
+const compressResultSystemPrompt = `You are a result compression assistant. Your task is to condense a sub-agent's output into a shorter summary while preserving all actionable information.
+
+You MUST preserve:
+- File paths and line numbers
+- Function names, type names, and variable names
+- Code snippets (inline or block)
+- Error messages and stack traces
+- Specific values, counts, and measurements
+- Key findings and conclusions
+
+You MAY omit:
+- Verbose explanations of well-known concepts
+- Redundant restatements of the same finding
+- Filler phrases and transitional text
+
+Output a concise summary that a parent agent can act on without losing critical details.`
+
+const compressResultUserPromptPrefix = "Compress the following sub-agent result into a shorter summary:\n\n"

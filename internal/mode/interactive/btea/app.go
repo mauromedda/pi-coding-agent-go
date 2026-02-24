@@ -20,8 +20,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/commands"
-	"github.com/mauromedda/pi-coding-agent-go/internal/ide"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
+	"github.com/mauromedda/pi-coding-agent-go/internal/ide"
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
 	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 	"github.com/mauromedda/pi-coding-agent-go/internal/session"
@@ -1204,6 +1205,24 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 			Tools:    aiTools,
 		}
 
+		// Pre-turn ingest: distill context before the agent starts.
+		if deps.Ingester != nil && len(llmCtx.Messages) > 1 {
+			ingestCtx, ingestCancel := context.WithCancel(sh.ctx)
+			summary, err := deps.Ingester(ingestCtx, llmCtx.Messages[:len(llmCtx.Messages)-1])
+			ingestCancel()
+			if err != nil {
+				pilog.Debug("interactive: ingest failed: %v", err)
+			} else if summary != "" {
+				pilog.Debug("interactive: ingested %d chars summary", len(summary))
+				lastMsg := llmCtx.Messages[len(llmCtx.Messages)-1]
+				llmCtx.Messages = []ai.Message{
+					ai.NewTextMessage(ai.RoleUser, "[Prior context summary]\n"+summary),
+					{Role: ai.RoleAssistant, Content: []ai.Content{{Type: ai.ContentText, Text: "Understood. I have the context summary."}}},
+					lastMsg,
+				}
+			}
+		}
+
 		opts := &ai.StreamOptions{MaxTokens: 16384}
 		if deps.Model.MaxOutputTokens > 0 {
 			opts.MaxTokens = deps.Model.MaxOutputTokens
@@ -1261,16 +1280,11 @@ func (m AppModel) startAgentCmd() tea.Cmd {
 		ag := agent.NewWithPermissions(deps.Provider, deps.Model, deps.Tools, permCheckFn)
 		sh.activeAgent.Store(ag) // enable cancellation via abortAgent()
 
-		// Wire adaptive performance and/or minion transform
-		if profile != nil || deps.MinionTransform != nil {
-			adaptive := &agent.AdaptiveConfig{}
-			if profile != nil {
-				adaptive.Profile = *profile
-			}
-			if deps.MinionTransform != nil {
-				adaptive.TransformContext = deps.MinionTransform
-			}
-			ag.SetAdaptive(adaptive)
+		// Wire adaptive performance
+		if profile != nil {
+			ag.SetAdaptive(&agent.AdaptiveConfig{
+				Profile: *profile,
+			})
 		}
 
 		events := ag.Prompt(agCtx, llmCtx, opts)

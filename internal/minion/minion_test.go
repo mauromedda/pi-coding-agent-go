@@ -1,11 +1,12 @@
-// ABOUTME: Tests for the minion protocol (Distiller and Distributor)
-// ABOUTME: Uses mock providers to verify distillation, parallel extraction, and error handling
+// ABOUTME: Tests for the minion protocol (Distiller, Distributor, IngestDistill, CompressResult)
+// ABOUTME: Uses mock providers to verify distillation, parallel extraction, ingest, and compression
 
 package minion
 
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -677,5 +678,143 @@ func TestPrependSummary(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// --- IngestDistill tests ---
+
+func TestDistiller_IngestDistill(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "Full context summary."}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	d := New(Config{
+		Provider: provider,
+		Model:    testModel,
+	})
+
+	msgs := []ai.Message{
+		textMsg("first message"),
+		assistantMsg("first response"),
+		textMsg("second message"),
+		assistantMsg("second response"),
+	}
+
+	summary, err := d.IngestDistill(context.Background(), msgs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary == "" {
+		t.Error("expected non-empty summary")
+	}
+	if provider.callCount.Load() != 1 {
+		t.Errorf("expected 1 provider call, got %d", provider.callCount.Load())
+	}
+}
+
+func TestDistiller_IngestDistill_Empty(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "should not be called"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	d := New(Config{
+		Provider: provider,
+		Model:    testModel,
+	})
+
+	summary, err := d.IngestDistill(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary != "" {
+		t.Errorf("expected empty summary for nil messages, got %q", summary)
+	}
+	if provider.callCount.Load() != 0 {
+		t.Errorf("expected 0 provider calls, got %d", provider.callCount.Load())
+	}
+}
+
+// --- CompressResult tests ---
+
+func TestDistiller_CompressResult_Short(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "should not be called"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	d := New(Config{
+		Provider: provider,
+		Model:    testModel,
+	})
+
+	text := "short result"
+	result, err := d.CompressResult(context.Background(), text, 4000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != text {
+		t.Errorf("expected passthrough, got %q", result)
+	}
+	if provider.callCount.Load() != 0 {
+		t.Errorf("expected 0 provider calls for short text, got %d", provider.callCount.Load())
+	}
+}
+
+func TestDistiller_CompressResult_Long(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "Compressed: key findings preserved."}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
+	}
+
+	d := New(Config{
+		Provider: provider,
+		Model:    testModel,
+	})
+
+	longText := strings.Repeat("verbose output from sub-agent. ", 200)
+	result, err := d.CompressResult(context.Background(), longText, 4000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty compressed result")
+	}
+	if provider.callCount.Load() != 1 {
+		t.Errorf("expected 1 provider call, got %d", provider.callCount.Load())
+	}
+
+	// Verify the system prompt used was the compression prompt
+	ctx := provider.lastCtx.Load()
+	if ctx == nil {
+		t.Fatal("provider context was not captured")
+	}
+	if ctx.System != compressResultSystemPrompt {
+		t.Error("expected compression system prompt")
 	}
 }

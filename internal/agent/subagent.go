@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -45,9 +46,10 @@ func (h *SubAgentHandle) Result() *SubAgentResult {
 
 // SpawnDeps provides dependencies for spawning sub-agents.
 type SpawnDeps struct {
-	Provider ai.ApiProvider
-	Model    *ai.Model
-	AllTools []*AgentTool
+	Provider         ai.ApiProvider
+	Model            *ai.Model
+	AllTools         []*AgentTool
+	ResultCompressor func(ctx context.Context, text string, maxLen int) (string, error) // optional; compresses sub-agent output
 }
 
 // Spawn creates and runs a sub-agent with isolated context.
@@ -82,7 +84,7 @@ func Spawn(ctx context.Context, cfg SubAgentConfig, prompt string, deps SpawnDep
 
 	run := func() {
 		defer close(done)
-		result := runSubAgent(ctx, ag, llmCtx, opts, cfg.MaxTurns)
+		result := runSubAgent(ctx, ag, llmCtx, opts, cfg.MaxTurns, deps.ResultCompressor)
 		handle.result.Store(result)
 	}
 
@@ -96,7 +98,8 @@ func Spawn(ctx context.Context, cfg SubAgentConfig, prompt string, deps SpawnDep
 }
 
 // runSubAgent executes the agent loop with turn limiting and collects text output.
-func runSubAgent(ctx context.Context, ag *Agent, llmCtx *ai.Context, opts *ai.StreamOptions, maxTurns int) *SubAgentResult {
+// If compressor is non-nil, the result text is compressed when it exceeds 4000 chars.
+func runSubAgent(ctx context.Context, ag *Agent, llmCtx *ai.Context, opts *ai.StreamOptions, maxTurns int, compressor func(context.Context, string, int) (string, error)) *SubAgentResult {
 	if maxTurns <= 0 {
 		maxTurns = 10 // Default
 	}
@@ -125,7 +128,21 @@ func runSubAgent(ctx context.Context, ag *Agent, llmCtx *ai.Context, opts *ai.St
 		}
 	}
 
-	return &SubAgentResult{Text: text.String()}
+	result := &SubAgentResult{Text: text.String()}
+
+	// Compress result if compressor is available and text is long enough.
+	const compressThreshold = 4000
+	if compressor != nil && len(result.Text) > compressThreshold {
+		compressed, err := compressor(ctx, result.Text, compressThreshold)
+		if err != nil {
+			pilog.Debug("subagent: result compression failed: %v", err)
+		} else {
+			pilog.Debug("subagent: compressed result %d -> %d chars", len(result.Text), len(compressed))
+			result.Text = compressed
+		}
+	}
+
+	return result
 }
 
 // filterTools applies allow/disallow lists to produce a tool subset.

@@ -40,10 +40,10 @@ const (
 
 // Deps provides dependencies for print mode.
 type Deps struct {
-	Provider        ai.ApiProvider
-	Model           *ai.Model
-	Tools           []*agent.AgentTool
-	MinionTransform agent.TransformContextFunc // optional context distillation
+	Provider ai.ApiProvider
+	Model    *ai.Model
+	Tools    []*agent.AgentTool
+	Ingester func(ctx context.Context, msgs []ai.Message) (string, error) // optional; pre-turn context ingest
 }
 
 // Run executes the agent in non-interactive mode with the given configuration.
@@ -112,14 +112,21 @@ func RunWithConfig(ctx context.Context, cfg Config, deps Deps, prompt string) er
 }
 
 func runAgentLoop(ctx context.Context, cfg Config, deps Deps, llmCtx *ai.Context, opts *ai.StreamOptions, f formatter) error {
-	ag := agent.New(deps.Provider, deps.Model, deps.Tools)
-
-	if deps.MinionTransform != nil {
-		ag.SetAdaptive(&agent.AdaptiveConfig{
-			TransformContext: deps.MinionTransform,
-		})
-		pilog.Debug("print: minion context transform enabled")
+	// Pre-turn ingest: distill initial context before the agent starts.
+	if deps.Ingester != nil && len(llmCtx.Messages) > 0 {
+		summary, err := deps.Ingester(ctx, llmCtx.Messages)
+		if err != nil {
+			pilog.Debug("print: ingest failed: %v", err)
+		} else if summary != "" {
+			pilog.Debug("print: ingested %d chars summary", len(summary))
+			llmCtx.Messages = []ai.Message{
+				ai.NewTextMessage(ai.RoleUser, "[Prior context summary]\n"+summary),
+				llmCtx.Messages[len(llmCtx.Messages)-1], // keep the user prompt
+			}
+		}
 	}
+
+	ag := agent.New(deps.Provider, deps.Model, deps.Tools)
 
 	events := ag.Prompt(ctx, llmCtx, opts)
 

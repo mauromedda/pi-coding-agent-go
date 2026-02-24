@@ -16,7 +16,6 @@ import (
 	// async responses leak garbage into the editor.
 	_ "github.com/mauromedda/pi-coding-agent-go/internal/termfix"
 
-	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/git"
 	"github.com/mauromedda/pi-coding-agent-go/internal/intent"
@@ -144,22 +143,15 @@ func run(args cliArgs) error {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
 	}
 
-	// Build minion transform if requested via CLI flags or config
+	// Build minion functions if requested via CLI flags or config
 	if args.minion && args.minions {
 		return fmt.Errorf("--minion and --minions are mutually exclusive")
 	}
 
-	var minionTransform agent.TransformContextFunc
+	var minionIngester minion.IngestFunc
+	var minionCompressor minion.ResultCompressorFunc
 	useMinion := args.minion || args.minions || args.minionModel != "" || cfg.Minion.IsEnabled()
 	if useMinion {
-		// Mode: CLI flags override config
-		minionMode := minion.MinionMode(cfg.Minion.EffectiveMode())
-		if args.minions {
-			minionMode = minion.ModePlural
-		} else if args.minion || args.minionModel != "" {
-			minionMode = minion.ModeSingular
-		}
-
 		// Model: CLI flag overrides config
 		minionModelID := args.minionModel
 		if minionModelID == "" {
@@ -181,13 +173,15 @@ func run(args cliArgs) error {
 			return fmt.Errorf("no provider registered for minion model API %q", minionModel.Api)
 		}
 
-		minionTransform = minion.BuildTransform(minion.WireConfig{
-			Mode:     minionMode,
+		wireCfg := minion.WireConfig{
 			Model:    minionModel,
 			Provider: minionProvider,
-		})
-		pilog.Debug("minion: mode=%s model=%s", minionMode, minionModelID)
+		}
+		minionIngester = minion.BuildIngester(wireCfg)
+		minionCompressor = minion.BuildResultCompressor(wireCfg)
+		pilog.Debug("minion: ingest+compress model=%s", minionModelID)
 	}
+	_ = minionCompressor // Will be passed to SpawnDeps when task tool is wired
 
 	pathSandbox, err := permission.NewSandbox([]string{cwd})
 	if err != nil {
@@ -301,7 +295,7 @@ func run(args cliArgs) error {
 			Provider:        provider,
 			Model:           model,
 			Tools:           toolRegistry.All(),
-			MinionTransform: minionTransform,
+			Ingester: minionIngester,
 		}, args.prompt)
 	}
 
@@ -324,7 +318,7 @@ func run(args cliArgs) error {
 			Provider:        provider,
 			Model:           model,
 			Tools:           toolRegistry.All(),
-			MinionTransform: minionTransform,
+			Ingester: minionIngester,
 		}, promptText)
 	}
 
@@ -335,7 +329,7 @@ func run(args cliArgs) error {
 	}
 
 	// Interactive mode (default)
-	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold, sessionWT, minionTransform)
+	return runInteractive(model, checker, provider, toolRegistry, systemPrompt, statusEngine, cfg.AutoCompactThreshold, sessionWT, minionIngester)
 }
 
 // registerProvidersWithAuth registers providers with auth keys from the store.
@@ -470,7 +464,7 @@ func resolvePermissionMode(args cliArgs, cfg *config.Settings) permission.Mode {
 }
 
 // runInteractive starts the Bubble Tea interactive TUI.
-func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int, sessionWT *git.SessionWorktree, minionTransform agent.TransformContextFunc) error {
+func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.ApiProvider, toolReg *tools.Registry, systemPrompt string, statusEngine *statusline.Engine, autoCompactThreshold int, sessionWT *git.SessionWorktree, ingester minion.IngestFunc) error {
 	return btea.Run(btea.AppDeps{
 		Provider:             provider,
 		Model:                model,
@@ -482,7 +476,7 @@ func runInteractive(model *ai.Model, checker *permission.Checker, provider ai.Ap
 		AutoCompactThreshold: autoCompactThreshold,
 		PermissionMode:       checker.Mode(),
 		WorktreeSession:      sessionWT,
-		MinionTransform:      minionTransform,
+		Ingester:             ingester,
 	})
 }
 

@@ -1,5 +1,5 @@
-// ABOUTME: Factory function that builds a TransformContextFunc from mode + model + provider
-// ABOUTME: Used by CLI flag wiring to create the minion distillation pipeline
+// ABOUTME: Factory functions that build minion protocol functions from mode + model + provider
+// ABOUTME: BuildIngester for pre-turn context ingest, BuildResultCompressor for sub-agent output
 
 package minion
 
@@ -17,28 +17,35 @@ const (
 	ModePlural   MinionMode = "plural"
 )
 
-// WireConfig holds everything needed to build a TransformContextFunc.
+// IngestFunc distills initial context before the first agent turn.
+// Returns a summary string suitable for prepending to the conversation.
+type IngestFunc func(ctx context.Context, msgs []ai.Message) (string, error)
+
+// ResultCompressorFunc compresses sub-agent output text.
+// Returns the original text if it's within maxLen characters.
+type ResultCompressorFunc func(ctx context.Context, text string, maxLen int) (string, error)
+
+// WireConfig holds everything needed to build minion functions.
 type WireConfig struct {
 	Mode     MinionMode
 	Model    *ai.Model
 	Provider ai.ApiProvider
 }
 
-// BuildTransform creates a context transform function from the given config.
-// The returned function is compatible with agent.AdaptiveConfig.TransformContext.
-func BuildTransform(cfg WireConfig) func(ctx context.Context, msgs []ai.Message) ([]ai.Message, error) {
-	switch cfg.Mode {
-	case ModePlural:
-		d := NewDistributor(DistributorConfig{
-			Provider: cfg.Provider,
-			Model:    cfg.Model,
-		})
-		return d.Distribute
-	default: // singular
-		d := New(Config{
-			Provider: cfg.Provider,
-			Model:    cfg.Model,
-		})
-		return d.Distill
-	}
+// BuildIngester creates a function that distills initial context (pre-first-turn).
+func BuildIngester(cfg WireConfig) IngestFunc {
+	d := New(Config{
+		Provider: cfg.Provider,
+		Model:    cfg.Model,
+	})
+	return d.IngestDistill
+}
+
+// BuildResultCompressor creates a function that compresses sub-agent output.
+func BuildResultCompressor(cfg WireConfig) ResultCompressorFunc {
+	d := New(Config{
+		Provider: cfg.Provider,
+		Model:    cfg.Model,
+	})
+	return d.CompressResult
 }

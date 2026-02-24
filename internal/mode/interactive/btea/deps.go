@@ -4,6 +4,8 @@
 package btea
 
 import (
+	"context"
+
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/internal/config"
 	"github.com/mauromedda/pi-coding-agent-go/internal/git"
@@ -29,5 +31,5 @@ type AppDeps struct {
 	Session              *session.Session
 	AvailableModels      []ModelEntry
 	WorktreeSession      *git.SessionWorktree
-	MinionTransform      agent.TransformContextFunc // optional context distillation
+	Ingester func(ctx context.Context, msgs []ai.Message) (string, error) // optional; pre-turn context ingest
 }

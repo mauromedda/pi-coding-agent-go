@@ -1,5 +1,5 @@
-// ABOUTME: Tests for BuildTransform factory wiring minion protocol from CLI config
-// ABOUTME: Verifies singular/plural mode selection and provider passthrough
+// ABOUTME: Tests for BuildIngester and BuildResultCompressor factory functions
+// ABOUTME: Verifies ingest and compression wiring with mock provider
 
 package minion
 
@@ -11,20 +11,19 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
-func TestBuildTransform_Singular(t *testing.T) {
+func TestBuildIngester(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockProvider{
 		responses: []*ai.AssistantMessage{
 			{
-				Content:    []ai.Content{{Type: ai.ContentText, Text: "distilled"}},
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "Ingested summary of conversation."}},
 				StopReason: ai.StopEndTurn,
 			},
 		},
 	}
 
-	transform := BuildTransform(WireConfig{
-		Mode:     ModeSingular,
+	ingester := BuildIngester(WireConfig{
 		Model:    testModel,
 		Provider: provider,
 	})
@@ -38,108 +37,103 @@ func TestBuildTransform_Singular(t *testing.T) {
 		assistantMsg("recent"),
 	}
 
-	result, err := transform(context.Background(), msgs)
+	summary, err := ingester(context.Background(), msgs)
 	if err != nil {
-		t.Fatalf("transform: %v", err)
+		t.Fatalf("ingester: %v", err)
 	}
-
-	// Should produce summary + recent messages
-	if len(result) < 2 {
-		t.Fatalf("expected at least 2 messages, got %d", len(result))
+	if summary == "" {
+		t.Error("expected non-empty summary")
 	}
-
-	first := result[0]
-	if first.Role != ai.RoleUser {
-		t.Fatalf("first is %s, want %s", first.Role, ai.RoleUser)
-	}
-	if !strings.Contains(first.Content[0].Text, "Prior conversation summary") {
-		t.Errorf("expected summary marker, got %q", first.Content[0].Text)
+	if provider.callCount.Load() != 1 {
+		t.Errorf("expected 1 provider call, got %d", provider.callCount.Load())
 	}
 }
 
-func TestBuildTransform_Plural(t *testing.T) {
+func TestBuildIngester_EmptyMessages(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockProvider{
 		responses: []*ai.AssistantMessage{
 			{
-				Content:    []ai.Content{{Type: ai.ContentText, Text: "extracted"}},
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "should not be called"}},
 				StopReason: ai.StopEndTurn,
 			},
 		},
 	}
 
-	transform := BuildTransform(WireConfig{
-		Mode:     ModePlural,
+	ingester := BuildIngester(WireConfig{
 		Model:    testModel,
 		Provider: provider,
 	})
 
-	msgs := []ai.Message{
-		textMsg("ask"),
-		assistantMsg("response"),
-		toolResultMsg("tc_1", "content"),
-		textMsg("ask 2"),
-		assistantMsg("response 2"),
-		toolResultMsg("tc_2", "done"),
-		textMsg("recent 1"),
-		assistantMsg("recent 2"),
-		textMsg("recent 3"),
-		assistantMsg("recent 4"),
-	}
-
-	result, err := transform(context.Background(), msgs)
+	summary, err := ingester(context.Background(), nil)
 	if err != nil {
-		t.Fatalf("transform: %v", err)
+		t.Fatalf("ingester: %v", err)
 	}
-
-	first := result[0]
-	if first.Role != ai.RoleUser {
-		t.Fatalf("first is %s, want %s", first.Role, ai.RoleUser)
+	if summary != "" {
+		t.Errorf("expected empty summary for nil messages, got %q", summary)
 	}
-	if !strings.Contains(first.Content[0].Text, "Aggregated Context") {
-		t.Errorf("expected Aggregated Context marker, got %q", first.Content[0].Text)
+	if provider.callCount.Load() != 0 {
+		t.Errorf("expected 0 provider calls for empty messages, got %d", provider.callCount.Load())
 	}
 }
 
-func TestBuildTransform_DefaultIsSingular(t *testing.T) {
+func TestBuildResultCompressor(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockProvider{
 		responses: []*ai.AssistantMessage{
 			{
-				Content:    []ai.Content{{Type: ai.ContentText, Text: "summary"}},
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "Compressed output."}},
 				StopReason: ai.StopEndTurn,
 			},
 		},
 	}
 
-	// Empty mode string should default to singular
-	transform := BuildTransform(WireConfig{
-		Mode:     "",
+	compressor := BuildResultCompressor(WireConfig{
 		Model:    testModel,
 		Provider: provider,
 	})
 
-	msgs := []ai.Message{
-		textMsg("old 1"),
-		assistantMsg("old 2"),
-		textMsg("old 3"),
-		assistantMsg("old 4"),
-		textMsg("old 5"),
-		assistantMsg("recent"),
-	}
-
-	result, err := transform(context.Background(), msgs)
+	longText := strings.Repeat("x", 5000)
+	compressed, err := compressor(context.Background(), longText, 4000)
 	if err != nil {
-		t.Fatalf("transform: %v", err)
+		t.Fatalf("compressor: %v", err)
+	}
+	if compressed == "" {
+		t.Error("expected non-empty compressed result")
+	}
+	if provider.callCount.Load() != 1 {
+		t.Errorf("expected 1 provider call, got %d", provider.callCount.Load())
+	}
+}
+
+func TestBuildResultCompressor_ShortText(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		responses: []*ai.AssistantMessage{
+			{
+				Content:    []ai.Content{{Type: ai.ContentText, Text: "should not be called"}},
+				StopReason: ai.StopEndTurn,
+			},
+		},
 	}
 
-	first := result[0]
-	if first.Role != ai.RoleUser {
-		t.Fatalf("first is %s, want %s", first.Role, ai.RoleUser)
+	compressor := BuildResultCompressor(WireConfig{
+		Model:    testModel,
+		Provider: provider,
+	})
+
+	shortText := "short result"
+	result, err := compressor(context.Background(), shortText, 4000)
+	if err != nil {
+		t.Fatalf("compressor: %v", err)
 	}
-	if !strings.Contains(first.Content[0].Text, "Prior conversation summary") {
-		t.Errorf("expected summary marker (singular default), got %q", first.Content[0].Text)
+	if result != shortText {
+		t.Errorf("expected passthrough for short text, got %q", result)
+	}
+	if provider.callCount.Load() != 0 {
+		t.Errorf("expected 0 provider calls for short text, got %d", provider.callCount.Load())
 	}
 }

@@ -90,16 +90,46 @@ func prependSummary(summary ai.Content, recentMsgs []ai.Message) []ai.Message {
 	return append([]ai.Message{summaryMsg}, recentMsgs...)
 }
 
+// IngestDistill performs one-shot distillation of the full message list.
+// Unlike Distill (which splits recent/old), this compresses everything
+// into a single summary string. Used before the first agent turn.
+func (d *Distiller) IngestDistill(ctx context.Context, msgs []ai.Message) (string, error) {
+	if len(msgs) == 0 {
+		return "", nil
+	}
+	pilog.Debug("minion/ingest: distilling %d messages", len(msgs))
+	return d.distillMessages(ctx, msgs)
+}
+
+// CompressResult distills a sub-agent's text result into a shorter summary.
+// Returns the original text unchanged if it's already within maxLen characters.
+func (d *Distiller) CompressResult(ctx context.Context, text string, maxLen int) (string, error) {
+	if len(text) <= maxLen {
+		return text, nil
+	}
+	pilog.Debug("minion/compress: compressing %d chars (max=%d)", len(text), maxLen)
+	compressed, err := d.callLocalModel(ctx, compressResultSystemPrompt, compressResultUserPromptPrefix+text)
+	if err != nil {
+		return "", fmt.Errorf("compress result: %w", err)
+	}
+	pilog.Debug("minion/compress: %d -> %d chars", len(text), len(compressed))
+	return compressed, nil
+}
+
 // distillMessages calls the local model to produce a summary of the given messages.
 func (d *Distiller) distillMessages(ctx context.Context, msgs []ai.Message) (string, error) {
 	conversationText := formatMessages(msgs)
 	pilog.Debug("minion/singular: calling %s (prompt=%d chars, max_tokens=%d)",
 		d.config.Model.ID, len(conversationText), d.config.Model.MaxOutputTokens)
+	return d.callLocalModel(ctx, distillSystemPrompt, distillUserPromptPrefix+conversationText)
+}
 
+// callLocalModel sends a single user prompt to the local model and returns the text response.
+func (d *Distiller) callLocalModel(ctx context.Context, system, userPrompt string) (string, error) {
 	llmCtx := &ai.Context{
-		System: distillSystemPrompt,
+		System: system,
 		Messages: []ai.Message{
-			ai.NewTextMessage(ai.RoleUser, distillUserPromptPrefix+conversationText),
+			ai.NewTextMessage(ai.RoleUser, userPrompt),
 		},
 	}
 
@@ -126,10 +156,9 @@ func (d *Distiller) distillMessages(ctx context.Context, msgs []ai.Message) (str
 
 	text := extractText(result)
 	if text == "" {
-		return "", fmt.Errorf("local model returned empty distillation")
+		return "", fmt.Errorf("local model returned empty response")
 	}
 
-	pilog.Debug("minion/singular: distillation complete (%d chars)", len(text))
 	return text, nil
 }
 
