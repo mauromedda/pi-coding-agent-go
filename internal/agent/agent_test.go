@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/perf"
+	"github.com/mauromedda/pi-coding-agent-go/internal/types"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -464,6 +466,104 @@ func (c *capturingProvider) Stream(ctx context.Context, model *ai.Model, aiCtx *
 	c.capturedOpts = append(c.capturedOpts, &cp)
 	c.mu.Unlock()
 	return c.mockProvider.Stream(ctx, model, aiCtx, opts)
+}
+
+func TestToolResultMessage_WithImages_SupportsImages(t *testing.T) {
+	t.Parallel()
+
+	results := []toolExecResult{
+		{
+			ID: "t1",
+			Result: ToolResult{
+				Content: "[Image: test.png image/png (100 bytes)]",
+				Images: []types.ImageBlock{
+					{
+						Data:     []byte("fake-png-data"),
+						MimeType: "image/png",
+						Filename: "test.png",
+					},
+				},
+			},
+		},
+	}
+
+	msg := toolResultMessage(results, true)
+
+	if len(msg.Content) != 1 {
+		t.Fatalf("expected 1 content block; got %d", len(msg.Content))
+	}
+
+	c := msg.Content[0]
+	if c.Type != ai.ContentToolResult {
+		t.Errorf("expected ContentToolResult; got %s", c.Type)
+	}
+	if len(c.Images) != 1 {
+		t.Fatalf("expected 1 image; got %d", len(c.Images))
+	}
+	if c.Images[0].MediaType != "image/png" {
+		t.Errorf("expected media_type image/png; got %s", c.Images[0].MediaType)
+	}
+	// Data should be base64-encoded
+	expectedB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
+	if c.Images[0].Data != expectedB64 {
+		t.Errorf("expected base64 %q; got %q", expectedB64, c.Images[0].Data)
+	}
+}
+
+func TestToolResultMessage_WithImages_NoSupport(t *testing.T) {
+	t.Parallel()
+
+	results := []toolExecResult{
+		{
+			ID: "t1",
+			Result: ToolResult{
+				Content: "[Image: test.png image/png (100 bytes)]",
+				Images: []types.ImageBlock{
+					{
+						Data:     []byte("fake-png-data"),
+						MimeType: "image/png",
+						Filename: "test.png",
+					},
+				},
+			},
+		},
+	}
+
+	msg := toolResultMessage(results, false)
+
+	if len(msg.Content) != 1 {
+		t.Fatalf("expected 1 content block; got %d", len(msg.Content))
+	}
+
+	c := msg.Content[0]
+	if len(c.Images) != 0 {
+		t.Errorf("expected 0 images when supportsImages=false; got %d", len(c.Images))
+	}
+}
+
+func TestToolResultMessage_WithoutImages(t *testing.T) {
+	t.Parallel()
+
+	results := []toolExecResult{
+		{
+			ID:     "t1",
+			Result: ToolResult{Content: "file content here"},
+		},
+	}
+
+	msg := toolResultMessage(results, true)
+
+	if len(msg.Content) != 1 {
+		t.Fatalf("expected 1 content block; got %d", len(msg.Content))
+	}
+
+	c := msg.Content[0]
+	if len(c.Images) != 0 {
+		t.Errorf("expected 0 images; got %d", len(c.Images))
+	}
+	if c.ResultText != "file content here" {
+		t.Errorf("expected 'file content here'; got %q", c.ResultText)
+	}
 }
 
 func TestAgent_ApplyAdaptive_WiresStreamBufferSize(t *testing.T) {
