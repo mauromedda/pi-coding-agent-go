@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -443,5 +444,107 @@ func TestAppModel_CompactDone_ShowsFeedback(t *testing.T) {
 	}
 	if !found {
 		t.Error("CompactDoneMsg should add visible feedback to content")
+	}
+}
+
+// --- Feature 5: Ctrl+O Tool Output Expand/Collapse ---
+
+func TestAppModel_CtrlO_TogglesToolCallExpand(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+
+	// Simulate an assistant message with a completed tool call
+	result, _ := m.Update(AgentTextMsg{Text: "Let me read that file."})
+	m = result.(AppModel)
+
+	result, _ = m.Update(AgentToolStartMsg{
+		ToolID:   "t1",
+		ToolName: "Read",
+		Args:     map[string]any{"path": "/tmp/test.go"},
+	})
+	m = result.(AppModel)
+
+	result, _ = m.Update(AgentToolEndMsg{
+		ToolID: "t1",
+		Text:   "file contents here",
+		Result: &agent.ToolResult{Content: "file contents here"},
+	})
+	m = result.(AppModel)
+
+	// Verify the tool call starts collapsed
+	lastContent := m.content[len(m.content)-1]
+	am, ok := lastContent.(*AssistantMsgModel)
+	if !ok {
+		t.Fatalf("last content = %T; want *AssistantMsgModel", lastContent)
+	}
+	if len(am.toolCalls) == 0 {
+		t.Fatal("no tool calls in assistant message")
+	}
+	if am.toolCalls[0].expanded {
+		t.Fatal("tool call should start collapsed")
+	}
+
+	// Send Ctrl+O through AppModel.Update
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = result.(AppModel)
+
+	// Check that the tool call is now expanded
+	am2 := m.content[len(m.content)-1].(*AssistantMsgModel)
+	if !am2.toolCalls[0].expanded {
+		t.Error("Ctrl+O through AppModel should toggle tool call to expanded")
+	}
+
+	// Toggle back
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = result.(AppModel)
+
+	am3 := m.content[len(m.content)-1].(*AssistantMsgModel)
+	if am3.toolCalls[0].expanded {
+		t.Error("second Ctrl+O should toggle tool call back to collapsed")
+	}
+}
+
+func TestAppModel_CtrlO_ExpandedOutputVisibleInView(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+	m = m.propagateSize(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Create assistant with tool call
+	result, _ := m.Update(AgentTextMsg{Text: "Reading file."})
+	m = result.(AppModel)
+	result, _ = m.Update(AgentToolStartMsg{
+		ToolID:   "t1",
+		ToolName: "Read",
+		Args:     map[string]any{"path": "/tmp/test.go"},
+	})
+	m = result.(AppModel)
+	result, _ = m.Update(AgentToolEndMsg{
+		ToolID: "t1",
+		Text:   "UNIQUE_OUTPUT_MARKER_FOR_TEST",
+		Result: &agent.ToolResult{Content: "UNIQUE_OUTPUT_MARKER_FOR_TEST"},
+	})
+	m = result.(AppModel)
+
+	// Before Ctrl+O: output should NOT be visible
+	viewBefore := m.View()
+	if strings.Contains(viewBefore, "UNIQUE_OUTPUT_MARKER_FOR_TEST") {
+		t.Error("output should not be visible when collapsed")
+	}
+	if !strings.Contains(viewBefore, "Ctrl+O to expand") {
+		t.Error("collapsed view should show expand hint")
+	}
+
+	// After Ctrl+O: output should be visible
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = result.(AppModel)
+
+	viewAfter := m.View()
+	if !strings.Contains(viewAfter, "UNIQUE_OUTPUT_MARKER_FOR_TEST") {
+		t.Error("output should be visible when expanded")
+	}
+	if !strings.Contains(viewAfter, "Ctrl+O to collapse") {
+		t.Error("expanded view should show collapse hint")
 	}
 }

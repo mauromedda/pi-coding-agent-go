@@ -223,7 +223,7 @@ func TestSelectListModel_ScrollingOnNavigation(t *testing.T) {
 	m = m.SetMaxHeight(3)
 
 	// Navigate down past visible window
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = updated.(SelectListModel)
 	}

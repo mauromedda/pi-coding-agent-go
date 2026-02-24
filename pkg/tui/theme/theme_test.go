@@ -83,7 +83,7 @@ func TestDefaultPalette_AllFieldsSet(t *testing.T) {
 	v := reflect.ValueOf(p)
 	for i := range v.NumField() {
 		f := v.Field(i)
-		if f.Type() != reflect.TypeOf(Color{}) {
+		if f.Type() != reflect.TypeFor[Color]() {
 			continue
 		}
 		c := f.Interface().(Color)

@@ -39,12 +39,12 @@ func ParseFrontmatter[T any](content string) (T, string, error) {
 		yamlContent = ""
 		afterClosing = rest[len(frontmatterDelimiter):]
 	} else {
-		closingIdx := strings.Index(rest, "\n"+frontmatterDelimiter)
-		if closingIdx < 0 {
+		before, after, ok := strings.Cut(rest, "\n"+frontmatterDelimiter)
+		if !ok {
 			return zero, "", errors.New("unterminated frontmatter: missing closing ---")
 		}
-		yamlContent = rest[:closingIdx]
-		afterClosing = rest[closingIdx+len("\n"+frontmatterDelimiter):]
+		yamlContent = before
+		afterClosing = after
 	}
 
 	body := strings.TrimPrefix(afterClosing, "\n")

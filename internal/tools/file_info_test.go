@@ -55,7 +55,7 @@ func TestFileInfo_BinaryFile(t *testing.T) {
 	p := filepath.Join(dir, "data.bin")
 	// Write bytes with many nulls to trigger binary detection.
 	data := make([]byte, 512)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		data[i*2] = 0
 	}
 	os.WriteFile(p, data, 0o644)
