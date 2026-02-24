@@ -106,10 +106,14 @@ type AppModel struct {
 	cmdRegistry *commands.Registry
 
 	// Prompt queue and history
-	promptQueue   []string // prompts waiting to run after current agent finishes
-	promptHistory []string // all submitted prompts (most recent last)
-	historyIndex  int      // -1 = composing new; 0+ = browsing history (0 = most recent)
-	savedDraft    string   // editor text saved before entering history mode
+	promptQueue    []string // prompts waiting to run after current agent finishes
+	promptHistory  []string // all submitted prompts (most recent last)
+	historyIndex   int      // -1 = composing new; 0+ = browsing history (0 = most recent)
+	savedDraft     string   // editor text saved before entering history mode
+	queueEditIndex int      // -1 = not editing queue; 0+ = browsing queue items
+
+	// Auto-accept mode
+	autoAccept bool
 
 	// Compaction state
 	compacting bool
@@ -185,9 +189,10 @@ func NewAppModel(deps AppDeps) AppModel {
 		footer:       footer,
 		content:      []tea.Model{welcome},
 		deps:         deps,
-		cmdRegistry:  commands.NewRegistry(),
-		showImages:   true,
-		historyIndex: -1,
+		cmdRegistry:    commands.NewRegistry(),
+		showImages:     true,
+		historyIndex:   -1,
+		queueEditIndex: -1,
 	}
 }
 
@@ -535,8 +540,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.messages = msg.Messages
 		}
-		// Drain next queued prompt; skip if queue overlay is open (user is editing)
-		if _, editing := m.overlay.(QueueViewModel); !editing && len(m.promptQueue) > 0 {
+		// Drain next queued prompt; skip if queue overlay is open or inline editing active
+		if _, editing := m.overlay.(QueueViewModel); !editing && m.queueEditIndex == -1 && len(m.promptQueue) > 0 {
 			next := m.promptQueue[0]
 			m.promptQueue = m.promptQueue[1:]
 			m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
@@ -556,6 +561,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- Permission flow ---
 	case PermissionRequestMsg:
+		if m.autoAccept {
+			select {
+			case msg.ReplyCh <- PermissionReply{Allowed: true}:
+			default:
+			}
+			return m, nil
+		}
 		m.overlay = NewPermDialogModel(msg.Tool, msg.Args, msg.ReplyCh)
 		return m, nil
 
@@ -577,12 +589,20 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.editor = editorUpdated.(EditorModel)
 						editorCmd = cmd
 					}
-					// Forward ESC/BEL to editor's OSC state machine when suppressing
+					// Forward BEL to editor only when actively suppressing an OSC
+					// body. BEL (Ctrl+G) terminates OSC responses but has no role
+					// in the split-ESC detection that only needs ESC.
+					if m.editor.IsOSCSuppressing() && keyMsg.Type == tea.KeyCtrlG {
+						editorUpdated, cmd := m.editor.Update(keyMsg)
+						m.editor = editorUpdated.(EditorModel)
+						return m, cmd // consume the key; don't forward to overlay
+					}
+					// Forward ESC to editor's OSC state machine when suppressing
 					// or when the split-ESC guard is pending. This prevents:
 					// - split ST (ESC + '\') from being swallowed by the overlay
 					// - split OSC start (ESC + ']') from missing the ESC arm step
 					if (m.editor.IsOSCSuppressing() || m.editor.IsOSCEscPending()) &&
-						(keyMsg.Type == tea.KeyEscape || keyMsg.Type == tea.KeyCtrlG) {
+						keyMsg.Type == tea.KeyEscape {
 						editorUpdated, cmd := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
 						return m, cmd // consume the key; don't forward to overlay
@@ -677,6 +697,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				TokensBefore: msg.TokensSaved,
 			})
 		}
+		// Show visible feedback
+		feedback := fmt.Sprintf("Context compacted: %d tokens saved.", msg.TokensSaved)
+		am := NewAssistantMsgModel()
+		am.width = m.width
+		updated, _ := am.Update(AgentTextMsg{Text: feedback})
+		m.content = append(m.content, updated.(*AssistantMsgModel))
 		return m, nil
 
 	// --- Phase 8: TUI enhancement messages ---
@@ -737,6 +763,14 @@ func (m AppModel) View() string {
 		}
 	}
 
+	// Inline overlays (permission dialog) render between content and editor.
+	if m.overlay != nil && isInlineOverlay(m.overlay) {
+		inlineView := m.overlay.View()
+		if inlineView != "" {
+			sections = append(sections, inlineView)
+		}
+	}
+
 	// Use cached separator string (recomputed only on WindowSizeMsg)
 	sep := m.cachedSep
 	sections = append(sections,
@@ -751,8 +785,8 @@ func (m AppModel) View() string {
 
 	main := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	// Centered overlays (permission dialog, cost view, plan view, etc.)
-	if m.overlay != nil && !isDropdownOverlay(m.overlay) {
+	// Centered overlays (cost view, plan view, etc.)
+	if m.overlay != nil && !isDropdownOverlay(m.overlay) && !isInlineOverlay(m.overlay) {
 		return overlayRender(main, m.overlay.View(), m.width, m.height)
 	}
 
@@ -802,6 +836,9 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.abortAgent()
 			return m, tea.Batch(editorCmd, func() tea.Msg { return AgentCancelMsg{} })
 		}
+		// NOTE: ESC on an idle prompt is intentionally a no-op to the user.
+		// The editor starts a split-ESC timer (200ms) for OSC safety. This is
+		// by design: if no ']' follows, the timeout fires and clears the state.
 		return m, editorCmd
 
 	case "ctrl+l":
@@ -812,6 +849,11 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "shift+tab":
+		m.autoAccept = !m.autoAccept
+		m.footer = m.footer.WithAutoAccept(m.autoAccept)
+		return m, nil
+
+	case "alt+p":
 		m = m.toggleMode()
 		return m, nil
 
@@ -869,6 +911,25 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if !m.editor.IsEmpty() {
 			text := m.editor.Text()
+
+			// Queue edit takes priority: finish editing even if agent stopped
+			if m.queueEditIndex >= 0 {
+				if m.queueEditIndex < len(m.promptQueue) {
+					m.promptQueue[m.queueEditIndex] = text
+				}
+				m.queueEditIndex = -1
+				m.savedDraft = ""
+				m.editor = m.resetEditor()
+				// If agent stopped while we were editing, resume draining
+				if !m.agentRunning && len(m.promptQueue) > 0 {
+					next := m.promptQueue[0]
+					m.promptQueue = m.promptQueue[1:]
+					m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+					return m.submitPrompt(next)
+				}
+				return m, nil
+			}
+
 			if m.agentRunning {
 				// Enqueue for later; history is populated when drain calls submitPrompt
 				m.promptQueue = append(m.promptQueue, text)
@@ -902,9 +963,21 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	default:
-		// Up arrow: history navigation when cursor is on first line
-		if msg.Type == tea.KeyUp && !m.agentRunning && m.editor.CursorRow() == 0 {
-			if len(m.promptHistory) > 0 {
+		// Up arrow: queue editing when agent running, history when idle
+		if msg.Type == tea.KeyUp && m.editor.CursorRow() == 0 {
+			if m.agentRunning && len(m.promptQueue) > 0 {
+				// Queue cycling
+				if m.queueEditIndex == -1 {
+					m.savedDraft = m.editor.Text()
+				}
+				newIdx := m.queueEditIndex + 1
+				if newIdx < len(m.promptQueue) {
+					m.queueEditIndex = newIdx
+					m.editor = m.editor.SetText(m.promptQueue[newIdx])
+				}
+				return m, nil
+			}
+			if !m.agentRunning && len(m.promptHistory) > 0 {
 				if m.historyIndex == -1 {
 					m.savedDraft = m.editor.Text()
 				}
@@ -919,7 +992,16 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Down arrow: exit history when browsing
+		// Down arrow: exit queue editing or history
+		if msg.Type == tea.KeyDown && m.queueEditIndex >= 0 {
+			m.queueEditIndex--
+			if m.queueEditIndex == -1 {
+				m.editor = m.editor.SetText(m.savedDraft)
+			} else {
+				m.editor = m.editor.SetText(m.promptQueue[m.queueEditIndex])
+			}
+			return m, nil
+		}
 		if msg.Type == tea.KeyDown && m.historyIndex >= 0 {
 			m.historyIndex--
 			if m.historyIndex == -1 {
@@ -978,7 +1060,21 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 	// Track history
 	m.promptHistory = append(m.promptHistory, text)
 	m.historyIndex = -1
+	m.queueEditIndex = -1
 	m.savedDraft = ""
+
+	// Check for commands BEFORE adding to messages/content to avoid
+	// slash command text polluting the AI conversation.
+	if commands.IsCommand(text) {
+		if text[0] == '!' {
+			// Bash commands: show in content but don't add to AI messages
+			um := NewUserMsgModel(text)
+			m.content = append(m.content, um)
+			return m.handleBashCommand(text[1:])
+		}
+		// Slash commands: no user message in content or AI messages
+		return m.handleSlashCommand(text)
+	}
 
 	// Add user message to content (shows original text in UI)
 	um := NewUserMsgModel(text)
@@ -1002,16 +1098,6 @@ func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 	// Persist user message to session (if wired)
 	if m.deps.Session != nil {
 		_ = m.deps.Session.AddUserMessage(text)
-	}
-
-	// Check for commands
-	if commands.IsCommand(text) {
-		// Handle bash commands (starting with !)
-		if text[0] == '!' {
-			return m.handleBashCommand(text[1:])
-		}
-		// Handle slash commands
-		return m.handleSlashCommand(text)
 	}
 
 	// Start agent
@@ -1299,6 +1385,17 @@ func (m AppModel) autoCompact() (tea.Model, tea.Cmd) {
 func isDropdownOverlay(overlay tea.Model) bool {
 	switch overlay.(type) {
 	case CmdPaletteModel, FileMentionModel:
+		return true
+	default:
+		return false
+	}
+}
+
+// isInlineOverlay returns true for overlays that render inline between
+// the separator and editor (e.g. permission dialog), not as centered overlays.
+func isInlineOverlay(overlay tea.Model) bool {
+	switch overlay.(type) {
+	case PermDialogModel:
 		return true
 	default:
 		return false

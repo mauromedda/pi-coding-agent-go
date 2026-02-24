@@ -30,6 +30,7 @@ type FooterModel struct {
 	intentLabel     string   // Current intent name (e.g., "Plan", "Execute", "Debug")
 	activeChecks    []string // Abbreviations of active checks (e.g., ["SEC", "QUAL", "ARCH"])
 	backgroundCount int      // Number of background tasks
+	autoAccept      bool     // Auto-accept permission requests
 	width           int
 }
 
@@ -152,6 +153,12 @@ func (m FooterModel) WithBackgroundCount(n int) FooterModel {
 	return m
 }
 
+// WithAutoAccept returns a FooterModel with the auto-accept indicator set.
+func (m FooterModel) WithAutoAccept(on bool) FooterModel {
+	m.autoAccept = on
+	return m
+}
+
 // View renders the two-line footer.
 func (m FooterModel) View() string {
 	s := Styles()
@@ -252,6 +259,10 @@ func (m FooterModel) View() string {
 
 	if m.backgroundCount > 0 {
 		line2Parts = append(line2Parts, s.Info.Render(fmt.Sprintf("[%d bg]", m.backgroundCount)))
+	}
+
+	if m.autoAccept {
+		line2Parts = append(line2Parts, s.Success.Render("[auto-accept]"))
 	}
 
 	if m.showImages {

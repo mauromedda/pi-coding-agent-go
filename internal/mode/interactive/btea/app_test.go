@@ -155,8 +155,8 @@ func TestAppModel_GitBranchMsg(t *testing.T) {
 func TestAppModel_ModeToggle(t *testing.T) {
 	m := NewAppModel(testDeps())
 
-	// Start in Edit, toggle to Plan
-	key := tea.KeyMsg{Type: tea.KeyShiftTab}
+	// Start in Edit, toggle to Plan via Alt+p
+	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}, Alt: true}
 	result, _ := m.Update(key)
 	model := result.(AppModel)
 
@@ -516,9 +516,9 @@ func TestAppModel_SubmitSlashCommand(t *testing.T) {
 	result, _ := m.Update(key)
 	model := result.(AppModel)
 
-	// Should have welcome + user msg + assistant msg (command result)
-	if len(model.content) < 3 {
-		t.Fatalf("content length = %d; want at least 3", len(model.content))
+	// Should have welcome + assistant msg (command result); no UserMsgModel for slash commands
+	if len(model.content) < 2 {
+		t.Fatalf("content length = %d; want at least 2", len(model.content))
 	}
 
 	// Agent should NOT be running for slash commands

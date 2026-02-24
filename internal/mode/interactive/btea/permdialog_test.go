@@ -31,8 +31,8 @@ func TestPermDialogModel_ViewContainsToolName(t *testing.T) {
 	m.width = 80
 	view := m.View()
 
-	if !strings.Contains(view, "Permission Required") {
-		t.Error("View() missing 'Permission Required' header")
+	if !strings.Contains(view, "Tool:") {
+		t.Error("View() missing 'Tool:' label")
 	}
 	if !strings.Contains(view, "Bash") {
 		t.Error("View() missing tool name 'Bash'")
@@ -252,8 +252,8 @@ func TestPermDialogModel_ViewNarrowTerminal(t *testing.T) {
 	if !strings.Contains(view, "Bash") {
 		t.Error("View() missing tool name in narrow mode")
 	}
-	if !strings.Contains(view, "Permission Required") {
-		t.Error("View() missing title in narrow mode")
+	if !strings.Contains(view, "Tool:") {
+		t.Error("View() missing 'Tool:' label in narrow mode")
 	}
 }
 
