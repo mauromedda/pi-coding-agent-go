@@ -139,7 +139,7 @@ func run(args cliArgs) error {
 	// W4: Register providers with auth keys
 	registerProvidersWithAuth(auth, baseURL)
 
-	provider := ai.GetProvider(model.Api, resolveBaseURLForAPI(args, cfg, string(model.Api)))
+	provider := ai.GetProvider(model.Api, resolveBaseURLForAPI(args, cfg, string(model.Api), model.BaseURL))
 	if provider == nil {
 		return fmt.Errorf("no provider registered for API %q", model.Api)
 	}
@@ -176,7 +176,7 @@ func run(args cliArgs) error {
 			}
 		}
 
-		minionProvider := ai.GetProvider(minionModel.Api, resolveBaseURLForAPI(args, cfg, string(minionModel.Api)))
+		minionProvider := ai.GetProvider(minionModel.Api, resolveBaseURLForAPI(args, cfg, string(minionModel.Api), minionModel.BaseURL))
 		if minionProvider == nil {
 			return fmt.Errorf("no provider registered for minion model API %q", minionModel.Api)
 		}
@@ -415,12 +415,15 @@ func resolveBaseURL(args cliArgs, cfg *config.Settings) string {
 }
 
 // resolveBaseURLForAPI returns the base URL for a specific API type.
-// Priority: gateway (CLI or config) > --base-url > config.base_url.
-func resolveBaseURLForAPI(args cliArgs, cfg *config.Settings, api string) string {
+// Priority: gateway > model-specific BaseURL > --base-url > config.base_url.
+func resolveBaseURLForAPI(args cliArgs, cfg *config.Settings, api, modelBaseURL string) string {
 	if gw := resolveGateway(args, cfg); gw != nil {
 		if resolved := gw.ResolveBaseURL(api); resolved != "" {
 			return resolved
 		}
+	}
+	if modelBaseURL != "" {
+		return modelBaseURL
 	}
 	return resolveBaseURL(args, cfg)
 }
