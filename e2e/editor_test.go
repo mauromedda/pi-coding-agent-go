@@ -112,3 +112,34 @@ func TestEditor_SlashOpensCommandPalette(t *testing.T) {
 	s.sendEscape(t)
 	time.Sleep(300 * time.Millisecond)
 }
+
+func TestEditor_OSCResponseDoesNotLeakIntoEditor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests skipped in short mode")
+	}
+
+	s := startPi(t)
+	defer s.close()
+
+	s.expectStringTimeout(t, "pi-go", 5*time.Second)
+
+	// Inject a raw OSC 10 + OSC 11 chained response into the PTY.
+	// This simulates what a real terminal sends when responding to
+	// Lipgloss background queries.
+	s.ptmx.Write([]byte("\x1b]10;rgb:ffff/ffff/ffff\x1b\\\x1b]11;rgb:0000/0000/0000\x1b\\"))
+	time.Sleep(300 * time.Millisecond)
+
+	// Type a known phrase to verify the editor is clean.
+	s.send(t, "hello world")
+	time.Sleep(300 * time.Millisecond)
+
+	// The editor should contain ONLY "hello world", no garbage.
+	// Check that no ']' or ';' leaked from the OSC response.
+	s.expectStringTimeout(t, "hello world", 3*time.Second)
+
+	// Exit cleanly.
+	s.sendCtrl(t, 'c')
+	time.Sleep(200 * time.Millisecond)
+	s.sendCtrl(t, 'c')
+	s.waitExit(t, 5*time.Second)
+}

@@ -1567,3 +1567,42 @@ func TestAppModel_BELTerminatorThroughOverlay(t *testing.T) {
 		t.Error("editor should not be suppressing after BEL terminator")
 	}
 }
+
+func TestAppModel_SplitOSCThroughOverlay(t *testing.T) {
+	t.Parallel()
+
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+
+	// Open command palette
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(AppModel)
+
+	if m.overlay == nil {
+		t.Fatal("overlay = nil; want CmdPaletteModel")
+	}
+
+	// Split OSC: ESC arrives while overlay is active
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = result.(AppModel)
+
+	// The editor should have armed oscEscPending via the forwarding path
+	if !m.editor.IsOSCEscPending() {
+		t.Error("editor.IsOSCEscPending() = false; want true (ESC should be forwarded to editor through overlay)")
+	}
+
+	// ] arrives as rune (mirrored to editor via dropdown path)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	m = result.(AppModel)
+
+	// Editor should now be in OSC suppression mode
+	if !m.editor.IsOSCSuppressing() {
+		t.Error("editor.IsOSCSuppressing() = false; want true (split ESC+] through overlay should enter suppression)")
+	}
+
+	// Editor should NOT have ']' inserted
+	if got := m.editor.Text(); got != "/" {
+		t.Errorf("editor.Text() = %q; want %q (] should be suppressed, not inserted)", got, "/")
+	}
+}

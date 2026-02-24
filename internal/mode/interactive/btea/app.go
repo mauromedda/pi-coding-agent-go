@@ -559,13 +559,24 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						editorUpdated, _ := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
 					}
-					// Forward ESC/BEL to editor's OSC state machine when suppressing.
-					// This prevents split ST (ESC + '\') from being swallowed by the
-					// overlay, which would leave a stray backslash in the editor.
-					if m.editor.IsOSCSuppressing() && (keyMsg.Type == tea.KeyEscape || keyMsg.Type == tea.KeyCtrlG) {
+					// Forward ESC/BEL to editor's OSC state machine when suppressing
+					// or when the split-ESC guard is pending. This prevents:
+					// - split ST (ESC + '\') from being swallowed by the overlay
+					// - split OSC start (ESC + ']') from missing the ESC arm step
+					if (m.editor.IsOSCSuppressing() || m.editor.IsOSCEscPending()) &&
+						(keyMsg.Type == tea.KeyEscape || keyMsg.Type == tea.KeyCtrlG) {
 						editorUpdated, _ := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
 						return m, nil // consume the key; don't forward to overlay
+					} else if keyMsg.Type == tea.KeyEscape {
+						// Forward bare ESC to editor so split-ESC detection can
+						// arm itself, even when no OSC is in progress. Without
+						// this, an OSC sequence that starts while an overlay is
+						// open would leak ']' and body runes into the editor.
+						// The else-if ensures we don't double-dispatch ESC when
+						// the suppression/pending branch already handled it.
+						editorUpdated, _ := m.editor.Update(keyMsg)
+						m.editor = editorUpdated.(EditorModel)
 					}
 				}
 			}

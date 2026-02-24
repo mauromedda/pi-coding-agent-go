@@ -615,8 +615,8 @@ func TestEditorModel_OSCSuppressionTimesOut(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
 	m = updated.(EditorModel)
 
-	// Wait for suppression timeout (>50ms)
-	time.Sleep(60 * time.Millisecond)
+	// Backdate lastEscAt to simulate exceeding the body timeout (>500ms)
+	m.lastEscAt = m.lastEscAt.Add(-600 * time.Millisecond)
 
 	// Runes after timeout should be inserted normally
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
@@ -838,8 +838,8 @@ func TestEditorModel_SplitEscBracket_SuppressesOSC(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 		m = updated.(EditorModel)
 
-		// Simulate timeout by backdating the pending timestamp
-		m.oscEscPendingAt = m.oscEscPendingAt.Add(-100 * time.Millisecond)
+		// Simulate timeout by backdating the pending timestamp (>200ms split-ESC timeout)
+		m.oscEscPendingAt = m.oscEscPendingAt.Add(-300 * time.Millisecond)
 
 		// Now a normal 'a' arrives
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
@@ -869,6 +869,183 @@ func TestEditorModel_SplitEscBracket_SuppressesOSC(t *testing.T) {
 		// 'x' should be inserted normally
 		if m.Text() != "x" {
 			t.Errorf("Text() = %q; want %q", m.Text(), "x")
+		}
+	})
+}
+
+func TestEditorModel_ChainedOSCSequences(t *testing.T) {
+	// Two back-to-back OSC responses (e.g., OSC 10 foreground + OSC 11 background)
+	// should both be fully suppressed without any leakage.
+	t.Run("two Alt+] sequences back-to-back", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// First OSC: Alt+] → body → Alt+\
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+		m = updated.(EditorModel)
+
+		// Second OSC: Alt+] → body → Alt+\
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("11;rgb:00/00/00")})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+		m = updated.(EditorModel)
+
+		if m.Text() != "" {
+			t.Errorf("Text() = %q; want empty (chained OSC responses should be suppressed)", m.Text())
+		}
+	})
+
+	t.Run("chained split ESC+] sequences", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// First OSC via split path: ESC → ] → body → ESC → backslash
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+		m = updated.(EditorModel)
+
+		// Second OSC via split path: ESC → ]
+		// Simulate slight delay by backdating oscRecentEnd to be within cooldown
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("11;rgb:00/00/00")})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+		m = updated.(EditorModel)
+
+		if m.Text() != "" {
+			t.Errorf("Text() = %q; want empty (chained split OSC should be suppressed)", m.Text())
+		}
+	})
+
+	t.Run("split ESC+] with expired short timeout but within cooldown", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// First OSC via Alt+] path (sets oscRecentEnd when terminated)
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:aa/bb/cc")})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
+		m = updated.(EditorModel)
+
+		// Second OSC: ESC arrives, then ] after >50ms but <500ms
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+		// Backdate oscEscPendingAt to simulate 100ms delay (>50ms old timeout, <200ms new)
+		m.oscEscPendingAt = m.oscEscPendingAt.Add(-100 * time.Millisecond)
+		// ] arrives
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+		m = updated.(EditorModel)
+
+		if !m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = false; want true (should enter suppression within cooldown)")
+		}
+		if m.Text() != "" {
+			t.Errorf("Text() = %q; want empty (] should not leak through during cooldown)", m.Text())
+		}
+	})
+}
+
+func TestEditorModel_MultiRuneInsertion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("multi-rune KeyRunes inserts all runes", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// Simulate paste: multiple runes in a single KeyRunes message
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
+		m = updated.(EditorModel)
+
+		if got := m.Text(); got != "hello" {
+			t.Errorf("Text() = %q; want %q (all runes should be inserted)", got, "hello")
+		}
+	})
+
+	t.Run("multi-rune filters control characters", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// Mix of printable and control chars
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a', 0x01, 'b', 0x7F, 'c'}})
+		m = updated.(EditorModel)
+
+		if got := m.Text(); got != "abc" {
+			t.Errorf("Text() = %q; want %q (control chars should be filtered)", got, "abc")
+		}
+	})
+
+	t.Run("multi-rune with Alt drops all", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("xyz"), Alt: true})
+		m = updated.(EditorModel)
+
+		if got := m.Text(); got != "" {
+			t.Errorf("Text() = %q; want empty (Alt+multi-rune should be dropped)", got)
+		}
+	})
+}
+
+func TestEditorModel_OSCSuppressionLongerTimeout(t *testing.T) {
+	t.Parallel()
+
+	t.Run("suppression body survives beyond 50ms", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// Alt+] starts suppression
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+
+		// Backdate lastEscAt to simulate 100ms elapsed (was fatal with 50ms timeout)
+		m.lastEscAt = m.lastEscAt.Add(-100 * time.Millisecond)
+
+		// Body runes should still be suppressed
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
+		m = updated.(EditorModel)
+
+		if !m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = false; want true (100ms should not expire suppression)")
+		}
+		if m.Text() != "" {
+			t.Errorf("Text() = %q; want empty (body should still be suppressed at 100ms)", m.Text())
+		}
+	})
+
+	t.Run("suppression expires after body timeout", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// Alt+] starts suppression
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+
+		// Backdate lastEscAt to simulate 600ms elapsed (beyond new 500ms timeout)
+		m.lastEscAt = m.lastEscAt.Add(-600 * time.Millisecond)
+
+		// Should fall through to normal processing
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		m = updated.(EditorModel)
+
+		if m.Text() != "x" {
+			t.Errorf("Text() = %q; want %q (should insert normally after body timeout)", m.Text(), "x")
 		}
 	})
 }

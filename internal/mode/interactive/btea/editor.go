@@ -115,6 +115,7 @@ type EditorModel struct {
 	oscEscPending  bool      // true after bare ESC; if ']' follows within timeout, enter suppression
 	oscEscPendingAt time.Time // when oscEscPending was set
 	lastEscAt      time.Time // when OSC suppression started (for timeout)
+	oscRecentEnd   time.Time // when last OSC suppression ended (for chained detection)
 }
 
 // NewEditorModel creates a new empty editor.
@@ -131,11 +132,34 @@ func (m EditorModel) Init() tea.Cmd {
 	return nil
 }
 
+// clipboardImageMsg carries the result of an async clipboard image read.
+type clipboardImageMsg struct {
+	data []byte
+	err  error
+}
+
 // Update handles key and window-size messages.
+// NOTE: dispatchKey uses a pointer receiver that mutates the value copy
+// held by this value-receiver Update. This is intentional: Go takes the
+// address of the local copy, so mutations are visible in the returned model.
+// Callers must always reassign: m.editor = updated.(EditorModel).
 func (m EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		m.dispatchKey(msg)
+		cmd := m.dispatchKey(msg)
+		return m, cmd
+	case clipboardImageMsg:
+		if msg.err == nil && len(msg.data) > 0 {
+			m.saveUndo()
+			m.insertRuneNoUndo('[')
+			m.insertTextNoUndo("Image")
+			m.insertTextNoUndo("]")
+			m.insertNewline()
+			m.insertTextNoUndo(image.ImagePlaceholder(msg.data))
+			m.insertNewline()
+		} else {
+			m.insertNewline()
+		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	}
@@ -169,7 +193,7 @@ func (m EditorModel) View() string {
 		}
 
 		if m.focused && i == m.row {
-			m.renderLineWithCursor(&b, wrapped, line, ew, prefix, indent, i > 0)
+			m.renderLineWithCursor(&b, wrapped, line, ew, prefix, indent, i > 0, s)
 		} else {
 			for wi, wl := range wrapped {
 				if i > 0 || wi > 0 {
@@ -278,12 +302,18 @@ func (m EditorModel) LineCount() int {
 
 // --- Key dispatch ---
 
-// oscSuppressionTimeout is the maximum duration an OSC suppression state
-// remains active without receiving a terminator. Prevents stale state from
-// blocking normal input if the terminal response is truncated.
-const oscSuppressionTimeout = 50 * time.Millisecond
+// oscSplitEscTimeout is the maximum gap between a bare ESC and the following
+// ']' for split \x1b] detection. 200ms is safe: no human types ESC then ]
+// that fast intentionally, but terminals can deliver split bytes with >50ms gaps.
+const oscSplitEscTimeout = 200 * time.Millisecond
 
-func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
+// oscBodyTimeout is the maximum duration an OSC suppression state remains
+// active without receiving a terminator. Prevents stale state from blocking
+// normal input if the terminal response is truncated. 500ms covers multi-
+// response sequences (OSC 10 + OSC 11) and slow terminals.
+const oscBodyTimeout = 500 * time.Millisecond
+
+func (m *EditorModel) dispatchKey(msg tea.KeyMsg) tea.Cmd {
 	// --- Split ESC detection ---
 	//
 	// When BubbleTea's input parser receives \x1b] in separate reads,
@@ -292,17 +322,24 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 	// next message for ']'.
 	if m.oscEscPending {
 		m.oscEscPending = false
-		if time.Since(m.oscEscPendingAt) <= oscSuppressionTimeout {
+		// Use a longer detection window after recent OSC suppression to
+		// catch chained sequences (e.g., OSC 10 immediately followed by OSC 11).
+		timeout := oscSplitEscTimeout
+		if !m.oscRecentEnd.IsZero() && time.Since(m.oscRecentEnd) <= oscBodyTimeout {
+			timeout = oscBodyTimeout
+		}
+		if time.Since(m.oscEscPendingAt) <= timeout {
 			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
 				// Split \x1b] detected: enter OSC suppression
 				m.oscSuppressing = true
 				m.lastEscAt = time.Now()
-				return
+				return nil
 			}
 			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
 				// Split ST (\x1b\) during suppression: drop
 				m.oscSuppressing = false
-				return
+				m.oscRecentEnd = time.Now()
+				return nil
 			}
 		}
 		// Not an OSC sequence: fall through to normal processing
@@ -321,16 +358,18 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 	// We detect Alt+] as the OSC start and suppress all runes until the
 	// Alt+\ terminator (or a timeout).
 	if m.oscSuppressing {
-		if time.Since(m.lastEscAt) > oscSuppressionTimeout {
+		if time.Since(m.lastEscAt) > oscBodyTimeout {
 			m.oscSuppressing = false
 			m.oscGuardArmed = false
+			m.oscRecentEnd = time.Now()
 			// fall through to normal dispatch
 		} else if m.oscGuardArmed {
 			// Previous msg was ESC during suppression; check for split ST
 			m.oscGuardArmed = false
 			m.oscSuppressing = false
+			m.oscRecentEnd = time.Now()
 			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
-				return // drop the '\' completing ESC+\ (ST)
+				return nil // drop the '\' completing ESC+\ (ST)
 			}
 			// ESC wasn't followed by '\': suppression ended, process normally
 		} else {
@@ -339,20 +378,22 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 				// Alt+\ is the ST (String Terminator) that ends OSC responses
 				if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
 					m.oscSuppressing = false
+					m.oscRecentEnd = time.Now()
 				}
-				return // drop body or terminator runes
+				return nil // drop body or terminator runes
 			case tea.KeyCtrlG:
 				// BEL (0x07) also terminates OSC responses
 				m.oscSuppressing = false
-				return
+				m.oscRecentEnd = time.Now()
+				return nil
 			case tea.KeyEscape:
 				// ESC during suppression: the ST might be split as ESC + '\'.
 				// Arm the guard so the next '\' rune completes termination.
 				m.oscGuardArmed = true
-				return
+				return nil
 			default:
 				// Other keys during suppression: drop them
-				return
+				return nil
 			}
 		}
 	}
@@ -360,27 +401,30 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 	if msg.Type == tea.KeyRunes && msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
 		m.oscSuppressing = true
 		m.lastEscAt = time.Now()
-		return
+		return nil
 	}
 
 	switch msg.Type {
 	case tea.KeyRunes:
 		if len(msg.Runes) > 0 {
-			r := msg.Runes[0]
-			// Drop C0 control characters (except handled keys above) and
-			// DEL (0x7F). These can arrive when terminal OSC query responses
-			// leak into the input stream after ESC is consumed separately.
-			if r < 0x20 || r == 0x7F {
-				return
-			}
 			// Drop Alt+rune sequences: normal typing never produces these.
 			// They are terminal escape artefacts (OSC body fragments parsed
 			// as ESC+char by BubbleTea). The app handles known Alt shortcuts
 			// (alt+t, alt+m, alt+i) before reaching the editor.
 			if msg.Alt {
-				return
+				return nil
 			}
-			m.insertRune(r)
+			// Insert all runes, filtering C0 control characters and DEL.
+			// Multi-rune messages occur during paste or when the terminal
+			// delivers batched input. Save undo once for the whole batch
+			// so Ctrl+Z undoes the entire paste in one step.
+			m.saveUndo()
+			for _, r := range msg.Runes {
+				if r < 0x20 || r == 0x7F {
+					continue
+				}
+				m.insertRuneNoUndo(r)
+			}
 		}
 	case tea.KeySpace:
 		m.insertRune(' ')
@@ -419,13 +463,14 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 	case tea.KeyCtrlZ:
 		m.doUndo()
 	case tea.KeyCtrlV:
-		m.pasteImage()
+		return m.pasteImageCmd()
 	case tea.KeyEscape:
 		// Arm split-ESC guard: if ']' follows within the timeout,
 		// it's an OSC start (\x1b]) that was split across reads.
 		m.oscEscPending = true
 		m.oscEscPendingAt = time.Now()
 	}
+	return nil
 }
 
 // acceptGhostText inserts the ghost text at the cursor position and clears it.
@@ -441,6 +486,12 @@ func (m *EditorModel) acceptGhostText() {
 
 func (m *EditorModel) insertRune(r rune) {
 	m.saveUndo()
+	m.insertRuneNoUndo(r)
+}
+
+// insertRuneNoUndo inserts a rune without saving an undo snapshot.
+// Used by batch operations that call saveUndo once before the loop.
+func (m *EditorModel) insertRuneNoUndo(r rune) {
 	line := m.lines[m.row]
 	newLine := make([]rune, len(line)+1)
 	copy(newLine, line[:m.col])
@@ -590,22 +641,23 @@ func (m *EditorModel) doUndo() {
 	m.col = state.col
 }
 
-func (m *EditorModel) pasteImage() {
-	img, err := image.ClipboardImage()
-	if err == nil && len(img) > 0 {
-		m.insertRune('[')
-		m.insertText("Image")
-		m.insertText("]")
-		m.insertNewline()
-		m.insertText(image.ImagePlaceholder(img))
-		m.insertNewline()
-	} else {
-		m.insertNewline()
+// pasteImageCmd returns a tea.Cmd that reads the clipboard image asynchronously.
+// The result is delivered as a clipboardImageMsg handled in Update().
+func (m *EditorModel) pasteImageCmd() tea.Cmd {
+	return func() tea.Msg {
+		img, err := image.ClipboardImage()
+		return clipboardImageMsg{data: img, err: err}
 	}
 }
 
 func (m *EditorModel) insertText(text string) {
 	m.saveUndo()
+	m.insertTextNoUndo(text)
+}
+
+// insertTextNoUndo inserts text without saving an undo snapshot.
+// Used by batch operations that manage undo at a higher level.
+func (m *EditorModel) insertTextNoUndo(text string) {
 	line := m.lines[m.row]
 	runes := []rune(text)
 	newLine := make([]rune, len(line)+len(runes))
@@ -635,7 +687,7 @@ func (m *EditorModel) isEmpty() bool {
 
 // --- View helpers ---
 
-func (m *EditorModel) renderLineWithCursor(b *strings.Builder, wrapped []string, line []rune, ew int, prefix, indent string, needNewline bool) {
+func (m *EditorModel) renderLineWithCursor(b *strings.Builder, wrapped []string, line []rune, ew int, prefix, indent string, needNewline bool, s ThemeStyles) {
 	cursorOffset := m.col
 	wrapRow := 0
 	for wrapRow < len(wrapped)-1 && cursorOffset >= ew {
@@ -666,7 +718,6 @@ func (m *EditorModel) renderLineWithCursor(b *strings.Builder, wrapped []string,
 			}
 			// Render ghost text after cursor if at end of line
 			if m.ghostText != "" && cursorOffset >= len(runes) {
-				s := Styles()
 				b.WriteString(s.Dim.Render(m.ghostText))
 			}
 		} else {
