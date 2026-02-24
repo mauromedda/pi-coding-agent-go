@@ -304,7 +304,11 @@ func (g *GatewaySettings) ResolveBaseURL(api string) string {
 			path = override
 		}
 	}
-	return strings.TrimRight(g.URL, "/") + path
+	base := strings.TrimRight(g.URL, "/")
+	if path != "" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).

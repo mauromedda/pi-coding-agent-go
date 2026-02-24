@@ -12,6 +12,22 @@ import (
 	"strings"
 )
 
+// dangerousURLPatterns lists URL substrings that indicate encoding tricks or unsafe schemes.
+var dangerousURLPatterns = []string{
+	"%00",        // Null byte
+	"%0a", "%0d", // Newlines
+	"%2f%2f",      // Double slash
+	"%2e%2e",      // Double dot
+	"@",           // User info
+	"\\",          // Backslash (Windows path)
+	"file://",     // File scheme
+	"ftp://",      // FTP scheme
+	"gopher://",   // Gopher scheme
+	"data:",       // Data scheme
+	"javascript:", // JavaScript scheme
+	"vbscript:",   // VBScript scheme
+}
+
 // URLValidator provides secure URL validation to prevent SSRF attacks
 type URLValidator struct {
 	allowedSchemes []string
@@ -187,23 +203,7 @@ func (v *URLValidator) validateDomainIPs(domain string) error {
 func (v *URLValidator) checkDangerousPatterns(rawURL string) error {
 	urlLower := strings.ToLower(rawURL)
 
-	// Check for URL encoding tricks
-	dangerousPatterns := []string{
-		"%00",        // Null byte
-		"%0a", "%0d", // Newlines
-		"%2f%2f",      // Double slash
-		"%2e%2e",      // Double dot
-		"@",           // User info
-		"\\",          // Backslash (Windows path)
-		"file://",     // File scheme
-		"ftp://",      // FTP scheme
-		"gopher://",   // Gopher scheme
-		"data:",       // Data scheme
-		"javascript:", // JavaScript scheme
-		"vbscript:",   // VBScript scheme
-	}
-
-	for _, pattern := range dangerousPatterns {
+	for _, pattern := range dangerousURLPatterns {
 		if strings.Contains(urlLower, pattern) {
 			return fmt.Errorf("contains dangerous pattern: %s", pattern)
 		}
