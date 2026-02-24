@@ -90,6 +90,7 @@ func (r *Registry) HasRipgrep() bool {
 func (r *Registry) registerBuiltins() {
 	builtins := []*agent.AgentTool{
 		newReadTool(r.sandbox),
+		newReadImageTool(r.sandbox),
 		newWriteTool(r.sandbox),
 		newEditTool(r.sandbox),
 		NewBashTool(),

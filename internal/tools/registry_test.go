@@ -53,7 +53,7 @@ func TestRegistry_ReadOnly_FiltersCorrectly(t *testing.T) {
 
 	// read, grep, find, ls + all 5 new tools should be read-only
 	expectedReadOnly := map[string]bool{
-		"read": true, "grep": true, "find": true, "ls": true, "webfetch": true, "websearch": true,
+		"read": true, "read_image": true, "grep": true, "find": true, "ls": true, "webfetch": true, "websearch": true,
 		"file_info": true, "validate_paths": true, "find_references": true,
 		"dependency_graph": true, "search_definitions": true,
 	}
