@@ -25,6 +25,24 @@ func testDeps() AppDeps {
 	}
 }
 
+// collectBatchMsgs executes a tea.Cmd and collects all resulting messages.
+// Handles both simple commands (func() tea.Msg) and tea.Batch results.
+func collectBatchMsgs(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	// tea.Batch returns a tea.BatchMsg (which is []tea.Cmd)
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var msgs []tea.Msg
+		for _, c := range batch {
+			msgs = append(msgs, collectBatchMsgs(tea.Cmd(c))...)
+		}
+		return msgs
+	}
+	return []tea.Msg{msg}
+}
+
 func TestNewAppModel(t *testing.T) {
 	m := NewAppModel(testDeps())
 
@@ -1512,7 +1530,7 @@ func TestAppModel_NormalEscapeDismissesOverlayWhenNotSuppressing(t *testing.T) {
 		t.Fatal("editor should not be in OSC suppression mode")
 	}
 
-	// Normal ESC: overlay returns a CmdPaletteDismissMsg command
+	// Normal ESC: overlay returns a dismiss command, possibly batched with editor tick
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = result.(AppModel)
 
@@ -1520,10 +1538,13 @@ func TestAppModel_NormalEscapeDismissesOverlayWhenNotSuppressing(t *testing.T) {
 		t.Fatal("cmd = nil; overlay should return dismiss command on ESC")
 	}
 
-	// Process the dismiss message returned by the overlay
-	dismissMsg := cmd()
-	result, _ = m.Update(dismissMsg)
-	m = result.(AppModel)
+	// The cmd may be a tea.Batch (editor tick + overlay dismiss).
+	// Execute all batched commands and feed resulting messages back.
+	msgs := collectBatchMsgs(cmd)
+	for _, msg := range msgs {
+		result, _ = m.Update(msg)
+		m = result.(AppModel)
+	}
 
 	if m.overlay != nil {
 		t.Error("overlay should be nil after processing dismiss from normal ESC")
@@ -1604,5 +1625,32 @@ func TestAppModel_SplitOSCThroughOverlay(t *testing.T) {
 	// Editor should NOT have ']' inserted
 	if got := m.editor.Text(); got != "/" {
 		t.Errorf("editor.Text() = %q; want %q (] should be suppressed, not inserted)", got, "/")
+	}
+}
+
+func TestAppModel_OSCTimeoutRoutedToEditor(t *testing.T) {
+	t.Parallel()
+
+	m := NewAppModel(testDeps())
+	m.width = 80
+	m.height = 40
+
+	// Enter OSC suppression on editor
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = result.(AppModel)
+
+	if !m.editor.IsOSCSuppressing() {
+		t.Fatal("editor should be suppressing")
+	}
+
+	// Send body timeout through app
+	result, cmd := m.Update(oscBodyTimeoutMsg{gen: m.editor.oscGen})
+	m = result.(AppModel)
+
+	if m.editor.IsOSCSuppressing() {
+		t.Error("body timeout should clear editor suppression through app routing")
+	}
+	if cmd == nil {
+		t.Error("body timeout should propagate chained timeout cmd")
 	}
 }

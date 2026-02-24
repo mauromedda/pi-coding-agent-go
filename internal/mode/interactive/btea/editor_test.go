@@ -6,7 +6,6 @@ package btea
 import (
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -615,10 +614,11 @@ func TestEditorModel_OSCSuppressionTimesOut(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
 	m = updated.(EditorModel)
 
-	// Backdate lastEscAt to simulate exceeding the body timeout (>500ms)
-	m.lastEscAt = m.lastEscAt.Add(-600 * time.Millisecond)
+	// Send body timeout message to simulate expiration
+	updated, _ = m.Update(oscBodyTimeoutMsg{gen: m.oscGen})
+	m = updated.(EditorModel)
 
-	// Runes after timeout should be inserted normally
+	// Normal rune after timeout should be inserted
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m = updated.(EditorModel)
 
@@ -838,14 +838,14 @@ func TestEditorModel_SplitEscBracket_SuppressesOSC(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 		m = updated.(EditorModel)
 
-		// Simulate timeout by backdating the pending timestamp (>200ms split-ESC timeout)
-		m.oscEscPendingAt = m.oscEscPendingAt.Add(-300 * time.Millisecond)
+		// Send timeout to expire the pending ESC
+		updated, _ = m.Update(oscSplitEscTimeoutMsg{gen: m.oscGen})
+		m = updated.(EditorModel)
 
-		// Now a normal 'a' arrives
+		// Normal rune should be inserted
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 		m = updated.(EditorModel)
 
-		// 'a' should be inserted normally
 		if m.Text() != "a" {
 			t.Errorf("Text() = %q; want %q", m.Text(), "a")
 		}
@@ -931,11 +931,11 @@ func TestEditorModel_ChainedOSCSequences(t *testing.T) {
 		}
 	})
 
-	t.Run("split ESC+] with expired short timeout but within cooldown", func(t *testing.T) {
+	t.Run("split ESC+] within cooldown enters suppression", func(t *testing.T) {
 		m := NewEditorModel()
 		m.width = 80
 
-		// First OSC via Alt+] path (sets oscRecentEnd when terminated)
+		// First OSC via Alt+] path (sets oscChainedCooldown when terminated)
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
 		m = updated.(EditorModel)
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:aa/bb/cc")})
@@ -943,12 +943,15 @@ func TestEditorModel_ChainedOSCSequences(t *testing.T) {
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}, Alt: true})
 		m = updated.(EditorModel)
 
-		// Second OSC: ESC arrives, then ] after >50ms but <500ms
+		// Verify cooldown is active after first OSC terminates
+		if !m.IsOSCChainedCooldown() {
+			t.Fatal("IsOSCChainedCooldown() = false; want true after first OSC terminates")
+		}
+
+		// Second OSC: split ESC + ]
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 		m = updated.(EditorModel)
-		// Backdate oscEscPendingAt to simulate 100ms delay (>50ms old timeout, <200ms new)
-		m.oscEscPendingAt = m.oscEscPendingAt.Add(-100 * time.Millisecond)
-		// ] arrives
+		// ] arrives (pending is still set because no timeout message was sent)
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 		m = updated.(EditorModel)
 
@@ -1006,7 +1009,7 @@ func TestEditorModel_MultiRuneInsertion(t *testing.T) {
 func TestEditorModel_OSCSuppressionLongerTimeout(t *testing.T) {
 	t.Parallel()
 
-	t.Run("suppression body survives beyond 50ms", func(t *testing.T) {
+	t.Run("suppression body survives without timeout message", func(t *testing.T) {
 		m := NewEditorModel()
 		m.width = 80
 
@@ -1014,22 +1017,19 @@ func TestEditorModel_OSCSuppressionLongerTimeout(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
 		m = updated.(EditorModel)
 
-		// Backdate lastEscAt to simulate 100ms elapsed (was fatal with 50ms timeout)
-		m.lastEscAt = m.lastEscAt.Add(-100 * time.Millisecond)
-
-		// Body runes should still be suppressed
+		// Body runes should still be suppressed (no timeout message sent)
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10;rgb:ff/ff/ff")})
 		m = updated.(EditorModel)
 
 		if !m.IsOSCSuppressing() {
-			t.Error("IsOSCSuppressing() = false; want true (100ms should not expire suppression)")
+			t.Error("IsOSCSuppressing() = false; want true (no timeout yet)")
 		}
 		if m.Text() != "" {
-			t.Errorf("Text() = %q; want empty (body should still be suppressed at 100ms)", m.Text())
+			t.Errorf("Text() = %q; want empty (body should still be suppressed)", m.Text())
 		}
 	})
 
-	t.Run("suppression expires after body timeout", func(t *testing.T) {
+	t.Run("suppression expires after body timeout message", func(t *testing.T) {
 		m := NewEditorModel()
 		m.width = 80
 
@@ -1037,8 +1037,9 @@ func TestEditorModel_OSCSuppressionLongerTimeout(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
 		m = updated.(EditorModel)
 
-		// Backdate lastEscAt to simulate 600ms elapsed (beyond new 500ms timeout)
-		m.lastEscAt = m.lastEscAt.Add(-600 * time.Millisecond)
+		// Send body timeout message
+		updated, _ = m.Update(oscBodyTimeoutMsg{gen: m.oscGen})
+		m = updated.(EditorModel)
 
 		// Should fall through to normal processing
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
@@ -1048,4 +1049,134 @@ func TestEditorModel_OSCSuppressionLongerTimeout(t *testing.T) {
 			t.Errorf("Text() = %q; want %q (should insert normally after body timeout)", m.Text(), "x")
 		}
 	})
+}
+
+// --- Event-driven timeout tests ---
+
+func TestEditorModel_DispatchKeyReturnsCmds(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ESC returns split-esc tick cmd", func(t *testing.T) {
+		m := NewEditorModel()
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		if cmd == nil {
+			t.Error("ESC should return a tick command for split-ESC timeout")
+		}
+	})
+
+	t.Run("Alt+] returns body tick cmd", func(t *testing.T) {
+		m := NewEditorModel()
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		if cmd == nil {
+			t.Error("Alt+] should return a tick command for body timeout")
+		}
+	})
+
+	t.Run("normal rune returns nil cmd", func(t *testing.T) {
+		m := NewEditorModel()
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		if cmd != nil {
+			t.Error("normal rune should return nil cmd")
+		}
+	})
+}
+
+func TestEditorModel_OSCGenCounter(t *testing.T) {
+	t.Parallel()
+
+	t.Run("stale split-esc timeout is no-op", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// ESC arms pending
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+		staleGen := m.oscGen
+
+		// ] enters suppression (bumps gen)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+		m = updated.(EditorModel)
+
+		// Send stale timeout: should be ignored
+		updated, _ = m.Update(oscSplitEscTimeoutMsg{gen: staleGen})
+		m = updated.(EditorModel)
+
+		// Should still be suppressing
+		if !m.IsOSCSuppressing() {
+			t.Error("stale split-ESC timeout should be no-op; suppression should continue")
+		}
+	})
+
+	t.Run("stale body timeout is no-op", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// Enter suppression
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+		m = updated.(EditorModel)
+		staleGen := m.oscGen
+
+		// Terminate with BEL (bumps gen via endOscSuppression)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+		m = updated.(EditorModel)
+
+		// Send stale body timeout
+		updated, _ = m.Update(oscBodyTimeoutMsg{gen: staleGen})
+		m = updated.(EditorModel)
+
+		// Should not re-enter any OSC state
+		if m.IsOSCSuppressing() {
+			t.Error("stale body timeout should be no-op")
+		}
+	})
+}
+
+func TestEditorModel_BodyTimeoutStartsCooldown(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Enter suppression
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+
+	// Send body timeout
+	updated, cmd := m.Update(oscBodyTimeoutMsg{gen: m.oscGen})
+	m = updated.(EditorModel)
+
+	if m.IsOSCSuppressing() {
+		t.Error("body timeout should clear suppression")
+	}
+	if !m.IsOSCChainedCooldown() {
+		t.Error("body timeout should activate chained cooldown")
+	}
+	if cmd == nil {
+		t.Error("body timeout should return chained timeout tick cmd")
+	}
+}
+
+func TestEditorModel_ChainedTimeoutClearsCooldown(t *testing.T) {
+	t.Parallel()
+
+	m := NewEditorModel()
+	m.width = 80
+
+	// Enter and exit suppression to set cooldown
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}, Alt: true})
+	m = updated.(EditorModel)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	m = updated.(EditorModel)
+
+	if !m.IsOSCChainedCooldown() {
+		t.Fatal("cooldown should be active after OSC terminates")
+	}
+
+	// Send chained timeout
+	updated, _ = m.Update(oscChainedTimeoutMsg{gen: m.oscGen})
+	m = updated.(EditorModel)
+
+	if m.IsOSCChainedCooldown() {
+		t.Error("chained timeout should clear cooldown")
+	}
 }

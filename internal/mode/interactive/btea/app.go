@@ -549,15 +549,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.overlay = NewPermDialogModel(msg.Tool, msg.Args, msg.ReplyCh)
 		return m, nil
 
+	// --- OSC timeout messages routed to editor ---
+	case oscSplitEscTimeoutMsg, oscBodyTimeoutMsg, oscChainedTimeoutMsg:
+		updated, cmd := m.editor.Update(msg)
+		m.editor = updated.(EditorModel)
+		return m, cmd
+
 	default:
 		// Route to overlay if active (key presses, etc.)
 		if m.overlay != nil {
 			// When command palette or file mention is active, mirror typed/deleted chars to editor
+			var editorCmd tea.Cmd
 			if isDropdownOverlay(m.overlay) {
 				if keyMsg, isKey := msg.(tea.KeyMsg); isKey {
 					if keyMsg.Type == tea.KeyRunes || keyMsg.Type == tea.KeyBackspace {
-						editorUpdated, _ := m.editor.Update(keyMsg)
+						editorUpdated, cmd := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
+						editorCmd = cmd
 					}
 					// Forward ESC/BEL to editor's OSC state machine when suppressing
 					// or when the split-ESC guard is pending. This prevents:
@@ -565,9 +573,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// - split OSC start (ESC + ']') from missing the ESC arm step
 					if (m.editor.IsOSCSuppressing() || m.editor.IsOSCEscPending()) &&
 						(keyMsg.Type == tea.KeyEscape || keyMsg.Type == tea.KeyCtrlG) {
-						editorUpdated, _ := m.editor.Update(keyMsg)
+						editorUpdated, cmd := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
-						return m, nil // consume the key; don't forward to overlay
+						return m, cmd // consume the key; don't forward to overlay
 					} else if keyMsg.Type == tea.KeyEscape {
 						// Forward bare ESC to editor so split-ESC detection can
 						// arm itself, even when no OSC is in progress. Without
@@ -575,12 +583,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// open would leak ']' and body runes into the editor.
 						// The else-if ensures we don't double-dispatch ESC when
 						// the suppression/pending branch already handled it.
-						editorUpdated, _ := m.editor.Update(keyMsg)
+						editorUpdated, cmd := m.editor.Update(keyMsg)
 						m.editor = editorUpdated.(EditorModel)
+						editorCmd = cmd
 					}
 				}
 			}
-			return m.updateOverlay(msg)
+			updated, overlayCmd := m.overlay.Update(msg)
+			m.overlay = updated
+			if editorCmd != nil {
+				return m, tea.Batch(editorCmd, overlayCmd)
+			}
+			return m, overlayCmd
 		}
 	}
 
@@ -771,14 +785,14 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// can arm itself. If terminal sent \x1b]…\x1b\, BubbleTea
 		// delivers KeyEscape then plain ']'; the editor needs to see
 		// the ESC to suppress the ']' that follows.
-		editorUpdated, _ := m.editor.Update(msg)
+		editorUpdated, editorCmd := m.editor.Update(msg)
 		m.editor = editorUpdated.(EditorModel)
 
 		if m.agentRunning {
 			m.abortAgent()
-			return m, func() tea.Msg { return AgentCancelMsg{} }
+			return m, tea.Batch(editorCmd, func() tea.Msg { return AgentCancelMsg{} })
 		}
-		return m, nil
+		return m, editorCmd
 
 	case "ctrl+l":
 		// Clear viewport; keep only a fresh welcome

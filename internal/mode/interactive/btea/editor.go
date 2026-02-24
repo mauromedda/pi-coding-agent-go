@@ -109,13 +109,12 @@ type EditorModel struct {
 	promptWidth int
 	placeholder string
 	width       int
-	ghostText      string    // dimmed completion shown after cursor
-	oscSuppressing bool      // true while dropping OSC response runes
-	oscGuardArmed  bool      // true after ESC during suppression, awaiting '\' for split ST
-	oscEscPending  bool      // true after bare ESC; if ']' follows within timeout, enter suppression
-	oscEscPendingAt time.Time // when oscEscPending was set
-	lastEscAt      time.Time // when OSC suppression started (for timeout)
-	oscRecentEnd   time.Time // when last OSC suppression ended (for chained detection)
+	ghostText         string // dimmed completion shown after cursor
+	oscSuppressing    bool   // true while dropping OSC response runes
+	oscGuardArmed     bool   // true after ESC during suppression, awaiting '\' for split ST
+	oscEscPending     bool   // true after bare ESC; if ']' follows within timeout, enter suppression
+	oscGen            uint32 // generation counter; stale timeouts carry an older gen and are ignored
+	oscChainedCooldown bool  // true after OSC terminates; widens split-ESC window for chained sequences
 }
 
 // NewEditorModel creates a new empty editor.
@@ -138,6 +137,16 @@ type clipboardImageMsg struct {
 	err  error
 }
 
+// oscSplitEscTimeoutMsg fires when the split-ESC detection window expires.
+// The gen field is compared against EditorModel.oscGen to discard stale timeouts.
+type oscSplitEscTimeoutMsg struct{ gen uint32 }
+
+// oscBodyTimeoutMsg fires when the OSC body suppression window expires.
+type oscBodyTimeoutMsg struct{ gen uint32 }
+
+// oscChainedTimeoutMsg fires when the chained-OSC cooldown window expires.
+type oscChainedTimeoutMsg struct{ gen uint32 }
+
 // Update handles key and window-size messages.
 // NOTE: dispatchKey uses a pointer receiver that mutates the value copy
 // held by this value-receiver Update. This is intentional: Go takes the
@@ -148,6 +157,21 @@ func (m EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		cmd := m.dispatchKey(msg)
 		return m, cmd
+	case oscSplitEscTimeoutMsg:
+		if msg.gen == m.oscGen && m.oscEscPending {
+			m.oscEscPending = false
+		}
+		return m, nil
+	case oscBodyTimeoutMsg:
+		if msg.gen == m.oscGen && m.oscSuppressing {
+			return m, m.endOscSuppression()
+		}
+		return m, nil
+	case oscChainedTimeoutMsg:
+		if msg.gen == m.oscGen {
+			m.oscChainedCooldown = false
+		}
+		return m, nil
 	case clipboardImageMsg:
 		if msg.err == nil && len(msg.data) > 0 {
 			m.saveUndo()
@@ -285,6 +309,32 @@ func (m EditorModel) IsOSCEscPending() bool {
 	return m.oscEscPending
 }
 
+// IsOSCChainedCooldown returns true during the cooldown window after an OSC
+// sequence terminates, used to widen the split-ESC detection for chained sequences.
+func (m EditorModel) IsOSCChainedCooldown() bool {
+	return m.oscChainedCooldown
+}
+
+// bumpOscGen increments the generation counter and returns the new value.
+// Timeout messages carry the gen at creation time; if it differs from the
+// current gen when delivered, the timeout is stale and ignored.
+func (m *EditorModel) bumpOscGen() uint32 {
+	m.oscGen++
+	return m.oscGen
+}
+
+// endOscSuppression terminates OSC suppression, activates chained cooldown,
+// and returns a tea.Tick command for the cooldown expiration.
+func (m *EditorModel) endOscSuppression() tea.Cmd {
+	m.oscSuppressing = false
+	m.oscGuardArmed = false
+	m.oscChainedCooldown = true
+	gen := m.bumpOscGen()
+	return tea.Tick(oscBodyTimeout, func(t time.Time) tea.Msg {
+		return oscChainedTimeoutMsg{gen: gen}
+	})
+}
+
 // GhostText returns the current ghost text.
 func (m EditorModel) GhostText() string {
 	return m.ghostText
@@ -319,28 +369,22 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) tea.Cmd {
 	// When BubbleTea's input parser receives \x1b] in separate reads,
 	// \x1b becomes KeyEscape and ] becomes a plain KeyRunes. We detect
 	// this by arming a pending flag on bare KeyEscape and checking the
-	// next message for ']'.
+	// next message for ']'. The timeout is handled by oscSplitEscTimeoutMsg
+	// via tea.Tick; if the timeout fires before the next key, it clears
+	// oscEscPending so the key is processed normally.
 	if m.oscEscPending {
 		m.oscEscPending = false
-		// Use a longer detection window after recent OSC suppression to
-		// catch chained sequences (e.g., OSC 10 immediately followed by OSC 11).
-		timeout := oscSplitEscTimeout
-		if !m.oscRecentEnd.IsZero() && time.Since(m.oscRecentEnd) <= oscBodyTimeout {
-			timeout = oscBodyTimeout
+		if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
+			// Split \x1b] detected: enter OSC suppression
+			m.oscSuppressing = true
+			gen := m.bumpOscGen()
+			return tea.Tick(oscBodyTimeout, func(t time.Time) tea.Msg {
+				return oscBodyTimeoutMsg{gen: gen}
+			})
 		}
-		if time.Since(m.oscEscPendingAt) <= timeout {
-			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
-				// Split \x1b] detected: enter OSC suppression
-				m.oscSuppressing = true
-				m.lastEscAt = time.Now()
-				return nil
-			}
-			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
-				// Split ST (\x1b\) during suppression: drop
-				m.oscSuppressing = false
-				m.oscRecentEnd = time.Now()
-				return nil
-			}
+		if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
+			// Split ST (\x1b\) during suppression: terminate
+			return m.endOscSuppression()
 		}
 		// Not an OSC sequence: fall through to normal processing
 	}
@@ -356,52 +400,45 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) tea.Cmd {
 	//   3. Alt+\  (KeyRunes with Alt=true, the ST terminator)
 	//
 	// We detect Alt+] as the OSC start and suppress all runes until the
-	// Alt+\ terminator (or a timeout).
+	// Alt+\ terminator (or a body timeout delivered via oscBodyTimeoutMsg).
 	if m.oscSuppressing {
-		if time.Since(m.lastEscAt) > oscBodyTimeout {
-			m.oscSuppressing = false
-			m.oscGuardArmed = false
-			m.oscRecentEnd = time.Now()
-			// fall through to normal dispatch
-		} else if m.oscGuardArmed {
+		if m.oscGuardArmed {
 			// Previous msg was ESC during suppression; check for split ST
 			m.oscGuardArmed = false
-			m.oscSuppressing = false
-			m.oscRecentEnd = time.Now()
+			cmd := m.endOscSuppression()
 			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
-				return nil // drop the '\' completing ESC+\ (ST)
+				return cmd // drop the '\' completing ESC+\ (ST)
 			}
 			// ESC wasn't followed by '\': suppression ended, process normally
-		} else {
-			switch msg.Type {
-			case tea.KeyRunes:
-				// Alt+\ is the ST (String Terminator) that ends OSC responses
-				if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
-					m.oscSuppressing = false
-					m.oscRecentEnd = time.Now()
-				}
-				return nil // drop body or terminator runes
-			case tea.KeyCtrlG:
-				// BEL (0x07) also terminates OSC responses
-				m.oscSuppressing = false
-				m.oscRecentEnd = time.Now()
-				return nil
-			case tea.KeyEscape:
-				// ESC during suppression: the ST might be split as ESC + '\'.
-				// Arm the guard so the next '\' rune completes termination.
-				m.oscGuardArmed = true
-				return nil
-			default:
-				// Other keys during suppression: drop them
-				return nil
+			return cmd
+		}
+		switch msg.Type {
+		case tea.KeyRunes:
+			// Alt+\ is the ST (String Terminator) that ends OSC responses
+			if msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
+				return m.endOscSuppression()
 			}
+			return nil // drop body runes
+		case tea.KeyCtrlG:
+			// BEL (0x07) also terminates OSC responses
+			return m.endOscSuppression()
+		case tea.KeyEscape:
+			// ESC during suppression: the ST might be split as ESC + '\'.
+			// Arm the guard so the next '\' rune completes termination.
+			m.oscGuardArmed = true
+			return nil
+		default:
+			// Other keys during suppression: drop them
+			return nil
 		}
 	}
 	// Detect OSC start: Alt+] (BubbleTea parses \x1b] as Alt+])
 	if msg.Type == tea.KeyRunes && msg.Alt && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
 		m.oscSuppressing = true
-		m.lastEscAt = time.Now()
-		return nil
+		gen := m.bumpOscGen()
+		return tea.Tick(oscBodyTimeout, func(t time.Time) tea.Msg {
+			return oscBodyTimeoutMsg{gen: gen}
+		})
 	}
 
 	switch msg.Type {
@@ -468,7 +505,14 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) tea.Cmd {
 		// Arm split-ESC guard: if ']' follows within the timeout,
 		// it's an OSC start (\x1b]) that was split across reads.
 		m.oscEscPending = true
-		m.oscEscPendingAt = time.Now()
+		gen := m.bumpOscGen()
+		timeout := oscSplitEscTimeout
+		if m.oscChainedCooldown {
+			timeout = oscBodyTimeout
+		}
+		return tea.Tick(timeout, func(t time.Time) tea.Msg {
+			return oscSplitEscTimeoutMsg{gen: gen}
+		})
 	}
 	return nil
 }
