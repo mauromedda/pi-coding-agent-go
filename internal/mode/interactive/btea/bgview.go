@@ -145,10 +145,9 @@ func (m BackgroundViewModel) View() string {
 	if len(m.tasks) == 0 {
 		writeBoxLine(&b, border, s.Dim.Render("(no background tasks)"), contentWidth)
 	} else {
-		maxW := contentWidth - 12 // status icon + ID prefix
-		if maxW < 10 {
-			maxW = 10
-		}
+		maxW := max(
+			// status icon + ID prefix
+			contentWidth-12, 10)
 		for i, task := range m.tasks {
 			prefix := "  "
 			if i == m.cursor {

@@ -13,7 +13,7 @@ func TestEditorUndoStackGrowth(t *testing.T) {
 	editor := NewEditorModel()
 
 	// Perform many undoable operations
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		editor = editor.SetText(strings.Repeat("test ", i))
 	}
 
@@ -45,7 +45,7 @@ func TestEditorStateMemoryCleanup(t *testing.T) {
 	editor := NewEditorModel()
 
 	// Perform many undoable operations
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		editor = editor.SetText("test" + string(rune('a'+i)))
 	}
 
@@ -107,10 +107,10 @@ func TestEditorLineMemoryPressure(t *testing.T) {
 	editor := NewEditorModel()
 
 	// Add many lines with undoable operations
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		if i > 0 {
 			// Create a new line by setting text with newline
-			editor = editor.SetText(editor.Text() + "\n" + string(rune('a' + (i % 26))))
+			editor = editor.SetText(editor.Text() + "\n" + string(rune('a'+(i%26))))
 		} else {
 			editor = editor.SetText(string(rune('a' + (i % 26))))
 		}
@@ -123,7 +123,7 @@ func TestEditorLineMemoryPressure(t *testing.T) {
 
 	// Test undo across many lines
 	undoCount := 0
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		editor = editor.doUndoForTest()
 		undoCount++
 	}
@@ -139,7 +139,7 @@ func TestEditorUndoDepthCap(t *testing.T) {
 	editor := NewEditorModel()
 
 	// Perform many operations
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		editor = editor.SetText(strings.Repeat("x", 100) + string(rune('a'+i)))
 	}
 
@@ -187,7 +187,7 @@ func TestEditorMemoryPerStateEstimate(t *testing.T) {
 
 	// Create editor with substantial content
 	largeText := strings.Repeat("hello world ", 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		editor = editor.SetText(largeText + string(rune('a'+i)))
 	}
 
@@ -210,7 +210,7 @@ func TestEditorMemoryPerStateEstimate(t *testing.T) {
 
 	// With 200 undo depth, this could be significant
 	totalEstimated := approxMemory * editorUndoDepth
-	t.Logf("Estimated total memory with full undo stack: %d bytes (%.2f MB)", 
+	t.Logf("Estimated total memory with full undo stack: %d bytes (%.2f MB)",
 		totalEstimated, float64(totalEstimated)/(1024*1024))
 
 	// This test documents potential memory usage

@@ -16,17 +16,17 @@ import (
 // Line 1: path + branch + model + cost.
 // Line 2: mode + permissions + context% + queued + thinking.
 type FooterModel struct {
-	path           string
-	gitBranch      string
-	model          string
-	cost           float64
-	modeLabel      string
-	contextPct     int
-	thinking       config.ThinkingLevel
-	permissionMode string
-	queuedCount    int
-	latencyClass   string
-	showImages     bool
+	path            string
+	gitBranch       string
+	model           string
+	cost            float64
+	modeLabel       string
+	contextPct      int
+	thinking        config.ThinkingLevel
+	permissionMode  string
+	queuedCount     int
+	latencyClass    string
+	showImages      bool
 	intentLabel     string   // Current intent name (e.g., "Plan", "Execute", "Debug")
 	activeChecks    []string // Abbreviations of active checks (e.g., ["SEC", "QUAL", "ARCH"])
 	backgroundCount int      // Number of background tasks
@@ -233,10 +233,7 @@ func (m FooterModel) View() string {
 
 	if m.contextPct > 0 {
 		const barWidth = 10
-		filled := m.contextPct * barWidth / 100
-		if filled > barWidth {
-			filled = barWidth
-		}
+		filled := min(m.contextPct*barWidth/100, barWidth)
 		empty := barWidth - filled
 
 		barStyle := s.Success // green <50%
