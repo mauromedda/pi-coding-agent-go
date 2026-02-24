@@ -168,7 +168,7 @@ func run(args cliArgs) error {
 
 		minionModel, err := config.ResolveModel(minionModelID)
 		if err != nil {
-			// Unknown model (e.g. ollama:llama3): assume OpenAI-compatible
+			pilog.Debug("minion: model %q not in catalog, assuming OpenAI-compatible: %v", minionModelID, err)
 			minionModel = &ai.Model{
 				ID:              minionModelID,
 				Api:             ai.ApiOpenAI,
