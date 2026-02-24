@@ -231,6 +231,16 @@ func (m AppModel) Init() tea.Cmd {
 
 // Update routes messages to the appropriate handler.
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Ctrl+O: toggle tool call expand/collapse; bypass overlay routing
+	// so it works regardless of whether an overlay is active.
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "ctrl+o" {
+		for i := range m.content {
+			updated, _ := m.content[i].Update(msg)
+			m.content[i] = updated
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	// --- Layout ---
 	case tea.WindowSizeMsg:
@@ -855,14 +865,6 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		updated, cmd := m.editor.Update(msg)
 		m.editor = updated.(EditorModel)
 		return m, cmd
-
-	case "ctrl+o":
-		// Propagate to content models so ToolCallModel can toggle expand/collapse
-		for i := range m.content {
-			updated, _ := m.content[i].Update(msg)
-			m.content[i] = updated
-		}
-		return m, nil
 
 	case "enter":
 		if !m.editor.IsEmpty() {
