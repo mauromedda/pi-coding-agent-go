@@ -65,6 +65,14 @@ func buildGeminiRequestBody(ctx *ai.Context, opts *ai.StreamOptions) geminiReque
 						Response: map[string]string{"result": c.ResultText},
 					},
 				})
+				for _, img := range c.Images {
+					content.Parts = append(content.Parts, gemini.Part{
+						InlineData: &gemini.InlineData{
+							MimeType: img.MediaType,
+							Data:     img.Data,
+						},
+					})
+				}
 			}
 		}
 		req.Contents = append(req.Contents, content)
