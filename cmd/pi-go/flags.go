@@ -28,6 +28,9 @@ type cliArgs struct {
 	dangerouslySkip  bool   // --dangerously-skip-permissions
 	verbose          bool   // -v / --verbose debug output
 	noWorktree       bool   // --no-worktree disable session worktree
+	minion           bool   // --minion (singular distillation)
+	minions          bool   // --minions (parallel distillation)
+	minionModel      string // --minion-model <id>
 }
 
 func parseFlags() cliArgs {
@@ -56,6 +59,9 @@ func parseFlags() cliArgs {
 	flag.BoolVar(&args.verbose, "v", false, "Enable verbose debug output")
 	flag.BoolVar(&args.verbose, "verbose", false, "Enable verbose debug output")
 	flag.BoolVar(&args.noWorktree, "no-worktree", false, "Disable session worktree isolation")
+	flag.BoolVar(&args.minion, "minion", false, "Enable minion protocol (singular distillation)")
+	flag.BoolVar(&args.minions, "minions", false, "Enable minion protocol (parallel distillation)")
+	flag.StringVar(&args.minionModel, "minion-model", "", "Model for minion distillation (default: from config or haiku)")
 
 	flag.Parse()
 	return args

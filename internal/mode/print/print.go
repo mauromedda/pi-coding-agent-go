@@ -13,6 +13,8 @@ import (
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
+
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 )
 
 // Config configures SDK/headless mode execution.
@@ -38,9 +40,10 @@ const (
 
 // Deps provides dependencies for print mode.
 type Deps struct {
-	Provider ai.ApiProvider
-	Model    *ai.Model
-	Tools    []*agent.AgentTool
+	Provider        ai.ApiProvider
+	Model           *ai.Model
+	Tools           []*agent.AgentTool
+	MinionTransform agent.TransformContextFunc // optional context distillation
 }
 
 // Run executes the agent in non-interactive mode with the given configuration.
@@ -110,6 +113,14 @@ func RunWithConfig(ctx context.Context, cfg Config, deps Deps, prompt string) er
 
 func runAgentLoop(ctx context.Context, cfg Config, deps Deps, llmCtx *ai.Context, opts *ai.StreamOptions, f formatter) error {
 	ag := agent.New(deps.Provider, deps.Model, deps.Tools)
+
+	if deps.MinionTransform != nil {
+		ag.SetAdaptive(&agent.AdaptiveConfig{
+			TransformContext: deps.MinionTransform,
+		})
+		pilog.Debug("print: minion context transform enabled")
+	}
+
 	events := ag.Prompt(ctx, llmCtx, opts)
 
 	turns := 0

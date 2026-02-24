@@ -75,6 +75,9 @@ type Settings struct {
 
 	// Worktree configures default worktree isolation per session
 	Worktree *WorktreeSettings `json:"worktree,omitempty"`
+
+	// Minion configures the local/cloud context distillation protocol
+	Minion *MinionSettings `json:"minion,omitempty"`
 }
 
 // ModelOverride allows per-model customization.
@@ -237,6 +240,37 @@ func (w *WorktreeSettings) IsEnabled() bool {
 		return true
 	}
 	return *w.Enabled
+}
+
+// MinionSettings configures the minion protocol (local/cloud context distillation).
+type MinionSettings struct {
+	Enabled *bool  `json:"enabled,omitempty"` // nil = false (opt-in)
+	Model   string `json:"model,omitempty"`   // any model ID; default "claude-3-5-haiku-20241022"
+	Mode    string `json:"mode,omitempty"`    // "singular", "plural"; default "singular"
+}
+
+// IsEnabled returns whether the minion protocol is enabled (default false).
+func (m *MinionSettings) IsEnabled() bool {
+	if m == nil || m.Enabled == nil {
+		return false
+	}
+	return *m.Enabled
+}
+
+// EffectiveModel returns Model or default ("claude-3-5-haiku-20241022").
+func (m *MinionSettings) EffectiveModel() string {
+	if m == nil || m.Model == "" {
+		return "claude-3-5-haiku-20241022"
+	}
+	return m.Model
+}
+
+// EffectiveMode returns Mode or default ("singular").
+func (m *MinionSettings) EffectiveMode() string {
+	if m == nil || m.Mode == "" {
+		return "singular"
+	}
+	return m.Mode
 }
 
 // PermissionsConfig holds nested permission settings (Claude Code format).
@@ -627,6 +661,9 @@ func merge(global, project *Settings) *Settings {
 	if project.Telemetry != nil {
 		if result.Telemetry == nil {
 			result.Telemetry = &TelemetrySettings{}
+		} else {
+			t := *result.Telemetry
+			result.Telemetry = &t
 		}
 		if project.Telemetry.Enabled != nil {
 			result.Telemetry.Enabled = project.Telemetry.Enabled
@@ -643,6 +680,9 @@ func merge(global, project *Settings) *Settings {
 	if project.Safety != nil {
 		if result.Safety == nil {
 			result.Safety = &SafetySettings{}
+		} else {
+			s := *result.Safety
+			result.Safety = &s
 		}
 		if len(project.Safety.NeverModify) > 0 {
 			result.Safety.NeverModify = dedupStrings(result.Safety.NeverModify, project.Safety.NeverModify)
@@ -656,9 +696,31 @@ func merge(global, project *Settings) *Settings {
 	if project.Worktree != nil {
 		if result.Worktree == nil {
 			result.Worktree = &WorktreeSettings{}
+		} else {
+			w := *result.Worktree
+			result.Worktree = &w
 		}
 		if project.Worktree.Enabled != nil {
 			result.Worktree.Enabled = project.Worktree.Enabled
+		}
+	}
+
+	// Minion: merge if present
+	if project.Minion != nil {
+		if result.Minion == nil {
+			result.Minion = &MinionSettings{}
+		} else {
+			m := *result.Minion
+			result.Minion = &m
+		}
+		if project.Minion.Enabled != nil {
+			result.Minion.Enabled = project.Minion.Enabled
+		}
+		if project.Minion.Model != "" {
+			result.Minion.Model = project.Minion.Model
+		}
+		if project.Minion.Mode != "" {
+			result.Minion.Mode = project.Minion.Mode
 		}
 	}
 
