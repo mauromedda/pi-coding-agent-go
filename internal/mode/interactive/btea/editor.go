@@ -373,6 +373,13 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 			if r < 0x20 || r == 0x7F {
 				return
 			}
+			// Drop Alt+rune sequences: normal typing never produces these.
+			// They are terminal escape artefacts (OSC body fragments parsed
+			// as ESC+char by BubbleTea). The app handles known Alt shortcuts
+			// (alt+t, alt+m, alt+i) before reaching the editor.
+			if msg.Alt {
+				return
+			}
 			m.insertRune(r)
 		}
 	case tea.KeySpace:

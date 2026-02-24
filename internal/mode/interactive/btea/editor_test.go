@@ -704,12 +704,15 @@ func TestEditorModel_AltNonBracketNotSuppressed(t *testing.T) {
 	m := NewEditorModel()
 	m.width = 80
 
-	// Alt+a (not ']') should insert normally
+	// Alt+rune should be dropped by the editor: normal typing never produces
+	// Alt+rune, and all valid Alt shortcuts (alt+t, alt+m, alt+i) are handled
+	// by app.go before reaching the editor. Dropping prevents OSC response
+	// fragments (parsed as ESC+char) from leaking into the buffer.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true})
 	m = updated.(EditorModel)
 
-	if got := m.Text(); got != "a" {
-		t.Errorf("Text() = %q; want %q (alt+non-bracket should insert normally)", got, "a")
+	if got := m.Text(); got != "" {
+		t.Errorf("Text() = %q; want %q (alt+rune should be dropped, not inserted)", got, "")
 	}
 }
 
