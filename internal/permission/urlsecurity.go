@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -23,22 +24,22 @@ type URLValidator struct {
 func NewURLValidator() *URLValidator {
 	// Parse blocked CIDR ranges for private networks
 	blockedCIDRs := make([]*net.IPNet, 0)
-	
+
 	// Private IP ranges that should be blocked
 	privateCIDRs := []string{
-		"10.0.0.0/8",       // Private network
-		"172.16.0.0/12",    // Private network  
-		"192.168.0.0/16",   // Private network
-		"127.0.0.0/8",      // Loopback
-		"169.254.0.0/16",   // Link-local
-		"224.0.0.0/4",      // Multicast
-		"240.0.0.0/4",      // Reserved
-		"0.0.0.0/8",        // Invalid
-		"::1/128",          // IPv6 loopback
-		"fe80::/10",        // IPv6 link-local
-		"ff00::/8",         // IPv6 multicast
+		"10.0.0.0/8",     // Private network
+		"172.16.0.0/12",  // Private network
+		"192.168.0.0/16", // Private network
+		"127.0.0.0/8",    // Loopback
+		"169.254.0.0/16", // Link-local
+		"224.0.0.0/4",    // Multicast
+		"240.0.0.0/4",    // Reserved
+		"0.0.0.0/8",      // Invalid
+		"::1/128",        // IPv6 loopback
+		"fe80::/10",      // IPv6 link-local
+		"ff00::/8",       // IPv6 multicast
 	}
-	
+
 	for _, cidr := range privateCIDRs {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err == nil {
@@ -51,7 +52,7 @@ func NewURLValidator() *URLValidator {
 		allowedHosts: []string{
 			"api.github.com",
 			"github.com",
-			"api.anthropic.com", 
+			"api.anthropic.com",
 			"api.openai.com",
 			"generativelanguage.googleapis.com",
 			"googleapis.com",
@@ -104,11 +105,9 @@ func (v *URLValidator) validateScheme(scheme string) error {
 	}
 
 	scheme = strings.ToLower(scheme)
-	
-	for _, allowed := range v.allowedSchemes {
-		if scheme == allowed {
-			return nil
-		}
+
+	if slices.Contains(v.allowedSchemes, scheme) {
+		return nil
 	}
 
 	return fmt.Errorf("scheme %q not allowed (allowed: %v)", scheme, v.allowedSchemes)
@@ -129,10 +128,8 @@ func (v *URLValidator) validateHost(host string) error {
 	hostname = strings.ToLower(hostname)
 
 	// Check against blocked hosts first
-	for _, blocked := range v.blockedHosts {
-		if hostname == blocked {
-			return fmt.Errorf("host %q is blocked", hostname)
-		}
+	if slices.Contains(v.blockedHosts, hostname) {
+		return fmt.Errorf("host %q is blocked", hostname)
 	}
 
 	// Check if it's an IP address and validate against blocked CIDRs
@@ -154,7 +151,7 @@ func (v *URLValidator) validateHost(host string) error {
 		if hostname == allowed {
 			return nil
 		}
-		
+
 		// Allow subdomains of allowed hosts
 		if strings.HasSuffix(hostname, "."+allowed) {
 			return nil
@@ -189,21 +186,21 @@ func (v *URLValidator) validateDomainIPs(domain string) error {
 // checkDangerousPatterns looks for dangerous URL patterns
 func (v *URLValidator) checkDangerousPatterns(rawURL string) error {
 	urlLower := strings.ToLower(rawURL)
-	
+
 	// Check for URL encoding tricks
 	dangerousPatterns := []string{
-		"%00",           // Null byte
-		"%0a", "%0d",    // Newlines
-		"%2f%2f",        // Double slash
-		"%2e%2e",        // Double dot
-		"@",             // User info
-		"\\",            // Backslash (Windows path)
-		"file://",       // File scheme
-		"ftp://",        // FTP scheme
-		"gopher://",     // Gopher scheme
-		"data:",         // Data scheme
-		"javascript:",   // JavaScript scheme
-		"vbscript:",     // VBScript scheme
+		"%00",        // Null byte
+		"%0a", "%0d", // Newlines
+		"%2f%2f",      // Double slash
+		"%2e%2e",      // Double dot
+		"@",           // User info
+		"\\",          // Backslash (Windows path)
+		"file://",     // File scheme
+		"ftp://",      // FTP scheme
+		"gopher://",   // Gopher scheme
+		"data:",       // Data scheme
+		"javascript:", // JavaScript scheme
+		"vbscript:",   // VBScript scheme
 	}
 
 	for _, pattern := range dangerousPatterns {
@@ -227,10 +224,10 @@ func (v *URLValidator) checkDangerousPatterns(rawURL string) error {
 func (v *URLValidator) validatePort(port string) error {
 	// Only allow common web ports
 	allowedPorts := map[string]bool{
-		"80":   true,  // HTTP
-		"443":  true,  // HTTPS
-		"8080": true,  // Alternative HTTP
-		"8443": true,  // Alternative HTTPS
+		"80":   true, // HTTP
+		"443":  true, // HTTPS
+		"8080": true, // Alternative HTTP
+		"8443": true, // Alternative HTTPS
 	}
 
 	if !allowedPorts[port] {
@@ -243,10 +240,8 @@ func (v *URLValidator) validatePort(port string) error {
 // AddAllowedHost adds a host to the allowlist
 func (v *URLValidator) AddAllowedHost(host string) {
 	host = strings.ToLower(host)
-	for _, existing := range v.allowedHosts {
-		if existing == host {
-			return // Already exists
-		}
+	if slices.Contains(v.allowedHosts, host) {
+		return // Already exists
 	}
 	v.allowedHosts = append(v.allowedHosts, host)
 }
@@ -254,10 +249,8 @@ func (v *URLValidator) AddAllowedHost(host string) {
 // AddBlockedHost adds a host to the blocklist
 func (v *URLValidator) AddBlockedHost(host string) {
 	host = strings.ToLower(host)
-	for _, existing := range v.blockedHosts {
-		if existing == host {
-			return // Already exists
-		}
+	if slices.Contains(v.blockedHosts, host) {
+		return // Already exists
 	}
 	v.blockedHosts = append(v.blockedHosts, host)
 }
@@ -315,11 +308,11 @@ func ValidateAPIURL(rawURL string) error {
 	validator := NewURLValidator()
 	// API calls should only use HTTPS
 	validator.allowedSchemes = []string{"https"}
-	
+
 	// Add common API hosts
 	apiHosts := []string{
 		"api.github.com",
-		"github.com", 
+		"github.com",
 		"raw.githubusercontent.com",
 		"api.anthropic.com",
 		"api.openai.com",
@@ -327,21 +320,21 @@ func ValidateAPIURL(rawURL string) error {
 		"api.search.brave.com",
 		"httpbin.org", // For testing
 	}
-	
+
 	for _, host := range apiHosts {
 		validator.AddAllowedHost(host)
 	}
-	
+
 	return validator.ValidateURL(rawURL)
 }
 
 // ValidateWebhookURL validates URLs for webhook endpoints
 func ValidateWebhookURL(rawURL string) error {
 	validator := NewURLValidator()
-	
+
 	// Webhooks must use HTTPS
 	validator.allowedSchemes = []string{"https"}
-	
+
 	// Be more restrictive for webhooks - only known safe domains
 	validator.allowedHosts = []string{
 		"hooks.slack.com",
@@ -349,6 +342,6 @@ func ValidateWebhookURL(rawURL string) error {
 		"api.telegram.org",
 		"hooks.zapier.com",
 	}
-	
+
 	return validator.ValidateURL(rawURL)
 }
