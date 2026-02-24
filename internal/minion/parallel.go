@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	pilog "github.com/mauromedda/pi-coding-agent-go/internal/log"
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
 )
 
@@ -43,7 +44,11 @@ func NewDistributor(cfg DistributorConfig) *Distributor {
 // the local model, and returns an aggregated summary + recent messages.
 // If there are fewer messages than KeepRecent, returns the original messages unchanged.
 func (d *Distributor) Distribute(ctx context.Context, msgs []ai.Message) ([]ai.Message, error) {
+	pilog.Debug("minion/plural: distributing %d messages (keep_recent=%d, workers=%d)",
+		len(msgs), d.config.KeepRecent, d.config.MaxWorkers)
+
 	if len(msgs) <= d.config.KeepRecent {
+		pilog.Debug("minion/plural: skipping, only %d messages (threshold %d)", len(msgs), d.config.KeepRecent)
 		return msgs, nil
 	}
 
@@ -55,12 +60,16 @@ func (d *Distributor) Distribute(ctx context.Context, msgs []ai.Message) ([]ai.M
 		return msgs, nil
 	}
 
+	pilog.Debug("minion/plural: split %d older messages into %d chunks, keeping %d recent",
+		len(olderMsgs), len(chunks), len(recentMsgs))
+
 	extracts, err := d.processChunksParallel(ctx, chunks)
 	if err != nil {
 		return nil, fmt.Errorf("distribute: %w", err)
 	}
 
 	aggregated := aggregateExtracts(extracts)
+	pilog.Debug("minion/plural: aggregated %d chunks into %d chars", len(extracts), len(aggregated))
 
 	summaryContent := ai.Content{Type: ai.ContentText, Text: "[Aggregated Context]\n" + aggregated}
 	return prependSummary(summaryContent, recentMsgs), nil
@@ -171,6 +180,8 @@ func (d *Distributor) extractFromChunk(ctx context.Context, chunk []ai.Message) 
 	}
 
 	chunkText := formatMessages(chunk)
+	pilog.Debug("minion/plural: extracting chunk (%d messages, %d chars) via %s",
+		len(chunk), len(chunkText), d.config.Model.ID)
 
 	llmCtx := &ai.Context{
 		System: extractSystemPrompt,
@@ -199,7 +210,9 @@ func (d *Distributor) extractFromChunk(ctx context.Context, chunk []ai.Message) 
 		return "", fmt.Errorf("local model stream completed without result")
 	}
 
-	return extractText(result), nil
+	text := extractText(result)
+	pilog.Debug("minion/plural: chunk extraction complete (%d chars)", len(text))
+	return text, nil
 }
 
 // aggregateExtracts combines multiple chunk extractions into a single summary.
