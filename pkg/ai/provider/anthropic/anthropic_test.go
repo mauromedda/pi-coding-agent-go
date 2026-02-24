@@ -41,7 +41,7 @@ func TestProviderStreamTextContent(t *testing.T) {
 		t.Errorf("got Api %q, want %q", provider.Api(), ai.ApiAnthropic)
 	}
 
-	model := &ai.ModelClaude4Sonnet
+	model := &ai.ModelClaudeSonnet
 	ctx := &ai.Context{
 		System:   "You are a helpful assistant.",
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
@@ -91,7 +91,7 @@ func TestProviderStreamToolUse(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	provider := New("test-key", srv.URL)
-	model := &ai.ModelClaude4Sonnet
+	model := &ai.ModelClaudeSonnet
 	ctx := &ai.Context{
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Weather in Paris?")},
 		Tools:    []ai.Tool{{Name: "get_weather", Description: "Get weather"}},
@@ -170,7 +170,7 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	provider := New("bad-key", srv.URL)
-	model := &ai.ModelClaude4Sonnet
+	model := &ai.ModelClaudeSonnet
 	ctx := &ai.Context{
 		Messages: []ai.Message{ai.NewTextMessage(ai.RoleUser, "Hi")},
 	}
@@ -198,13 +198,13 @@ func TestProviderStreamErrorResponse(t *testing.T) {
 func TestMessageStartPayload_EasyjsonRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	input := `{"message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":42,"output_tokens":0}}}`
+	input := `{"message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":42,"output_tokens":0}}}`
 	var payload messageStartPayload
 	if err := payload.UnmarshalJSON([]byte(input)); err != nil {
 		t.Fatalf("UnmarshalJSON error: %v", err)
 	}
-	if payload.Message.Model != "claude-sonnet-4-20250514" {
-		t.Errorf("model = %q; want %q", payload.Message.Model, "claude-sonnet-4-20250514")
+	if payload.Message.Model != "claude-sonnet-4-6" {
+		t.Errorf("model = %q; want %q", payload.Message.Model, "claude-sonnet-4-6")
 	}
 	if payload.Message.Usage.InputTokens != 42 {
 		t.Errorf("input_tokens = %d; want 42", payload.Message.Usage.InputTokens)
@@ -243,7 +243,7 @@ func TestContentBlockDeltaPayload_EasyjsonRoundTrip(t *testing.T) {
 // buildSSETextResponse constructs a realistic Anthropic SSE text streaming response.
 func buildSSETextResponse(text string) string {
 	return fmt.Sprintf(`event: message_start
-data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-6","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -269,7 +269,7 @@ data: {"type":"message_stop"}
 // buildSSEToolUseResponse constructs a realistic Anthropic SSE tool use response.
 func buildSSEToolUseResponse(toolID, toolName, toolInput string) string {
 	return fmt.Sprintf(`event: message_start
-data: {"type":"message_start","message":{"id":"msg_tool","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+data: {"type":"message_start","message":{"id":"msg_tool","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-6","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"%s","name":"%s","input":{}}}

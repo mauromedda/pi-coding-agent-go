@@ -57,8 +57,8 @@ func TestLookupPricing_PrefixMatch(t *testing.T) {
 		wantIn  float64
 		wantOut float64
 	}{
-		{"claude-sonnet-4-20250514", "claude-sonnet-4-20250514", 3.0, 15.0},
-		{"claude-opus-4-20250514", "claude-opus-4-20250514", 15.0, 75.0},
+		{"claude-sonnet-4-6", "claude-sonnet-4-6", 3.0, 15.0},
+		{"claude-opus-4-6", "claude-opus-4-6", 15.0, 75.0},
 		{"claude-haiku-3.5-20250101", "claude-haiku-3.5-20250101", 0.80, 4.0},
 		{"gpt-4o-2024-08-06", "gpt-4o-2024-08-06", 2.50, 10.0},
 		{"gpt-4o-mini-2024-07-18", "gpt-4o-mini-2024-07-18", 0.15, 0.60},

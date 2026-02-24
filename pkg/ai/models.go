@@ -5,9 +5,9 @@ package ai
 
 // Built-in model definitions.
 var (
-	ModelClaude4Opus = Model{
-		ID:               "claude-opus-4-20250514",
-		Name:             "Claude Opus 4",
+	ModelClaudeOpus = Model{
+		ID:               "claude-opus-4-6",
+		Name:             "Claude Opus 4.6",
 		Api:              ApiAnthropic,
 		MaxTokens:        200000,
 		MaxOutputTokens:  16384,
@@ -16,9 +16,9 @@ var (
 		SupportsThinking: true,
 	}
 
-	ModelClaude4Sonnet = Model{
-		ID:               "claude-sonnet-4-20250514",
-		Name:             "Claude Sonnet 4",
+	ModelClaudeSonnet = Model{
+		ID:               "claude-sonnet-4-6",
+		Name:             "Claude Sonnet 4.6",
 		Api:              ApiAnthropic,
 		MaxTokens:        200000,
 		MaxOutputTokens:  16384,
@@ -27,9 +27,9 @@ var (
 		SupportsThinking: true,
 	}
 
-	ModelClaude35Haiku = Model{
-		ID:               "claude-3-5-haiku-20241022",
-		Name:             "Claude 3.5 Haiku",
+	ModelClaudeHaiku = Model{
+		ID:               "claude-haiku-4-5-20251001",
+		Name:             "Claude Haiku 4.5",
 		Api:              ApiAnthropic,
 		MaxTokens:        200000,
 		MaxOutputTokens:  8192,
@@ -72,9 +72,9 @@ var (
 // BuiltinModels returns all built-in model definitions.
 func BuiltinModels() []Model {
 	return []Model{
-		ModelClaude4Opus,
-		ModelClaude4Sonnet,
-		ModelClaude35Haiku,
+		ModelClaudeOpus,
+		ModelClaudeSonnet,
+		ModelClaudeHaiku,
 		ModelGPT4o,
 		ModelGPT4oMini,
 		ModelGemini25Pro,

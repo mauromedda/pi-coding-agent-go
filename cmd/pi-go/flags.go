@@ -37,7 +37,7 @@ func parseFlags() cliArgs {
 	var args cliArgs
 
 	flag.BoolVar(&args.yolo, "yolo", false, "Skip all permission prompts")
-	flag.StringVar(&args.model, "model", "", "Model to use (e.g., claude-sonnet-4-20250514)")
+	flag.StringVar(&args.model, "model", "", "Model to use (e.g., claude-sonnet-4-6)")
 	flag.BoolVar(&args.plan, "plan", false, "Start in plan mode")
 	flag.BoolVar(&args.print, "print", false, "Non-interactive print mode")
 	flag.BoolVar(&args.thinking, "thinking", false, "Enable thinking/reasoning")

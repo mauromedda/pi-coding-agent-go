@@ -8,12 +8,12 @@ import "testing"
 func TestFindModel_Found(t *testing.T) {
 	t.Parallel()
 
-	m := FindModel("claude-opus-4-20250514")
+	m := FindModel("claude-opus-4-6")
 	if m == nil {
 		t.Fatal("expected non-nil model")
 	}
-	if m.Name != "Claude Opus 4" {
-		t.Errorf("Name = %q, want %q", m.Name, "Claude Opus 4")
+	if m.Name != "Claude Opus 4.6" {
+		t.Errorf("Name = %q, want %q", m.Name, "Claude Opus 4.6")
 	}
 }
 
@@ -28,6 +28,6 @@ func TestFindModel_NotFound(t *testing.T) {
 
 func BenchmarkFindModel(b *testing.B) {
 	for b.Loop() {
-		FindModel("claude-opus-4-20250514")
+		FindModel("claude-opus-4-6")
 	}
 }

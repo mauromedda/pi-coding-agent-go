@@ -1095,8 +1095,8 @@ func TestMinionSettings_Defaults(t *testing.T) {
 	if ms.IsEnabled() {
 		t.Error("nil MinionSettings should be disabled by default")
 	}
-	if ms.EffectiveModel() != "claude-3-5-haiku-20241022" {
-		t.Errorf("EffectiveModel = %q, want %q", ms.EffectiveModel(), "claude-3-5-haiku-20241022")
+	if ms.EffectiveModel() != "claude-haiku-4-5-20251001" {
+		t.Errorf("EffectiveModel = %q, want %q", ms.EffectiveModel(), "claude-haiku-4-5-20251001")
 	}
 	if ms.EffectiveMode() != "singular" {
 		t.Errorf("EffectiveMode = %q, want %q", ms.EffectiveMode(), "singular")
@@ -1131,7 +1131,7 @@ func TestMerge_MinionSettings(t *testing.T) {
 	global := &Settings{
 		Minion: &MinionSettings{
 			Enabled: &tr,
-			Model:   "claude-3-5-haiku-20241022",
+			Model:   "claude-haiku-4-5-20251001",
 		},
 	}
 	project := &Settings{
@@ -1148,8 +1148,8 @@ func TestMerge_MinionSettings(t *testing.T) {
 	if !result.Minion.IsEnabled() {
 		t.Error("Enabled should be preserved from global")
 	}
-	if result.Minion.Model != "claude-3-5-haiku-20241022" {
-		t.Errorf("Model = %q, want %q (from global)", result.Minion.Model, "claude-3-5-haiku-20241022")
+	if result.Minion.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("Model = %q, want %q (from global)", result.Minion.Model, "claude-haiku-4-5-20251001")
 	}
 	if result.Minion.Mode != "plural" {
 		t.Errorf("Mode = %q, want %q (from project)", result.Minion.Mode, "plural")
@@ -1267,7 +1267,7 @@ func TestLoadFile_MinionSettings(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
-	data := `{"minion":{"enabled":true,"model":"claude-3-5-haiku-20241022","mode":"singular"}}`
+	data := `{"minion":{"enabled":true,"model":"claude-haiku-4-5-20251001","mode":"singular"}}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1282,8 +1282,8 @@ func TestLoadFile_MinionSettings(t *testing.T) {
 	if !s.Minion.IsEnabled() {
 		t.Error("should be enabled")
 	}
-	if s.Minion.Model != "claude-3-5-haiku-20241022" {
-		t.Errorf("Model = %q, want %q", s.Minion.Model, "claude-3-5-haiku-20241022")
+	if s.Minion.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("Model = %q, want %q", s.Minion.Model, "claude-haiku-4-5-20251001")
 	}
 	if s.Minion.Mode != "singular" {
 		t.Errorf("Mode = %q, want %q", s.Minion.Mode, "singular")

@@ -119,7 +119,7 @@ func TestLoadPiCompat_ThinkingOn(t *testing.T) {
 	piDir := setupPiAgentDir(t,
 		`{
 			"defaultProvider": "anthropic",
-			"defaultModel": "claude-sonnet-4-20250514",
+			"defaultModel": "claude-sonnet-4-6",
 			"defaultThinkingLevel": "medium"
 		}`,
 		`{
