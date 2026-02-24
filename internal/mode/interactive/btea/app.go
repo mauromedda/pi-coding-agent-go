@@ -936,22 +936,29 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 			switch msg.Runes[0] {
 			case '/':
-				// Keep "/" in editor and open command palette
-				m.editor = m.editor.SetText("/")
+				// Forward '/' to editor so it appends to existing text
+				editorUpdated, editorCmd := m.editor.Update(msg)
+				m.editor = editorUpdated.(EditorModel)
 				m.overlay = m.buildCmdPalette()
-				return m, nil
+				return m, editorCmd
 			case '@':
+				// Forward '@' to editor so it appends to existing text
+				editorUpdated, editorCmd := m.editor.Update(msg)
+				m.editor = editorUpdated.(EditorModel)
 				fm := NewFileMentionModel(m.gitCWD)
 				fm.loading = true
 				fm.width = m.width
 				m.overlay = fm
-				m.editor = m.editor.SetText("@")
 				root := m.gitCWD
 				if root == "" {
 					cwd, _ := os.Getwd()
 					root = cwd
 				}
-				return m, scanProjectFilesCmd(root)
+				cmds := []tea.Cmd{scanProjectFilesCmd(root)}
+				if editorCmd != nil {
+					cmds = append(cmds, editorCmd)
+				}
+				return m, tea.Batch(cmds...)
 			}
 		}
 		// Route to editor
