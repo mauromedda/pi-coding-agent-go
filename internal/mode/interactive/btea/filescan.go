@@ -91,9 +91,9 @@ func scanDirFiles(root string) []FileInfo {
 			return nil
 		}
 
-		// Skip hidden directories and common noise
+		// Skip noise directories; allow dotfile dirs like .claude/ but skip .git/
 		name := d.Name()
-		if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "__pycache__" {
+		if name == ".git" || name == "node_modules" || name == "vendor" || name == "__pycache__" {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

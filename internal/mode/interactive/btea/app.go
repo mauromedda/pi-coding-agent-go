@@ -889,30 +889,27 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Check for "/" to open command palette
+		// Check for "/" to open command palette and "@" for file mention.
+		// Overlays open even while agent is running so the user can compose queued prompts.
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 			switch msg.Runes[0] {
 			case '/':
-				if !m.agentRunning {
-					// Keep "/" in editor and open command palette
-					m.editor = m.editor.SetText("/")
-					m.overlay = m.buildCmdPalette()
-					return m, nil
-				}
+				// Keep "/" in editor and open command palette
+				m.editor = m.editor.SetText("/")
+				m.overlay = m.buildCmdPalette()
+				return m, nil
 			case '@':
-				if !m.agentRunning {
-					fm := NewFileMentionModel(m.gitCWD)
-					fm.loading = true
-					fm.width = m.width
-					m.overlay = fm
-					m.editor = m.editor.SetText("@")
-					root := m.gitCWD
-					if root == "" {
-						cwd, _ := os.Getwd()
-						root = cwd
-					}
-					return m, scanProjectFilesCmd(root)
+				fm := NewFileMentionModel(m.gitCWD)
+				fm.loading = true
+				fm.width = m.width
+				m.overlay = fm
+				m.editor = m.editor.SetText("@")
+				root := m.gitCWD
+				if root == "" {
+					cwd, _ := os.Getwd()
+					root = cwd
 				}
+				return m, scanProjectFilesCmd(root)
 			}
 		}
 		// Route to editor

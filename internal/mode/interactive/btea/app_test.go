@@ -645,6 +645,40 @@ func TestAppModel_AtKeyOpensFileMention(t *testing.T) {
 	}
 }
 
+func TestAppModel_SlashOpensOverlayWhileAgentRunning(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.agentRunning = true
+
+	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+
+	// Overlay should open even while agent is running, so user can compose queued prompt
+	if model.overlay == nil {
+		t.Fatal("overlay = nil; want CmdPaletteModel even while agent running")
+	}
+	if _, ok := model.overlay.(CmdPaletteModel); !ok {
+		t.Errorf("overlay = %T; want CmdPaletteModel", model.overlay)
+	}
+}
+
+func TestAppModel_AtOpensOverlayWhileAgentRunning(t *testing.T) {
+	m := NewAppModel(testDeps())
+	m.agentRunning = true
+
+	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}}
+	result, _ := m.Update(key)
+	model := result.(AppModel)
+
+	// Overlay should open even while agent is running, so user can compose queued prompt
+	if model.overlay == nil {
+		t.Fatal("overlay = nil; want FileMentionModel even while agent running")
+	}
+	if _, ok := model.overlay.(FileMentionModel); !ok {
+		t.Errorf("overlay = %T; want FileMentionModel", model.overlay)
+	}
+}
+
 func TestAppModel_EnterWhileRunningEnqueues(t *testing.T) {
 	m := NewAppModel(testDeps())
 	m.agentRunning = true
