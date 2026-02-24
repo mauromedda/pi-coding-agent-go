@@ -293,7 +293,7 @@ func (m AppModel) applyEffects(effects *cmdSideEffects, result string) (tea.Mode
 func (m AppModel) lastAssistantText() string {
 	for i := len(m.content) - 1; i >= 0; i-- {
 		if am, ok := m.content[i].(*AssistantMsgModel); ok {
-			return am.text.String()
+			return am.Text()
 		}
 	}
 	return ""

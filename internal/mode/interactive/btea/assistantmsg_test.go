@@ -142,9 +142,9 @@ func TestAssistantMsgModel_AgentErrorMsg(t *testing.T) {
 	if !strings.Contains(view, "connection lost") {
 		t.Errorf("View() should contain error text; got %q", view)
 	}
-	// Should NOT be embedded as plain text in the text builder
-	if strings.Contains(m1.text.String(), "connection lost") {
-		t.Error("error should not be in text builder; should be in errors slice")
+	// Should NOT be embedded as plain text in the text accumulator
+	if strings.Contains(m1.Text(), "connection lost") {
+		t.Error("error should not be in text; should be in errors slice")
 	}
 }
 
@@ -284,12 +284,15 @@ func TestAssistantMsgModel_CachedWrapInvalidatesOnWidthChange(t *testing.T) {
 	updated, _ := m.Update(AgentTextMsg{Text: "Hello world this is some text"})
 	m1 := updated.(*AssistantMsgModel)
 
-	// First render caches
+	// First render caches (per-block)
 	_ = m1.View()
-	if m1.cachedWidth != 80 {
-		t.Errorf("cachedWidth = %d; want 80", m1.cachedWidth)
+	if len(m1.blocks) == 0 {
+		t.Fatal("expected at least one content block")
 	}
-	if len(m1.cachedLines) == 0 {
+	if m1.blocks[0].cachedWidth != 80 {
+		t.Errorf("cachedWidth = %d; want 80", m1.blocks[0].cachedWidth)
+	}
+	if len(m1.blocks[0].cachedLines) == 0 {
 		t.Error("cachedLines should be populated after View()")
 	}
 
@@ -297,8 +300,8 @@ func TestAssistantMsgModel_CachedWrapInvalidatesOnWidthChange(t *testing.T) {
 	updated2, _ := m1.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
 	m2 := updated2.(*AssistantMsgModel)
 	_ = m2.View()
-	if m2.cachedWidth != 40 {
-		t.Errorf("cachedWidth after resize = %d; want 40", m2.cachedWidth)
+	if m2.blocks[0].cachedWidth != 40 {
+		t.Errorf("cachedWidth after resize = %d; want 40", m2.blocks[0].cachedWidth)
 	}
 }
 
@@ -309,7 +312,6 @@ func TestAssistantMsgModel_CachedWrapInvalidatesOnNewText(t *testing.T) {
 	updated, _ := m.Update(AgentTextMsg{Text: "First"})
 	m1 := updated.(*AssistantMsgModel)
 	_ = m1.View()
-	oldLen := len(m1.cachedLines)
 
 	// Add more text: cache should update
 	updated2, _ := m1.Update(AgentTextMsg{Text: " Second"})
@@ -317,12 +319,113 @@ func TestAssistantMsgModel_CachedWrapInvalidatesOnNewText(t *testing.T) {
 	_ = m2.View()
 
 	// New text should produce different or longer cached lines
-	if m2.text.String() != "First Second" {
-		t.Errorf("text = %q; want %q", m2.text.String(), "First Second")
+	if m2.Text() != "First Second" {
+		t.Errorf("text = %q; want %q", m2.Text(), "First Second")
 	}
-	// Cache should have been refreshed (at minimum, not stale)
-	if len(m2.cachedLines) == 0 {
+	// Cache should have been refreshed (per-block)
+	if len(m2.blocks) == 0 {
+		t.Fatal("expected at least one content block")
+	}
+	if len(m2.blocks[0].cachedLines) == 0 {
 		t.Error("cachedLines should not be empty after new text")
 	}
-	_ = oldLen // used for reasoning; exact count depends on wrapping
+}
+
+func TestAssistantMsgModel_KeyMsgForwardedToToolCalls(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	// Add a completed tool call
+	updated, _ := m.Update(AgentToolStartMsg{ToolID: "t1", ToolName: "Read", Args: map[string]any{}})
+	m1 := updated.(*AssistantMsgModel)
+	updated2, _ := m1.Update(AgentToolEndMsg{
+		ToolID: "t1",
+		Text:   "file contents",
+		Result: &agent.ToolResult{Content: "file contents"},
+	})
+	m2 := updated2.(*AssistantMsgModel)
+
+	if m2.toolCalls[0].expanded {
+		t.Fatal("tool call should start collapsed")
+	}
+
+	// Send Ctrl+O key message; should propagate and toggle expand
+	updated3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m3 := updated3.(*AssistantMsgModel)
+
+	if !m3.toolCalls[0].expanded {
+		t.Error("Ctrl+O should toggle tool call expanded via KeyMsg forwarding")
+	}
+}
+
+func TestAssistantMsgModel_InterleavingOrder(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	// Sequence: text → tool → text
+	updated, _ := m.Update(AgentTextMsg{Text: "Before tool."})
+	m1 := updated.(*AssistantMsgModel)
+
+	updated2, _ := m1.Update(AgentToolStartMsg{
+		ToolID:   "t1",
+		ToolName: "Read",
+		Args:     map[string]any{"path": "/tmp"},
+	})
+	m2 := updated2.(*AssistantMsgModel)
+
+	updated3, _ := m2.Update(AgentToolEndMsg{
+		ToolID: "t1",
+		Text:   "file contents",
+		Result: &agent.ToolResult{Content: "file contents"},
+	})
+	m3 := updated3.(*AssistantMsgModel)
+
+	updated4, _ := m3.Update(AgentTextMsg{Text: "After tool."})
+	m4 := updated4.(*AssistantMsgModel)
+
+	view := m4.View()
+
+	// "Before tool." must appear BEFORE the tool call box
+	// "After tool." must appear AFTER the tool call box
+	beforeIdx := strings.Index(view, "Before tool.")
+	toolIdx := strings.Index(view, "Read")
+	afterIdx := strings.Index(view, "After tool.")
+
+	if beforeIdx == -1 {
+		t.Fatal("View() missing 'Before tool.' text")
+	}
+	if toolIdx == -1 {
+		t.Fatal("View() missing tool call render")
+	}
+	if afterIdx == -1 {
+		t.Fatal("View() missing 'After tool.' text")
+	}
+
+	if beforeIdx >= toolIdx {
+		t.Errorf("'Before tool.' (idx %d) should appear before tool call (idx %d)", beforeIdx, toolIdx)
+	}
+	if afterIdx <= toolIdx {
+		t.Errorf("'After tool.' (idx %d) should appear after tool call (idx %d)", afterIdx, toolIdx)
+	}
+}
+
+func TestAssistantMsgModel_TextMethodConcatenatesBlocks(t *testing.T) {
+	m := &AssistantMsgModel{}
+	m.width = 80
+
+	updated, _ := m.Update(AgentTextMsg{Text: "Part1 "})
+	m1 := updated.(*AssistantMsgModel)
+
+	updated2, _ := m1.Update(AgentToolStartMsg{
+		ToolID: "t1", ToolName: "Bash", Args: map[string]any{},
+	})
+	m2 := updated2.(*AssistantMsgModel)
+
+	updated3, _ := m2.Update(AgentTextMsg{Text: "Part2"})
+	m3 := updated3.(*AssistantMsgModel)
+
+	got := m3.Text()
+	if got != "Part1 Part2" {
+		t.Errorf("Text() = %q; want %q", got, "Part1 Part2")
+	}
 }

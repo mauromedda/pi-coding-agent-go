@@ -172,7 +172,7 @@ func TestApplyEffects_ResultShowsAssistantMsg(t *testing.T) {
 	if !ok {
 		t.Fatal("expected last content to be *AssistantMsgModel")
 	}
-	if last.text.String() == "" {
+	if last.Text() == "" {
 		t.Error("expected assistant message to contain result text")
 	}
 }
