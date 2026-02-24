@@ -112,6 +112,8 @@ type EditorModel struct {
 	ghostText      string    // dimmed completion shown after cursor
 	oscSuppressing bool      // true while dropping OSC response runes
 	oscGuardArmed  bool      // true after ESC during suppression, awaiting '\' for split ST
+	oscEscPending  bool      // true after bare ESC; if ']' follows within timeout, enter suppression
+	oscEscPendingAt time.Time // when oscEscPending was set
 	lastEscAt      time.Time // when OSC suppression started (for timeout)
 }
 
@@ -251,6 +253,14 @@ func (m EditorModel) IsOSCSuppressing() bool {
 	return m.oscSuppressing
 }
 
+// IsOSCEscPending returns true when the editor received a bare ESC that
+// might be the start of a split \x1b] OSC sequence. Used by the app layer
+// to avoid letting overlays consume the ESC before the editor can check
+// whether ']' follows.
+func (m EditorModel) IsOSCEscPending() bool {
+	return m.oscEscPending
+}
+
 // GhostText returns the current ghost text.
 func (m EditorModel) GhostText() string {
 	return m.ghostText
@@ -274,6 +284,30 @@ func (m EditorModel) LineCount() int {
 const oscSuppressionTimeout = 50 * time.Millisecond
 
 func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
+	// --- Split ESC detection ---
+	//
+	// When BubbleTea's input parser receives \x1b] in separate reads,
+	// \x1b becomes KeyEscape and ] becomes a plain KeyRunes. We detect
+	// this by arming a pending flag on bare KeyEscape and checking the
+	// next message for ']'.
+	if m.oscEscPending {
+		m.oscEscPending = false
+		if time.Since(m.oscEscPendingAt) <= oscSuppressionTimeout {
+			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == ']' {
+				// Split \x1b] detected: enter OSC suppression
+				m.oscSuppressing = true
+				m.lastEscAt = time.Now()
+				return
+			}
+			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && msg.Runes[0] == '\\' {
+				// Split ST (\x1b\) during suppression: drop
+				m.oscSuppressing = false
+				return
+			}
+		}
+		// Not an OSC sequence: fall through to normal processing
+	}
+
 	// --- OSC response suppression state machine ---
 	//
 	// BubbleTea v1.3.10's init() triggers OSC 10/11 terminal queries via
@@ -379,6 +413,11 @@ func (m *EditorModel) dispatchKey(msg tea.KeyMsg) {
 		m.doUndo()
 	case tea.KeyCtrlV:
 		m.pasteImage()
+	case tea.KeyEscape:
+		// Arm split-ESC guard: if ']' follows within the timeout,
+		// it's an OSC start (\x1b]) that was split across reads.
+		m.oscEscPending = true
+		m.oscEscPendingAt = time.Now()
 	}
 }
 

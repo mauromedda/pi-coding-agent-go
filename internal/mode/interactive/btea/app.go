@@ -760,6 +760,10 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.abortAgent()
 			return m, func() tea.Msg { return AgentCancelMsg{} }
 		}
+		// Forward to editor so the split-ESC guard can detect \x1b]
+		// arriving as separate KeyEscape + ']' messages.
+		editorUpdated, _ := m.editor.Update(msg)
+		m.editor = editorUpdated.(EditorModel)
 		return m, nil
 
 	case "ctrl+l":

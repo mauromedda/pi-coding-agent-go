@@ -773,3 +773,99 @@ func TestEditorModel_IsOSCSuppressing(t *testing.T) {
 		}
 	})
 }
+
+func TestEditorModel_SplitEscBracket_SuppressesOSC(t *testing.T) {
+	// When BubbleTea's input parser splits \x1b] across two reads,
+	// ESC arrives as KeyEscape and ] arrives as plain KeyRunes.
+	// The editor must detect this split pattern and enter OSC suppression.
+	t.Run("split ESC then ] enters suppression", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// ESC arrives (split from \x1b])
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+
+		// ] arrives immediately after
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+		m = updated.(EditorModel)
+
+		if !m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = false; want true after split ESC + ]")
+		}
+		// ] should NOT be inserted
+		if m.Text() != "" {
+			t.Errorf("Text() = %q; want empty (] should be suppressed)", m.Text())
+		}
+	})
+
+	t.Run("split ESC then ] then body then ST leaves no garbage", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// Full OSC sequence via split path:
+		// ESC (split)
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+		// ] (split)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+		m = updated.(EditorModel)
+		// body
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("11;rgb:ff/ff/ff")})
+		m = updated.(EditorModel)
+		// ST terminator (also split): ESC + backslash
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}})
+		m = updated.(EditorModel)
+
+		if m.IsOSCSuppressing() {
+			t.Error("IsOSCSuppressing() = true; want false after full sequence")
+		}
+		if m.Text() != "" {
+			t.Errorf("Text() = %q; want empty (full OSC should be suppressed)", m.Text())
+		}
+	})
+
+	t.Run("ESC not followed by ] within timeout processes normally", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// ESC arrives
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+
+		// Simulate timeout by backdating the pending timestamp
+		m.oscEscPendingAt = m.oscEscPendingAt.Add(-100 * time.Millisecond)
+
+		// Now a normal 'a' arrives
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		m = updated.(EditorModel)
+
+		// 'a' should be inserted normally
+		if m.Text() != "a" {
+			t.Errorf("Text() = %q; want %q", m.Text(), "a")
+		}
+	})
+
+	t.Run("ESC followed by non-bracket char does not suppress", func(t *testing.T) {
+		m := NewEditorModel()
+		m.width = 80
+
+		// ESC arrives
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		m = updated.(EditorModel)
+
+		// 'x' arrives (not ']')
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		m = updated.(EditorModel)
+
+		if m.IsOSCSuppressing() {
+			t.Error("should NOT be suppressing after ESC + 'x'")
+		}
+		// 'x' should be inserted normally
+		if m.Text() != "x" {
+			t.Errorf("Text() = %q; want %q", m.Text(), "x")
+		}
+	})
+}
