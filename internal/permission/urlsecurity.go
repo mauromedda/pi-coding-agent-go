@@ -4,6 +4,7 @@
 package permission
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -119,13 +120,10 @@ func (v *URLValidator) validateHost(host string) error {
 		return fmt.Errorf("missing host")
 	}
 
-	// Remove port if present
+	// Remove port if present (handles IPv6 bracket notation correctly)
 	hostname := host
-	if colonPos := strings.LastIndex(host, ":"); colonPos > 0 {
-		// Make sure it's a port, not IPv6
-		if !strings.Contains(host[:colonPos], "]") {
-			hostname = host[:colonPos]
-		}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		hostname = h
 	}
 
 	hostname = strings.ToLower(hostname)
@@ -166,7 +164,10 @@ func (v *URLValidator) validateHost(host string) error {
 	return fmt.Errorf("host %q not in allowlist", hostname)
 }
 
-// validateDomainIPs resolves domain and validates all resolved IPs
+// validateDomainIPs resolves domain and validates all resolved IPs.
+// NOTE: This is a best-effort check at validation time. For production SSRF
+// defense, use SafeDialContext in the HTTP transport to pin DNS resolution
+// at connection time (prevents DNS rebinding / TOCTOU attacks).
 func (v *URLValidator) validateDomainIPs(domain string) error {
 	ips, err := net.LookupIP(domain)
 	if err != nil {
@@ -259,6 +260,47 @@ func (v *URLValidator) AddBlockedHost(host string) {
 		}
 	}
 	v.blockedHosts = append(v.blockedHosts, host)
+}
+
+// SafeDialContext returns a DialContext function that resolves DNS and validates
+// all resolved IPs against blocked CIDRs before connecting. Use this in an
+// http.Transport to prevent DNS rebinding attacks (TOCTOU between ValidateURL
+// and the actual connection).
+func (v *URLValidator) SafeDialContext() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address: %w", err)
+		}
+
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS resolution failed for %s: %w", host, err)
+		}
+
+		// Validate all resolved IPs before attempting to connect.
+		for _, ipAddr := range ips {
+			for _, blocked := range v.blockedCIDRs {
+				if blocked.Contains(ipAddr.IP) {
+					return nil, fmt.Errorf("resolved IP %s is in blocked range %s", ipAddr.IP, blocked)
+				}
+			}
+		}
+
+		// Connect to the first reachable IP.
+		var dialer net.Dialer
+		var lastErr error
+		for _, ipAddr := range ips {
+			target := net.JoinHostPort(ipAddr.IP.String(), port)
+			conn, dialErr := dialer.DialContext(ctx, network, target)
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+		}
+
+		return nil, fmt.Errorf("failed to connect to any resolved IP for %s: %w", host, lastErr)
+	}
 }
 
 // ValidateHTTPURL is a convenience method for validating HTTP URLs

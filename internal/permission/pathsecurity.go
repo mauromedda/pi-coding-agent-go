@@ -69,12 +69,13 @@ func (v *SecurePathValidator) ValidateWritePath(path string) error {
 		return err
 	}
 	
-	// Don't allow writing to system directories
+	// Don't allow writing to system directories.
+	// Use trailing separator to prevent false positives: "/etc" must not match "/etc-config/".
 	systemPaths := []string{"/etc", "/usr", "/bin", "/sbin", "/boot", "/proc", "/sys"}
 	absPath, _ := filepath.Abs(path)
-	
+
 	for _, syspath := range systemPaths {
-		if strings.HasPrefix(absPath, syspath) {
+		if absPath == syspath || strings.HasPrefix(absPath, syspath+string(filepath.Separator)) {
 			return fmt.Errorf("write access denied to system directory: %s", path)
 		}
 	}

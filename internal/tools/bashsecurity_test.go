@@ -101,6 +101,23 @@ func TestValidateBashCommand(t *testing.T) {
 			errorMsg:    "too long",
 		},
 		{
+			name:        "newline injection bypasses primary command check",
+			command:     "echo safe\nrm -rf /",
+			expectError: true,
+			errorMsg:    "embedded newline",
+		},
+		{
+			name:        "background operator runs hidden command",
+			command:     "echo safe & rm -rf /",
+			expectError: true,
+			errorMsg:    "not allowed",
+		},
+		{
+			name:        "background operator with safe commands",
+			command:     "echo hello & echo world",
+			expectError: false,
+		},
+		{
 			name:        "find with exec rm (dangerous)",
 			command:     "find . -name '*.tmp' -exec rm {} \\;",
 			expectError: true,

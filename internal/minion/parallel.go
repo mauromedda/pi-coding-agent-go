@@ -124,8 +124,12 @@ func hasToolResultContent(msg ai.Message) bool {
 }
 
 // processChunksParallel sends each chunk to the local model concurrently,
-// capped at MaxWorkers.
+// capped at MaxWorkers. On the first error, remaining goroutines are cancelled
+// via a derived context to avoid wasting resources.
 func (d *Distributor) processChunksParallel(ctx context.Context, chunks [][]ai.Message) ([]string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	extracts := make([]string, len(chunks))
 	errs := make([]error, len(chunks))
 
@@ -152,6 +156,7 @@ func (d *Distributor) processChunksParallel(ctx context.Context, chunks [][]ai.M
 			extract, err := d.extractFromChunk(ctx, chunk)
 			if err != nil {
 				errs[idx] = err
+				cancel() // Cancel remaining goroutines on first error
 				return
 			}
 			extracts[idx] = extract
@@ -160,14 +165,22 @@ func (d *Distributor) processChunksParallel(ctx context.Context, chunks [][]ai.M
 
 	wg.Wait()
 
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	// Return the first non-cancellation error (the real cause).
+	for _, err := range errs {
+		if err != nil && err != context.Canceled {
+			return nil, err
+		}
 	}
-
+	// If only context errors remain, return the first.
 	for _, err := range errs {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// If no goroutines ran (e.g. parent context already cancelled), report it.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	return extracts, nil

@@ -157,6 +157,13 @@ func validateBashCommand(command string) error {
 		return fmt.Errorf("command too long (max 10000 characters)")
 	}
 
+	// Block embedded newlines: multi-line commands can bypass the primary
+	// command check because strings.Fields splits across lines, hiding
+	// dangerous commands after the first line.
+	if strings.Contains(command, "\n") {
+		return fmt.Errorf("command contains embedded newline")
+	}
+
 	// Check for dangerous patterns
 	for _, pattern := range dangerousPatterns {
 		if pattern.MatchString(command) {
@@ -234,7 +241,9 @@ func validatePipelineCommands(command string) error {
 	return nil
 }
 
-var pipelineSplitter = regexp.MustCompile(`\s*(?:\|{1,2}|&&)\s*`)
+// pipelineSplitter splits on pipe (|, ||), logical AND (&&), and background (&).
+// Alternatives are ordered longest-first so && is consumed before &.
+var pipelineSplitter = regexp.MustCompile(`\s*(?:\|{1,2}|&&|&)\s*`)
 
 // isShellBuiltin checks if a command is a shell builtin
 func isShellBuiltin(cmd string) bool {
