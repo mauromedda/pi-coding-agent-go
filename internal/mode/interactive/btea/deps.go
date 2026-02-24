@@ -29,4 +29,5 @@ type AppDeps struct {
 	Session              *session.Session
 	AvailableModels      []ModelEntry
 	WorktreeSession      *git.SessionWorktree
+	MinionTransform      agent.TransformContextFunc // optional context distillation
 }

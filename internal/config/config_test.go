@@ -718,13 +718,13 @@ func TestPersonalityCheck_IsEnabled(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		check   PersonalityCheck
-		want    bool
+		name  string
+		check PersonalityCheck
+		want  bool
 	}{
 		{"nil enabled defaults to true", PersonalityCheck{}, true},
-		{"enabled true", PersonalityCheck{Enabled: boolPtr(true)}, true},
-		{"enabled false", PersonalityCheck{Enabled: boolPtr(false)}, false},
+		{"enabled true", PersonalityCheck{Enabled: new(true)}, true},
+		{"enabled false", PersonalityCheck{Enabled: new(false)}, false},
 	}
 
 	for _, tt := range tests {
@@ -1037,7 +1037,7 @@ func TestWorktreeSettings_IsEnabled_NilEnabled(t *testing.T) {
 
 func TestWorktreeSettings_IsEnabled_True(t *testing.T) {
 	t.Parallel()
-	ws := &WorktreeSettings{Enabled: boolPtr(true)}
+	ws := &WorktreeSettings{Enabled: new(true)}
 	if !ws.IsEnabled() {
 		t.Error("WorktreeSettings{Enabled: true} should be enabled")
 	}
@@ -1045,7 +1045,7 @@ func TestWorktreeSettings_IsEnabled_True(t *testing.T) {
 
 func TestWorktreeSettings_IsEnabled_False(t *testing.T) {
 	t.Parallel()
-	ws := &WorktreeSettings{Enabled: boolPtr(false)}
+	ws := &WorktreeSettings{Enabled: new(false)}
 	if ws.IsEnabled() {
 		t.Error("WorktreeSettings{Enabled: false} should be disabled")
 	}
@@ -1054,8 +1054,8 @@ func TestWorktreeSettings_IsEnabled_False(t *testing.T) {
 func TestMerge_Worktree(t *testing.T) {
 	t.Parallel()
 
-	global := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(true)}}
-	project := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(false)}}
+	global := &Settings{Worktree: &WorktreeSettings{Enabled: new(true)}}
+	project := &Settings{Worktree: &WorktreeSettings{Enabled: new(false)}}
 
 	result := merge(global, project)
 	if result.Worktree == nil {
@@ -1069,7 +1069,7 @@ func TestMerge_Worktree(t *testing.T) {
 func TestMerge_Worktree_NilProject(t *testing.T) {
 	t.Parallel()
 
-	global := &Settings{Worktree: &WorktreeSettings{Enabled: boolPtr(true)}}
+	global := &Settings{Worktree: &WorktreeSettings{Enabled: new(true)}}
 	project := &Settings{}
 
 	result := merge(global, project)
@@ -1079,6 +1079,213 @@ func TestMerge_Worktree_NilProject(t *testing.T) {
 }
 
 // boolPtr is a test helper that returns a pointer to a bool value.
+//
+//go:fix inline
 func boolPtr(b bool) *bool {
-	return &b
+	return new(b)
+}
+
+// --- MinionSettings tests ---
+
+func TestMinionSettings_Defaults(t *testing.T) {
+	t.Parallel()
+
+	var ms *MinionSettings // nil
+
+	if ms.IsEnabled() {
+		t.Error("nil MinionSettings should be disabled by default")
+	}
+	if ms.EffectiveModel() != "claude-3-5-haiku-20241022" {
+		t.Errorf("EffectiveModel = %q, want %q", ms.EffectiveModel(), "claude-3-5-haiku-20241022")
+	}
+	if ms.EffectiveMode() != "singular" {
+		t.Errorf("EffectiveMode = %q, want %q", ms.EffectiveMode(), "singular")
+	}
+}
+
+func TestMinionSettings_CustomValues(t *testing.T) {
+	t.Parallel()
+
+	tr := true
+	ms := &MinionSettings{
+		Enabled: &tr,
+		Model:   "llama3.2:8b",
+		Mode:    "plural",
+	}
+
+	if !ms.IsEnabled() {
+		t.Error("should be enabled")
+	}
+	if ms.EffectiveModel() != "llama3.2:8b" {
+		t.Errorf("EffectiveModel = %q, want %q", ms.EffectiveModel(), "llama3.2:8b")
+	}
+	if ms.EffectiveMode() != "plural" {
+		t.Errorf("EffectiveMode = %q, want %q", ms.EffectiveMode(), "plural")
+	}
+}
+
+func TestMerge_MinionSettings(t *testing.T) {
+	t.Parallel()
+
+	tr := true
+	global := &Settings{
+		Minion: &MinionSettings{
+			Enabled: &tr,
+			Model:   "claude-3-5-haiku-20241022",
+		},
+	}
+	project := &Settings{
+		Minion: &MinionSettings{
+			Mode: "plural",
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Minion == nil {
+		t.Fatal("Minion should be set")
+	}
+	if !result.Minion.IsEnabled() {
+		t.Error("Enabled should be preserved from global")
+	}
+	if result.Minion.Model != "claude-3-5-haiku-20241022" {
+		t.Errorf("Model = %q, want %q (from global)", result.Minion.Model, "claude-3-5-haiku-20241022")
+	}
+	if result.Minion.Mode != "plural" {
+		t.Errorf("Mode = %q, want %q (from project)", result.Minion.Mode, "plural")
+	}
+}
+
+func TestMerge_MinionSettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	global := &Settings{
+		Minion: &MinionSettings{
+			Enabled: &enabled,
+			Model:   "llama3:8b",
+		},
+	}
+	project := &Settings{
+		Minion: &MinionSettings{
+			Model: "mistral:7b",
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Minion.Model != "mistral:7b" {
+		t.Errorf("expected mistral:7b, got %s", result.Minion.Model)
+	}
+	// global must not be mutated
+	if global.Minion.Model != "llama3:8b" {
+		t.Errorf("global.Minion was mutated: Model = %s", global.Minion.Model)
+	}
+}
+
+func TestMerge_TelemetrySettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	global := &Settings{
+		Telemetry: &TelemetrySettings{
+			Enabled:   &enabled,
+			BudgetUSD: 10.0,
+		},
+	}
+	project := &Settings{
+		Telemetry: &TelemetrySettings{
+			BudgetUSD: 50.0,
+		},
+	}
+
+	result := merge(global, project)
+
+	if result.Telemetry.BudgetUSD != 50.0 {
+		t.Errorf("expected 50.0, got %f", result.Telemetry.BudgetUSD)
+	}
+	// global must not be mutated
+	if global.Telemetry.BudgetUSD != 10.0 {
+		t.Errorf("global.Telemetry was mutated: BudgetUSD = %f", global.Telemetry.BudgetUSD)
+	}
+}
+
+func TestMerge_SafetySettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	global := &Settings{
+		Safety: &SafetySettings{
+			NeverModify: []string{"/etc/passwd"},
+		},
+	}
+	project := &Settings{
+		Safety: &SafetySettings{
+			NeverModify: []string{"/etc/shadow"},
+		},
+	}
+
+	result := merge(global, project)
+
+	if len(result.Safety.NeverModify) != 2 {
+		t.Errorf("expected 2 NeverModify entries, got %d", len(result.Safety.NeverModify))
+	}
+	// global must not be mutated
+	if len(global.Safety.NeverModify) != 1 || global.Safety.NeverModify[0] != "/etc/passwd" {
+		t.Errorf("global.Safety was mutated: NeverModify = %v", global.Safety.NeverModify)
+	}
+}
+
+func TestMerge_WorktreeSettings_NoAliasing(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	global := &Settings{
+		Worktree: &WorktreeSettings{
+			Enabled: &enabled,
+		},
+	}
+	disabled := false
+	project := &Settings{
+		Worktree: &WorktreeSettings{
+			Enabled: &disabled,
+		},
+	}
+
+	result := merge(global, project)
+
+	if *result.Worktree.Enabled != false {
+		t.Error("expected Worktree.Enabled = false from project")
+	}
+	// global must not be mutated
+	if *global.Worktree.Enabled != true {
+		t.Error("global.Worktree was mutated: Enabled should still be true")
+	}
+}
+
+func TestLoadFile_MinionSettings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	data := `{"minion":{"enabled":true,"model":"claude-3-5-haiku-20241022","mode":"singular"}}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Minion == nil {
+		t.Fatal("Minion should be set")
+	}
+	if !s.Minion.IsEnabled() {
+		t.Error("should be enabled")
+	}
+	if s.Minion.Model != "claude-3-5-haiku-20241022" {
+		t.Errorf("Model = %q, want %q", s.Minion.Model, "claude-3-5-haiku-20241022")
+	}
+	if s.Minion.Mode != "singular" {
+		t.Errorf("Mode = %q, want %q", s.Minion.Mode, "singular")
+	}
 }
