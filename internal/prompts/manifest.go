@@ -35,8 +35,8 @@ func (m *Manifest) IsCompatible(modelID string) bool {
 		return false
 	}
 	for _, pattern := range m.CompatibleModels {
-		if strings.HasSuffix(pattern, "*") {
-			prefix := strings.TrimSuffix(pattern, "*")
+		if before, ok := strings.CutSuffix(pattern, "*"); ok {
+			prefix := before
 			if strings.HasPrefix(modelID, prefix) {
 				return true
 			}
