@@ -1,0 +1,22 @@
+version: "v1.1.0"
+description: "Modular prompt with core fragments"
+compatible_models:
+  - "claude-*"
+  - "gpt-*"
+  - "gemini-*"
+composition_order:
+  - "system.md"
+  - "core/tool-usage.md"
+  - "core/file-operations.md"
+  - "core/code-quality.md"
+  - "core/error-recovery.md"
+  - "core/safety.md"
+  - "core/git-protocol.md"
+  - "core/communication.md"
+  - "modes/{{MODE}}.md"
+variables:
+  MODE: "execute"
+  LANGUAGE: ""
+  TOOL_LIST: ""
+  DATE: ""
+  CWD: ""
