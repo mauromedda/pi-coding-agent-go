@@ -40,6 +40,12 @@ type CacheControl struct {
 	Type string `json:"type"`
 }
 
+// ImageContent carries a base64-encoded image through the message pipeline.
+type ImageContent struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"` // base64-encoded
+}
+
 // Content represents a content block within a message.
 type Content struct {
 	Type         ContentType     `json:"type"`
@@ -53,6 +59,7 @@ type Content struct {
 	Data         string          `json:"data,omitempty"`          // Base64 image data
 	Thinking     string          `json:"thinking,omitempty"`      // Extended thinking text
 	CacheControl *CacheControl   `json:"cache_control,omitempty"` // Provider caching hint
+	Images       []ImageContent  `json:"images,omitempty"`        // Images attached to tool results
 }
 
 // Message represents a conversation message.
