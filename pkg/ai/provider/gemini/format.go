@@ -9,9 +9,16 @@ type Content struct {
 	Parts []Part `json:"parts"`
 }
 
+// InlineData carries base64-encoded binary data within a Gemini Part.
+type InlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
+}
+
 // Part represents a single part within a content block.
 type Part struct {
 	Text             string            `json:"text,omitempty"`
+	InlineData       *InlineData       `json:"inlineData,omitempty"`
 	FunctionCall     *FunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *FunctionResponse `json:"functionResponse,omitempty"`
 }
