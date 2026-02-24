@@ -589,6 +589,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.editor = editorUpdated.(EditorModel)
 						editorCmd = cmd
 					}
+					// Dismiss overlay when trigger character is deleted
+					if keyMsg.Type == tea.KeyBackspace {
+						text := m.editor.Text()
+						trigger := overlayTriggerChar(m.overlay)
+						if trigger != 0 && !strings.ContainsRune(text, trigger) {
+							m.overlay = nil
+							m.editor = m.editor.SetFocused(true)
+							return m, editorCmd
+						}
+					}
 					// Forward BEL to editor only when actively suppressing an OSC
 					// body. BEL (Ctrl+G) terminates OSC responses but has no role
 					// in the split-ESC detection that only needs ESC.
@@ -1388,6 +1398,19 @@ func isDropdownOverlay(overlay tea.Model) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// overlayTriggerChar returns the character that opened a dropdown overlay.
+// Returns 0 if the overlay type has no trigger character.
+func overlayTriggerChar(overlay tea.Model) rune {
+	switch overlay.(type) {
+	case FileMentionModel:
+		return '@'
+	case CmdPaletteModel:
+		return '/'
+	default:
+		return 0
 	}
 }
 
