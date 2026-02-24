@@ -1415,10 +1415,10 @@ func overlayTriggerChar(overlay tea.Model) rune {
 }
 
 // isInlineOverlay returns true for overlays that render inline between
-// the separator and editor (e.g. permission dialog), not as centered overlays.
+// the separator and editor (e.g. permission dialog, queue), not as centered overlays.
 func isInlineOverlay(overlay tea.Model) bool {
 	switch overlay.(type) {
-	case PermDialogModel:
+	case PermDialogModel, QueueViewModel:
 		return true
 	default:
 		return false
