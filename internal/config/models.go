@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/mauromedda/pi-coding-agent-go/pkg/ai"
@@ -42,9 +43,7 @@ func ApplyModelOverrides(m *ai.Model, settings *Settings) {
 		if m.CustomHeaders == nil {
 			m.CustomHeaders = make(map[string]string)
 		}
-		for k, v := range override.CustomHeaders {
-			m.CustomHeaders[k] = v
-		}
+		maps.Copy(m.CustomHeaders, override.CustomHeaders)
 	}
 }
 
@@ -52,7 +51,7 @@ func ApplyModelOverrides(m *ai.Model, settings *Settings) {
 // Checks built-in models first, then handles provider-prefixed custom models.
 func ResolveModel(id string) (*ai.Model, error) {
 	if id == "" {
-		return &ai.ModelClaude4Sonnet, nil // Default model
+		return &ai.ModelClaudeSonnet, nil // Default model
 	}
 
 	// Check built-in models

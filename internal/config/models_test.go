@@ -16,8 +16,8 @@ func TestResolveModel_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if m.ID != ai.ModelClaude4Sonnet.ID {
-		t.Errorf("expected default model %q, got %q", ai.ModelClaude4Sonnet.ID, m.ID)
+	if m.ID != ai.ModelClaudeSonnet.ID {
+		t.Errorf("expected default model %q, got %q", ai.ModelClaudeSonnet.ID, m.ID)
 	}
 }
 

@@ -15,11 +15,11 @@ func TestParseModelSpec_WithThinkingLevel(t *testing.T) {
 		wantThinking  string
 		wantErr       bool
 	}{
-		{"opus with high", "claude-opus-4-20250514:high", "claude-opus-4-20250514", "high", false},
-		{"sonnet with low", "claude-sonnet-4-20250514:low", "claude-sonnet-4-20250514", "low", false},
-		{"model with off", "claude-sonnet-4-20250514:off", "claude-sonnet-4-20250514", "off", false},
+		{"opus with high", "claude-opus-4-6:high", "claude-opus-4-6", "high", false},
+		{"sonnet with low", "claude-sonnet-4-6:low", "claude-sonnet-4-6", "low", false},
+		{"model with off", "claude-sonnet-4-6:off", "claude-sonnet-4-6", "off", false},
 		{"model with medium", "some-model:medium", "some-model", "medium", false},
-		{"no thinking level", "claude-opus-4-20250514", "claude-opus-4-20250514", "", false},
+		{"no thinking level", "claude-opus-4-6", "claude-opus-4-6", "", false},
 		{"provider prefix", "openai:gpt-4o", "openai:gpt-4o", "", false},
 		{"provider with thinking", "openai:gpt-4o:high", "openai:gpt-4o", "high", false},
 		{"empty input", "", "", "", false},
@@ -47,8 +47,9 @@ func TestIsAlias(t *testing.T) {
 		id   string
 		want bool
 	}{
-		{"claude-opus-4-20250514", false},    // has date suffix
-		{"claude-sonnet-4-20250514", false},  // has date suffix
+		{"claude-opus-4-6", true},             // alias (no date suffix)
+		{"claude-sonnet-4-6", true},           // alias (no date suffix)
+		{"claude-haiku-4-5-20251001", false},  // has date suffix
 		{"gpt-4o", true},                      // no date suffix
 		{"claude-opus", true},                 // alias (no date)
 		{"model-20250101", false},             // date suffix

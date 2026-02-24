@@ -17,6 +17,7 @@ var defaultPricing = map[string]ModelPricing{
 	// Anthropic
 	"claude-opus-4":    {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 	"claude-sonnet-4":  {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+	"claude-haiku-4":   {InputPerMillion: 1.0, OutputPerMillion: 5.0},
 	"claude-haiku-3.5": {InputPerMillion: 0.80, OutputPerMillion: 4.0},
 	"claude-3-5-sonnet": {InputPerMillion: 3.0, OutputPerMillion: 15.0},
 	"claude-3-opus":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},

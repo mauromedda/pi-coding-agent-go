@@ -245,7 +245,7 @@ func (w *WorktreeSettings) IsEnabled() bool {
 // MinionSettings configures the minion protocol (local/cloud context distillation).
 type MinionSettings struct {
 	Enabled *bool  `json:"enabled,omitempty"` // nil = false (opt-in)
-	Model   string `json:"model,omitempty"`   // any model ID; default "claude-3-5-haiku-20241022"
+	Model   string `json:"model,omitempty"`   // any model ID; default "claude-haiku-4-5-20251001"
 	Mode    string `json:"mode,omitempty"`    // "singular", "plural"; default "singular"
 }
 
@@ -257,10 +257,10 @@ func (m *MinionSettings) IsEnabled() bool {
 	return *m.Enabled
 }
 
-// EffectiveModel returns Model or default ("claude-3-5-haiku-20241022").
+// EffectiveModel returns Model or default ("claude-haiku-4-5-20251001").
 func (m *MinionSettings) EffectiveModel() string {
 	if m == nil || m.Model == "" {
-		return "claude-3-5-haiku-20241022"
+		return "claude-haiku-4-5-20251001"
 	}
 	return m.Model
 }
