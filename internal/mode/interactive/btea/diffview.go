@@ -57,10 +57,7 @@ func ComputeSimpleDiff(before, after string) string {
 	var b strings.Builder
 
 	// Simple line-by-line comparison (not a real LCS diff, but sufficient for display)
-	maxLen := len(beforeLines)
-	if len(afterLines) > maxLen {
-		maxLen = len(afterLines)
-	}
+	maxLen := max(len(afterLines), len(beforeLines))
 
 	for i := range maxLen {
 		var bLine, aLine string

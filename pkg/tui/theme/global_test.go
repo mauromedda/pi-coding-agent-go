@@ -36,11 +36,9 @@ func TestCurrent_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 	var wg sync.WaitGroup
 	for range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = Current()
-		}()
+		})
 	}
 	wg.Wait()
 }

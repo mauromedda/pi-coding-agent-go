@@ -76,8 +76,8 @@ func TestDependencyGraph_WithFilter(t *testing.T) {
 		t.Errorf("expected 'strings' in filtered output:\n%s", result.Content)
 	}
 	// "fmt" should be filtered out since we only show packages that import "strings".
-	lines := strings.Split(result.Content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(result.Content, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "-> fmt" || trimmed == "-> os" {
 			t.Errorf("unexpected import in filtered output: %s", trimmed)

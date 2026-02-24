@@ -45,9 +45,9 @@ func TestBashOutputModel_ViewTruncatesLongLines(t *testing.T) {
 	m.AddOutput(longLine + "\n")
 
 	view := m.View()
-	lines := strings.Split(view, "\n")
+	lines := strings.SplitSeq(view, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		if strings.Contains(line, "xxxx") {
 			// This line should be truncated; check it ends with ellipsis
 			if !strings.Contains(line, "…") {

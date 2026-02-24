@@ -125,7 +125,7 @@ func TestWelcomeModel_ViewNarrowTerminal(t *testing.T) {
 		t.Error("View() missing pi character on narrow terminal")
 	}
 	// Lines should not exceed width
-	for _, line := range strings.Split(view, "\n") {
+	for line := range strings.SplitSeq(view, "\n") {
 		if line == "" {
 			continue
 		}

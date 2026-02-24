@@ -238,7 +238,7 @@ func TestPermDialogModel_ViewNarrowTerminal(t *testing.T) {
 		t.Fatal("View() returned empty string")
 	}
 	// Every visible line should be at most 40 columns wide
-	for _, line := range strings.Split(view, "\n") {
+	for line := range strings.SplitSeq(view, "\n") {
 		if line == "" {
 			continue
 		}

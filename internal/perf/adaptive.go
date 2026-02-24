@@ -5,11 +5,11 @@ package perf
 
 // AdaptiveParams holds runtime parameters derived from model profile and token estimates.
 type AdaptiveParams struct {
-	MaxOutputTokens  int  // capped to available budget
-	UsePromptCaching bool // true for Anthropic models
+	MaxOutputTokens   int  // capped to available budget
+	UsePromptCaching  bool // true for Anthropic models
 	CompactBeforeCall bool // true when input exceeds compaction threshold
-	StreamBufferSize int  // larger for local (4KB), smaller for slow (512B)
-	PreloadSkills    bool // true for local (fast disk), false for slow (lazy load)
+	StreamBufferSize  int  // larger for local (4KB), smaller for slow (512B)
+	PreloadSkills     bool // true for local (fast disk), false for slow (lazy load)
 }
 
 // reserveTokens is the safety margin subtracted from available output budget.
@@ -30,15 +30,8 @@ func Decide(profile ModelProfile, inputTokens int, contextWindow int) AdaptivePa
 	}
 
 	// Adaptive MaxOutputTokens: cap to available budget
-	available := contextWindow - inputTokens - reserveTokens
-	if available < minOutputTokens {
-		available = minOutputTokens
-	}
-	if available < profile.MaxOutputTokens {
-		params.MaxOutputTokens = available
-	} else {
-		params.MaxOutputTokens = profile.MaxOutputTokens
-	}
+	available := max(contextWindow-inputTokens-reserveTokens, minOutputTokens)
+	params.MaxOutputTokens = min(available, profile.MaxOutputTokens)
 
 	// Pre-flight compaction trigger: compact when input exceeds threshold
 	utilization := float64(inputTokens) / float64(contextWindow)

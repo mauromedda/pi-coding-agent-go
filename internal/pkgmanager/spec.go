@@ -110,8 +110,8 @@ func parseNPMSpec(raw string) (name, tag string) {
 	}
 
 	// Unscoped: name@version
-	if idx := strings.Index(raw, "@"); idx >= 0 {
-		return raw[:idx], raw[idx+1:]
+	if before, after, ok := strings.Cut(raw, "@"); ok {
+		return before, after
 	}
 
 	return raw, ""

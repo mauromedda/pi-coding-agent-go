@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mauromedda/pi-coding-agent-go/internal/agent"
+	"github.com/mauromedda/pi-coding-agent-go/internal/permission"
 )
 
 const braveSearchURL = "https://api.search.brave.com/res/v1/web/search"
@@ -56,6 +57,11 @@ func executeWebSearch(ctx context.Context, _ string, params map[string]any, _ fu
 	q.Set("q", query)
 	q.Set("count", fmt.Sprintf("%d", count))
 	u.RawQuery = q.Encode()
+
+	// Validate URL for security
+	if err := permission.ValidateAPIURL(u.String()); err != nil {
+		return errResult(fmt.Errorf("URL validation failed: %w", err)), nil
+	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
