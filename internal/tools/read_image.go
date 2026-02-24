@@ -64,7 +64,7 @@ func executeReadImage(sb *permission.Sandbox, params map[string]any) (agent.Tool
 	}
 	defer f.Close()
 
-	data, err := io.ReadAll(io.LimitReader(f, maxFileReadSize))
+	data, err := io.ReadAll(io.LimitReader(f, maxImageFileSize+1))
 	if err != nil {
 		return errResult(fmt.Errorf("reading image %s: %w", path, err)), nil
 	}
