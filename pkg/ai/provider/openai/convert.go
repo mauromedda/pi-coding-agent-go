@@ -110,11 +110,26 @@ func convertMessages(ctx *ai.Context) []chatMessage {
 					},
 				})
 			case ai.ContentToolResult:
-				msgs = append(msgs, chatMessage{
+				toolMsg := chatMessage{
 					Role:       "tool",
-					Content:    c.ResultText,
 					ToolCallID: c.ID,
-				})
+				}
+				if len(c.Images) > 0 {
+					parts := make([]map[string]any, 0, 1+len(c.Images))
+					parts = append(parts, map[string]any{"type": "text", "text": c.ResultText})
+					for _, img := range c.Images {
+						parts = append(parts, map[string]any{
+							"type": "image_url",
+							"image_url": map[string]any{
+								"url": "data:" + img.MediaType + ";base64," + img.Data,
+							},
+						})
+					}
+					toolMsg.Content = parts
+				} else {
+					toolMsg.Content = c.ResultText
+				}
+				msgs = append(msgs, toolMsg)
 				continue
 			}
 		}
