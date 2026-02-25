@@ -38,7 +38,25 @@ func newReadTool(sb *permission.Sandbox) *agent.AgentTool {
 	return &agent.AgentTool{
 		Name:        "read",
 		Label:       "Read File",
-		Description: "Read the contents of a file. Supports optional offset and limit in lines.",
+		Description: `Reads a file from the local filesystem.
+
+Usage:
+- The path parameter must be an absolute path, not a relative path
+- By default, it reads the entire file from the beginning
+- You can optionally specify a line offset and limit (handy for long files)
+- Any lines longer than 2000 characters will be truncated
+- Results are returned with line numbers starting at 1
+
+File type support:
+- Text files: Returns content with line numbers
+- Binary files: Detected via null-byte check in first 512 bytes; returns error
+- Image files (PNG, JPG, GIF, WebP): Returns image metadata and raw bytes for rendering
+- Maximum file size: 10MB read cap; output truncated at 100KB
+
+Parameters:
+- path (required): Absolute path to the file to read
+- offset: Line number to start reading from (0-based)
+- limit: Maximum number of lines to return (0 = all)`,
 		Parameters: json.RawMessage(`{
 			"type": "object",
 			"required": ["path"],

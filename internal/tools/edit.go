@@ -29,7 +29,25 @@ func newEditTool(sb *permission.Sandbox) *agent.AgentTool {
 	return &agent.AgentTool{
 		Name:        "edit",
 		Label:       "Edit File",
-		Description: "Replace occurrences of old_string with new_string in a file.",
+		Description: `Performs exact string replacements in files.
+
+Usage:
+- The edit will FAIL if old_string is not found in the file
+- The edit will FAIL if old_string is not unique in the file (appears more than once)
+  unless replace_all is set to true
+- Exact whitespace matching is required: old_string must match the file content exactly,
+  including indentation (tabs vs spaces) and line endings
+- Use replace_all for renaming variables or replacing repeated patterns across the file
+
+Output:
+- Returns a unified diff showing the changes made
+- Maximum file size: 10MB
+
+Parameters:
+- path (required): Absolute path to the file to modify
+- old_string (required): The exact text to find in the file
+- new_string (required): The replacement text (must differ from old_string)
+- replace_all: Set to true to replace all occurrences (default: false)`,
 		Parameters: json.RawMessage(`{
 			"type": "object",
 			"required": ["path", "old_string", "new_string"],
