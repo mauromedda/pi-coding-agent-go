@@ -462,7 +462,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, _ := m.footer.Update(msg)
 		m.footer = updated.(FooterModel)
 
-		// Update context window usage percentage
+		// Update context window usage percentage and allocation
 		if m.deps.Model != nil {
 			ctxWindow := m.deps.Model.EffectiveContextWindow()
 			if ctxWindow > 0 {
@@ -471,6 +471,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					pct = 100
 				}
 				m.footer = m.footer.WithContextPct(pct)
+				m.footer = m.footer.WithContextInfo(m.totalInputTokens, ctxWindow)
 			}
 		}
 

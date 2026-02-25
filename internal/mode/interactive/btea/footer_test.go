@@ -178,6 +178,27 @@ func TestFooterModel_ViewContextBarHiddenAtZero(t *testing.T) {
 	}
 }
 
+func TestFooterModel_ViewWithContextAllocation(t *testing.T) {
+	m := NewFooterModel()
+	m = m.WithContextPct(75)
+	m = m.WithContextInfo(15000, 20000) // 15K used out of 20K total
+	m.width = 120
+	view := m.View()
+
+	// Must contain the context label
+	if !strings.Contains(view, "ctx") {
+		t.Errorf("View() missing ctx label; got %q", view)
+	}
+	// Must contain the percentage
+	if !strings.Contains(view, "75%") {
+		t.Errorf("View() missing percentage; got %q", view)
+	}
+	// Must contain the allocation info (15K/20K)
+	if !strings.Contains(view, "15K/20K") {
+		t.Errorf("View() missing allocation info; got %q", view)
+	}
+}
+
 func TestFooterModel_ViewContainsQueued(t *testing.T) {
 	m := NewFooterModel()
 	m = m.WithQueuedCount(5)

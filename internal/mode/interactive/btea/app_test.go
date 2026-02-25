@@ -306,6 +306,12 @@ func TestAppModel_AgentUsageMsg_SetsFooterContextPct(t *testing.T) {
 	if model.footer.contextPct != 60 {
 		t.Errorf("footer.contextPct = %d; want 60", model.footer.contextPct)
 	}
+	if model.footer.contextUsed != 6000 {
+		t.Errorf("footer.contextUsed = %d; want 6000", model.footer.contextUsed)
+	}
+	if model.footer.contextTotal != 10000 {
+		t.Errorf("footer.contextTotal = %d; want 10000", model.footer.contextTotal)
+	}
 
 	// Accumulate more: now 80%
 	usage2 := &ai.Usage{InputTokens: 2000, OutputTokens: 0}
@@ -314,6 +320,9 @@ func TestAppModel_AgentUsageMsg_SetsFooterContextPct(t *testing.T) {
 
 	if model2.footer.contextPct != 80 {
 		t.Errorf("footer.contextPct = %d; want 80", model2.footer.contextPct)
+	}
+	if model2.footer.contextUsed != 8000 {
+		t.Errorf("footer.contextUsed = %d; want 8000", model2.footer.contextUsed)
 	}
 }
 

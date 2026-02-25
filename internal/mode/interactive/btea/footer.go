@@ -12,6 +12,14 @@ import (
 	"github.com/mauromedda/pi-coding-agent-go/pkg/tui/width"
 )
 
+// formatTokens formats a token count in a human-readable way (e.g., 12000 -> 12K).
+func formatTokens(tokens int) string {
+	if tokens >= 1000 {
+		return fmt.Sprintf("%dK", tokens/1000)
+	}
+	return fmt.Sprintf("%d", tokens)
+}
+
 // FooterModel renders a two-line status bar at the bottom of the terminal.
 // Line 1: path + branch + model + cost.
 // Line 2: mode + permissions + context% + queued + thinking.
@@ -21,7 +29,9 @@ type FooterModel struct {
 	model          string
 	cost           float64
 	modeLabel      string
-	contextPct     int
+	contextPct      int
+	contextUsed     int // Used tokens in context window
+	contextTotal    int // Total context window size in tokens
 	thinking       config.ThinkingLevel
 	permissionMode string
 	queuedCount    int
@@ -94,11 +104,19 @@ func (m FooterModel) WithModeLabel(label string) FooterModel {
 }
 
 // WithContextPct returns a FooterModel with the context percentage set.
+
 func (m FooterModel) WithContextPct(pct int) FooterModel {
 	m.contextPct = pct
 	return m
 }
 
+
+// WithContextInfo returns a FooterModel with the context window allocation set.
+func (m FooterModel) WithContextInfo(used, total int) FooterModel {
+	m.contextUsed = used
+	m.contextTotal = total
+	return m
+}
 // WithThinking returns a FooterModel with the thinking level set.
 func (m FooterModel) WithThinking(level config.ThinkingLevel) FooterModel {
 	m.thinking = level
@@ -250,7 +268,16 @@ func (m FooterModel) View() string {
 		emptyStr := strings.Repeat("░", empty)
 		bar := barStyle.Render(filledStr) + s.Dim.Render(emptyStr)
 		pct := barStyle.Render(fmt.Sprintf("%d%%", m.contextPct))
-		line2Parts = append(line2Parts, fmt.Sprintf("ctx %s %s", bar, pct))
+		
+		// Build allocation string (e.g., "12K/20K") if we have context info
+		allocStr := ""
+		if m.contextTotal > 0 {
+			usedStr := formatTokens(m.contextUsed)
+			totalStr := formatTokens(m.contextTotal)
+			allocStr = fmt.Sprintf(" %s/%s", usedStr, totalStr)
+		}
+		
+		line2Parts = append(line2Parts, fmt.Sprintf("ctx %s %s%s", bar, pct, allocStr))
 	}
 
 	if m.queuedCount > 0 {
