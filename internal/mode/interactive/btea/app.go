@@ -919,38 +919,24 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editor = updated.(EditorModel)
 		return m, cmd
 
+	case "shift+enter":
+		// Alternative submit: same behavior as Enter for message submission.
+		// Distinct from Enter in terminals that support Kitty keyboard protocol.
+		if !m.editor.IsEmpty() {
+			return m.submitOrEnqueue()
+		}
+		updated, cmd := m.editor.Update(msg)
+		m.editor = updated.(EditorModel)
+		return m, cmd
+
+	case "alt+enter":
+		// Force-enqueue: always adds to queue without submitting,
+		// even when the agent is idle.
+		return m.enqueuePrompt()
+
 	case "enter":
 		if !m.editor.IsEmpty() {
-			text := m.editor.Text()
-
-			// Queue edit takes priority: finish editing even if agent stopped
-			if m.queueEditIndex >= 0 {
-				if m.queueEditIndex < len(m.promptQueue) {
-					m.promptQueue[m.queueEditIndex] = text
-				}
-				m.queueEditIndex = -1
-				m.savedDraft = ""
-				m.editor = m.resetEditor()
-				// If agent stopped while we were editing, resume draining
-				if !m.agentRunning && len(m.promptQueue) > 0 {
-					next := m.promptQueue[0]
-					m.promptQueue = m.promptQueue[1:]
-					m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
-					return m.submitPrompt(next)
-				}
-				return m, nil
-			}
-
-			if m.agentRunning {
-				// Enqueue for later; history is populated when drain calls submitPrompt
-				m.promptQueue = append(m.promptQueue, text)
-				m.historyIndex = -1
-				m.savedDraft = ""
-				m.editor = m.resetEditor()
-				m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
-				return m, nil
-			}
-			return m.submitPrompt(text)
+			return m.submitOrEnqueue()
 		}
 		// Let editor handle enter for multi-line
 		updated, cmd := m.editor.Update(msg)
@@ -1064,6 +1050,62 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // --- Prompt submission ---
+
+// submitOrEnqueue handles enter/shift+enter: if the editor has text, submit
+// (or enqueue when the agent is running). Returns unchanged model when empty.
+func (m AppModel) submitOrEnqueue() (AppModel, tea.Cmd) {
+	if m.editor.IsEmpty() {
+		return m, nil
+	}
+
+	text := m.editor.Text()
+
+	// Queue edit takes priority: finish editing even if agent stopped
+	if m.queueEditIndex >= 0 {
+		if m.queueEditIndex < len(m.promptQueue) {
+			m.promptQueue[m.queueEditIndex] = text
+		}
+		m.queueEditIndex = -1
+		m.savedDraft = ""
+		m.editor = m.resetEditor()
+		// If agent stopped while editing, resume draining
+		if !m.agentRunning && len(m.promptQueue) > 0 {
+			next := m.promptQueue[0]
+			m.promptQueue = m.promptQueue[1:]
+			m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+			return m.submitPrompt(next)
+		}
+		return m, nil
+	}
+
+	if m.agentRunning {
+		// Enqueue for later; history is populated when drain calls submitPrompt
+		m.promptQueue = append(m.promptQueue, text)
+		m.historyIndex = -1
+		m.savedDraft = ""
+		m.editor = m.resetEditor()
+		m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+		return m, nil
+	}
+
+	return m.submitPrompt(text)
+}
+
+// enqueuePrompt handles alt+enter: always enqueues without submitting,
+// regardless of whether the agent is running. No-op when editor is empty.
+func (m AppModel) enqueuePrompt() (AppModel, tea.Cmd) {
+	if m.editor.IsEmpty() {
+		return m, nil
+	}
+
+	text := m.editor.Text()
+	m.promptQueue = append(m.promptQueue, text)
+	m.historyIndex = -1
+	m.savedDraft = ""
+	m.editor = m.resetEditor()
+	m.footer = m.footer.WithQueuedCount(len(m.promptQueue))
+	return m, nil
+}
 
 func (m AppModel) submitPrompt(text string) (AppModel, tea.Cmd) {
 	m.editor = m.resetEditor()

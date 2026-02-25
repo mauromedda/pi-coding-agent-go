@@ -48,6 +48,7 @@ const (
 	ActionQueueFollowUp  KeyAction = "queueFollowUp"
 	ActionHistoryPrev    KeyAction = "historyPrev"
 	ActionHistoryNext    KeyAction = "historyNext"
+	ActionExpandTools    KeyAction = "expandTools"
 )
 
 // Keybindings represents the keybindings configuration
@@ -102,6 +103,7 @@ func (kb *Keybindings) setDefaultBindings() {
 	kb.Bindings[ActionQueueFollowUp] = []string{"alt+enter"}
 	kb.Bindings[ActionHistoryPrev] = []string{"alt+up"}
 	kb.Bindings[ActionHistoryNext] = []string{"alt+down"}
+	kb.Bindings[ActionExpandTools] = []string{"ctrl+o"}
 }
 
 // LoadKeybindings loads keybindings from a file

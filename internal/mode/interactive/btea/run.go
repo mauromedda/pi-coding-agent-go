@@ -25,6 +25,7 @@ func Run(deps AppDeps) error {
 
 	p := tea.NewProgram(
 		m,
+		tea.WithAltScreen(),
 		tea.WithOutput(os.Stderr),
 	)
 

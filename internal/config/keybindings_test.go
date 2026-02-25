@@ -31,6 +31,12 @@ func TestKeybindings_SetDefaultBindings(t *testing.T) {
 	if len(kb.Bindings[ActionSendMessageAlt]) == 0 {
 		t.Error("Expected sendMessageAlt bindings")
 	}
+	if len(kb.Bindings[ActionExpandTools]) == 0 {
+		t.Error("Expected expandTools bindings")
+	}
+	if kb.Bindings[ActionExpandTools][0] != "ctrl+o" {
+		t.Errorf("expandTools default = %q; want %q", kb.Bindings[ActionExpandTools][0], "ctrl+o")
+	}
 }
 
 func TestKeybindings_SaveLoad(t *testing.T) {
